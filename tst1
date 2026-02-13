@@ -1,0 +1,60 @@
+  {
+            "Operator_Name": "Synthia Blackburn-Smith",
+            "added": {
+                "new": 1,
+                "inProgress": 1,
+                "onHold": 1,
+                "cancelled": 1,
+                "completed": 1,
+                "total": 5
+            },
+            "changed": {
+                "new": 1,
+                "inProgress": 1,
+                "onHold": 1,
+                "cancelled": 1,
+                "completed": 1,
+                "total": 5
+            },
+            "archived": {
+                "new": 1,
+                "inProgress": 1,
+                "onHold": 1,
+                "cancelled": 1,
+                "completed": 1,
+                "total": 5
+            },
+            "deleted": {
+                "new": 1,
+                "inProgress": 1,
+                "onHold": 1,
+                "cancelled": 1,
+                "completed": 1,
+                "total": 5
+            },
+            "Total": 20
+        },
+
+
+
+{
+  "_id": {
+    "$oid": "67b789ff1f08b05e9d425c36"
+  },
+  "hon": "OUEMP-040323-8EW5MH2",
+  "organizationName": "EMP TEPW",
+  "createdDate": {
+    "$date": "2025-02-20T20:01:03.869Z"
+  },
+  "address": "USA,CA,Irvine",
+  "verificationValidationDate": "12/15/2023",
+  "organizationType": "EMPLOYMENT",
+  "origin": "CURD",
+  "approvalStatus": "APPROVED",
+  "approvedBy": "Kallappa Dharakade",
+  "approvedId": "kallappa.dharakade@hireright.com",
+  "autoMatch": 0,
+  "action": "Update",
+  "createdBy": "Synthia Blackburn-Smith",
+  "_class": "com.hireright.sourceintelligence.reports.domain.entity.Reports"
+}
