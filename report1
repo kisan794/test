@@ -1,0 +1,351 @@
+SourceInformationApi
+
+there can have 3 operation model:
+1. Operator
+2. Reviewer
+2. Operator & Reviewer 
+
+
+
+need to chaneg in /sourceintelligence-service/api/v1/source-organization/reports/source-information api only:
+
+payload:
+{
+    "reportType": "sourceInformation",
+    "operatorName": "Madhavi E",
+    "operatorRole": "",
+    "organizationName": "",
+    "dateRange": {
+        "startDate": "2026-02-01T00:00:00.000000000Z",
+        "endDate": "2026-02-04T13:34:15.499Z"
+    },
+    "region": "",
+    "startPage": 1,
+    "batchSize": 10,
+    "sort": "",
+    "order": ""
+}
+
+
+report collection data base:
+public class Reports {
+
+    @Id
+    private String id;
+    private String hon;
+    private String organizationName;
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    //private Instant usedDate; //Created_date
+    private Instant createdDate;
+    private String address;
+    private String verificationValidationDate;
+    private String organizationType;
+    private String origin;
+    private String approvalStatus; //Pending_approval, in_Progress
+    private String approvedBy; //field used for deleted by too
+    private String approvedId;
+   // private boolean isAutoMatch; //not needed
+    private int autoMatch;
+    private String action; //(update, archive, create, usedCount)
+    private String createdBy;
+    private String reason;
+
+}
+
+
+this api is calling for anyone operatorRole out of above three:
+1. if operatorRole is Operator then response:
+"meta":[
+    {
+        "header": "Operator Name",
+        "accessorKey": "operatorName"
+    },
+    {
+        "header": "Added",
+        "columns": [
+            {
+                "header": "New",
+                "accessorKey": "added.new"
+            },
+            {
+                "header": "In Progress",
+                "accessorKey": "added.inProgress"
+            },
+            {
+                "header": "On Hold",
+                "accessorKey": "added.onHold"
+            },
+            {
+                "header": "Cancelled / Rejected",
+                "accessorKey": "added.cancelled"
+            },
+            {
+                "header": "Completed",
+                "accessorKey": "added.completed"
+            },
+            {
+                "header": "Total",
+                "accessorKey": "added.total"
+            }
+        ]
+    },
+    {
+        "header": "Changed",
+        "columns": [
+            {
+                "header": "New",
+                "accessorKey": "changed.new"
+            },
+            {
+                "header": "In Progress",
+                "accessorKey": "changed.inProgress"
+            },
+            {
+                "header": "On Hold",
+                "accessorKey": "changed.onHold"
+            },
+            {
+                "header": "Cancelled / Rejected",
+                "accessorKey": "changed.cancelled"
+            },
+            {
+                "header": "Completed",
+                "accessorKey": "changed.completed"
+            },
+            {
+                "header": "Total",
+                "accessorKey": "changed.total"
+            }
+        ]
+    },
+    {
+        "header": "Archived",
+        "columns": [
+            {
+                "header": "New",
+                "accessorKey": "archived.new"
+            },
+            {
+                "header": "In Progress",
+                "accessorKey": "archived.inProgress"
+            },
+            {
+                "header": "On Hold",
+                "accessorKey": "archived.onHold"
+            },
+            {
+                "header": "Cancelled / Rejected",
+                "accessorKey": "archived.cancelled"
+            },
+            {
+                "header": "Completed",
+                "accessorKey": "archived.completed"
+            },
+            {
+                "header": "Total",
+                "accessorKey": "archived.total"
+            }
+        ]
+    },
+    {
+        "header": "Deleted",
+        "columns": [
+            {
+                "header": "New",
+                "accessorKey": "added.new"
+            },
+            {
+                "header": "In Progress",
+                "accessorKey": "added.inProgress"
+            },
+            {
+                "header": "On Hold",
+                "accessorKey": "added.onHold"
+            },
+            {
+                "header": "Cancelled / Rejected",
+                "accessorKey": "added.cancelled"
+            },
+            {
+                "header": "Completed",
+                "accessorKey": "added.completed"
+            },
+            {
+                "header": "Total",
+                "accessorKey": "added.total"
+            }
+        ]
+    },
+    {
+        "header": "Total",
+        "columns": [
+            {
+                "header": "Total",
+                "accessorKey": "total"
+            }
+        ]
+    }
+],
+"response":[
+    {
+        "operatorName": "Arlene McCoy",
+        "added": {
+            "new": 1,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 1
+        },
+        "deleted": {
+            "new": 1,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 1
+        },
+        "changed": {
+            "new": 1,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 1
+        },
+        "archived": {
+            "new": 1,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 1
+        },
+        "total": 3
+    },
+    {
+        "operatorName": "Dianne Russell",
+        "added": {
+            "new": 2,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 2
+        },
+		"deleted": {
+            "new": 1,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 1
+        },
+        "changed": {
+            "new": 3,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 2
+        },
+        "archived": {
+            "new": 1,
+            "inProgress": 0,
+            "onHold": 0,
+            "cancelled": 0,
+            "completed": 0,
+            "total": 1
+        },
+        "total": 3
+    }
+]
+
+group by createdBy = operatorName and action = create (added), update(changed), archived(archive), deleted(delete) 
+new: approve status in (PENDING_APPROVAL, SAVE_PENDING_APPROVAL)
+inProgress : approve status is IN_PROGRESS
+onHold : approve status is ONHOLD
+cancelled : approve status is REJECTED
+completed : approve status is APPROVED
+total: new + inProgress + onHold + cancelled +  completed
+
+
+if operatorRole = Reviewer then 
+
+response:
+{
+    "reportType": "source-information",
+    "meta": [
+        {
+            "label": "Researcher Name",
+            "key": "Researcher_Name"
+        },
+        {
+            "label": "Added",
+            "key": "Added"
+        },
+        {
+            "label": "Changed",
+            "key": "Changed"
+        },
+        {
+            "label": "Archived",
+            "key": "Archived"
+        },
+        {
+            "label": "Deleted",
+            "key": "Deleted"
+        },
+        {
+            "label": "In Progress",
+            "key": "In_Progress"
+        },
+        {
+            "label": "On Hold",
+            "key": "On_Hold"
+        },
+        {
+            "label": "Cancelled",
+            "key": "Cancelled"
+        },
+        {
+            "label": "Completed",
+            "key": "Completed"
+        }
+    ],
+    "response": [
+        {
+            "Researcher_Name": "Aurora Biotech",
+            "Hon": "OUEMP-031224-AU1BX",
+            "Added": 14,
+            "Changed": 19,
+            "Archived": 2,
+            "Delete": 1,
+            "In_Progress": 3,
+            "On_Hold": 1,
+            "Cancelled": 0,
+            "Completed": 10
+        },
+        {
+            "Researcher_Name": "BlueStar Analytics",
+            "Hon": "OUEMP-042824-BL4ST",
+            "Added": 14,
+            "Changed": 19,
+            "Archived": 2,
+            "Deleted": 1,
+            "In_Progress": 3,
+            "On_Hold": 1,
+            "Cancelled": 0,
+            "Completed": 10
+        }
+    ],
+    "total": 2
+}
+
+group by opernamae = approvedby
+new: approve status in (PENDING_APPROVAL, SAVE_PENDING_APPROVAL)
+inProgress : approve status is IN_PROGRESS
+onHold : approve status is ONHOLD
+cancelled : approve status is REJECTED
+completed : approve status is APPROVED
+total: new + inProgress + onHold + cancelled +  completed
