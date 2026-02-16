@@ -1,43 +1,75 @@
- public static final String RESEARCHER_NAME = "Researcher_Name";
-        public static final String NEW_COUNT = "New";
-        public static final String IN_PROGRESS = "In_Progress";
-        public static final String ON_HOLD = "On_Hold";
-        public static final String CANCELLED = "Cancelled";
-        public static final String COMPLETED = "Completed";
+public static final String OPERATOR_NAME = "Operator_Name";
+        public static final String ADDED_NEW = "Added_New";
+        public static final String ADDED_IN_PROGRESS = "Added_In_Progress";
+        public static final String ADDED_ON_HOLD = "Added_On_Hold";
+        public static final String ADDED_CANCELLED = "Added_Cancelled";
+        public static final String ADDED_COMPLETED = "Added_Completed";
+        public static final String CHANGED_NEW = "Changed_New";
+        public static final String CHANGED_IN_PROGRESS = "Changed_In_Progress";
+        public static final String CHANGED_ON_HOLD = "Changed_On_Hold";
+        public static final String CHANGED_CANCELLED = "Changed_Cancelled";
+        public static final String CHANGED_COMPLETED = "Changed_Completed";
+        public static final String ARCHIVED_NEW = "Archived_New";
+        public static final String ARCHIVED_IN_PROGRESS = "Archived_In_Progress";
+        public static final String ARCHIVED_ON_HOLD = "Archived_On_Hold";
+        public static final String ARCHIVED_CANCELLED = "Archived_Cancelled";
+        public static final String ARCHIVED_COMPLETED = "Archived_Completed";
+        public static final String DELETED_NEW = "Deleted_New";
+        public static final String DELETED_IN_PROGRESS = "Deleted_In_Progress";
+        public static final String DELETED_ON_HOLD = "Deleted_On_Hold";
+        public static final String DELETED_CANCELLED = "Deleted_Cancelled";
+        public static final String DELETED_COMPLETED = "Deleted_Completed";
     }
-}
-
-
-        SortOperation sortOperation = ReportsQueryBuilder.buildSortOperationForReviewer(reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
 
 
 
-public static String getSortPropertyMappedForReviewer(String sort) {
-    String sortOnField;
-    switch (sort) {
-        case ReportConstants.SortFields.RESEARCHER_NAME -> sortOnField = "researcherName";
-        case ReportConstants.SortFields.NEW_COUNT -> sortOnField = "newCount";
-        case ReportConstants.SortFields.IN_PROGRESS -> sortOnField = "inProgress";
-        case ReportConstants.SortFields.ON_HOLD -> sortOnField = "onHold";
-        case ReportConstants.SortFields.CANCELLED -> sortOnField = "cancelled";
-        case ReportConstants.SortFields.COMPLETED -> sortOnField = "completed";
-        default -> sortOnField = "researcherName";
-    }
-    return sortOnField;
-}
-
-
-public static SortOperation buildSortOperationForReviewer(String sort, String order) {
-    SortOperation sortOperation;
-    if (!StringUtils.isEmpty(sort) && !StringUtils.isEmpty(order)) {
-        String sortOnField = getSortPropertyMappedForReviewer(sort);
-        if (sortOnField == null) {
-            logAndThrowInvalidRequest(INVALID_SORT, null, sort);
+ public static String getSortPropertyMappedForOperator(String sort) {
+        String sortOnField;
+        switch (sort) {
+            case ReportConstants.SortFields.OPERATOR_NAME -> sortOnField = "operatorName";
+            case ReportConstants.SortFields.ADDED_NEW -> sortOnField = "addedNew";
+            case ReportConstants.SortFields.ADDED_IN_PROGRESS -> sortOnField = "addedInProgress";
+            case ReportConstants.SortFields.ADDED_ON_HOLD -> sortOnField = "addedOnHold";
+            case ReportConstants.SortFields.ADDED_CANCELLED -> sortOnField = "addedCancelled";
+            case ReportConstants.SortFields.ADDED_COMPLETED -> sortOnField = "addedCompleted";
+            case ReportConstants.SortFields.CHANGED_NEW -> sortOnField = "changedNew";
+            case ReportConstants.SortFields.CHANGED_IN_PROGRESS -> sortOnField = "changedInProgress";
+            case ReportConstants.SortFields.CHANGED_ON_HOLD -> sortOnField = "changedOnHold";
+            case ReportConstants.SortFields.CHANGED_CANCELLED -> sortOnField = "changedCancelled";
+            case ReportConstants.SortFields.CHANGED_COMPLETED -> sortOnField = "changedCompleted";
+            case ReportConstants.SortFields.ARCHIVED_NEW -> sortOnField = "archivedNew";
+            case ReportConstants.SortFields.ARCHIVED_IN_PROGRESS -> sortOnField = "archivedInProgress";
+            case ReportConstants.SortFields.ARCHIVED_ON_HOLD -> sortOnField = "archivedOnHold";
+            case ReportConstants.SortFields.ARCHIVED_CANCELLED -> sortOnField = "archivedCancelled";
+            case ReportConstants.SortFields.ARCHIVED_COMPLETED -> sortOnField = "archivedCompleted";
+            case ReportConstants.SortFields.DELETED_NEW -> sortOnField = "deletedNew";
+            case ReportConstants.SortFields.DELETED_IN_PROGRESS -> sortOnField = "deletedInProgress";
+            case ReportConstants.SortFields.DELETED_ON_HOLD -> sortOnField = "deletedOnHold";
+            case ReportConstants.SortFields.DELETED_CANCELLED -> sortOnField = "deletedCancelled";
+            case ReportConstants.SortFields.DELETED_COMPLETED -> sortOnField = "deletedCompleted";
+            default -> sortOnField = "operatorName";
         }
-        sortOperation = new SortOperation(
-                Sort.by(getSortOrderDirection(order), sortOnField));
-    } else {
-        sortOperation = new SortOperation(Sort.by(Sort.Direction.DESC, "researcherName"));
+        return sortOnField;
     }
-    return sortOperation;
+
+    public static SortOperation buildSortOperationForOperator(String sort, String order) {
+        SortOperation sortOperation;
+        if (!StringUtils.isEmpty(sort) && !StringUtils.isEmpty(order)) {
+            String sortOnField = getSortPropertyMappedForOperator(sort);
+            if (sortOnField == null) {
+                logAndThrowInvalidRequest(INVALID_SORT, null, sort);
+            }
+            sortOperation = new SortOperation(
+                    Sort.by(getSortOrderDirection(order), sortOnField));
+        } else {
+            sortOperation = new SortOperation(Sort.by(Sort.Direction.DESC, "operatorName"));
+        }
+        return sortOperation;
+    }
+
 }
+
+
+
+ SortOperation sortOperation = ReportsQueryBuilder.buildSortOperationForOperator(reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
+               FacetOperation facetOperation = ReportsQueryBuilder.facetOperationWithGroup(sortOperation, reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize(), groupOperation);
