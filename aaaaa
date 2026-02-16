@@ -1,0 +1,43 @@
+ public static final String RESEARCHER_NAME = "Researcher_Name";
+        public static final String NEW_COUNT = "New";
+        public static final String IN_PROGRESS = "In_Progress";
+        public static final String ON_HOLD = "On_Hold";
+        public static final String CANCELLED = "Cancelled";
+        public static final String COMPLETED = "Completed";
+    }
+}
+
+
+        SortOperation sortOperation = ReportsQueryBuilder.buildSortOperationForReviewer(reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
+
+
+
+public static String getSortPropertyMappedForReviewer(String sort) {
+    String sortOnField;
+    switch (sort) {
+        case ReportConstants.SortFields.RESEARCHER_NAME -> sortOnField = "researcherName";
+        case ReportConstants.SortFields.NEW_COUNT -> sortOnField = "newCount";
+        case ReportConstants.SortFields.IN_PROGRESS -> sortOnField = "inProgress";
+        case ReportConstants.SortFields.ON_HOLD -> sortOnField = "onHold";
+        case ReportConstants.SortFields.CANCELLED -> sortOnField = "cancelled";
+        case ReportConstants.SortFields.COMPLETED -> sortOnField = "completed";
+        default -> sortOnField = "researcherName";
+    }
+    return sortOnField;
+}
+
+
+public static SortOperation buildSortOperationForReviewer(String sort, String order) {
+    SortOperation sortOperation;
+    if (!StringUtils.isEmpty(sort) && !StringUtils.isEmpty(order)) {
+        String sortOnField = getSortPropertyMappedForReviewer(sort);
+        if (sortOnField == null) {
+            logAndThrowInvalidRequest(INVALID_SORT, null, sort);
+        }
+        sortOperation = new SortOperation(
+                Sort.by(getSortOrderDirection(order), sortOnField));
+    } else {
+        sortOperation = new SortOperation(Sort.by(Sort.Direction.DESC, "researcherName"));
+    }
+    return sortOperation;
+}
