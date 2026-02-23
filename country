@@ -1,0 +1,185 @@
+GET {host}/country/?startIndex=1&batchSize=300
+{
+    "data": [
+        {
+            "CountryId": "181",
+            "Name": "Guam",
+            "CourtIntlCharge": "5",
+            "EduIntlCharge": "5",
+            "EmplIntlCharge": "5",
+            "MvrIntlCharge": "0",
+            "RefIntlCharge": "5",
+            "Currency": "USD",
+            "DateFormat": "1",
+            "PhoneCountryCode": "1671",
+            "SsnEquivalent": "National ID",
+            "StateEquivalent": "Municipality",
+            "ZipEquivalent": "Postal Code",
+            "CourtSearchLevel": "P",
+            "DobRequired": "Y",
+            "Timezone": "0",
+            "DobInquiry": "Y",
+            "NidInquiry": "Y",
+            "NidRequired": "Y",
+            "BirthPlaceRequired": "N",
+            "BirthPlaceSendToVerifier": "N",
+            "Obsolete": "Y",
+            "FinanceRegion": "APAC",
+            "SupportRegion": "APAC",
+            "Table": "ORCLCDB.USER1.COUNTRY",
+            "Scn": "635493306841",
+            "OpType": "R",
+            "OpTs": {
+                "$timestamp": "7179728874027089930"
+            },
+            "CurrentTs": {
+                "$timestamp": "1648848853525"
+            },
+            "RowId": "null",
+            "Username": "null"
+        }
+	],
+    "metadata": {
+        "TotalSize": 272,
+        "StartIndex": 1,
+        "BatchSize": 300,
+        "Link": "/country/?startIndex=1&batchSize=300"
+    }
+}
+
+DB Schema
+{
+  "_id": {
+    "$oid": "6411db3634970c237ed01ef1"
+  },
+  "COUNTRY_ID": {
+    "$numberDecimal": "9"
+  },
+  "NAME": "Azerbaijan",
+  "COURT_INTL_CHARGE": {
+    "$numberDecimal": "5.00"
+  },
+  "EDU_INTL_CHARGE": {
+    "$numberDecimal": "5.00"
+  },
+  "EMPL_INTL_CHARGE": {
+    "$numberDecimal": "5.00"
+  },
+  "MVR_INTL_CHARGE": {
+    "$numberDecimal": "0.00"
+  },
+  "REF_INTL_CHARGE": {
+    "$numberDecimal": "5.00"
+  },
+  "CURRENCY": "AZN",
+  "DATE_FORMAT": "1",
+  "PHONE_COUNTRY_CODE": "994",
+  "SSN_EQUIVALENT": "National ID",
+  "STATE_EQUIVALENT": "Rayon",
+  "ZIP_EQUIVALENT": "Postal Code",
+  "COURT_SEARCH_LEVEL": "C",
+  "DOB_REQUIRED": "Y",
+  "TIMEZONE": {
+    "$numberDecimal": "4.0"
+  },
+  "DOB_INQUIRY": "Y",
+  "NID_INQUIRY": "Y",
+  "NID_REQUIRED": "Y",
+  "BIRTH_PLACE_REQUIRED": "N",
+  "BIRTH_PLACE_SEND_TO_VERIFIER": "N",
+  "OBSOLETE": "N",
+  "FINANCE_REGION": "EMEA",
+  "SUPPORT_REGION": "EMEA",
+  "table": "ORCLCDB.USER1.COUNTRY",
+  "scn": "668982860320",
+  "op_type": "R",
+  "op_ts": null,
+  "current_ts": "1655483485857",
+  "row_id": null,
+  "username": null,
+  "location": "US"
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GET {host}/country_region?countryId=1&batchSize=200&startIndex=1
+
+{
+    "data": [
+        {
+            "Id": "10",
+            "CountryId": "1",
+            "OldRegionId": "6",
+            "RegionName": "Colorado",
+            "ParentId": null,
+            "RegionLevel": "1",
+            "Iso31662": "CO",
+            "Obsolete": "N",
+            "Table": "ORCLCDB.USER1.COUNTRY_REGION",
+            "Scn": "635288488731",
+            "OpType": "U",
+            "OpTs": {
+                "$timestamp": "1648638997000"
+            },
+            "CurrentTs": {
+                "$timestamp": "1649196421933"
+            },
+            "RowId": "AABEb0AFEAAISGsAAJ",
+            "Username": "USER1",
+            "HrCode": "colorado,
+            "areaCodes":["", ""]
+        }
+	],
+    "metadata": {
+        "TotalSize": 59,
+        "StartIndex": 1,
+        "BatchSize": 200,
+        "Link": "/country_region?countryId=1&batchSize=200&startIndex=1"
+    }
+}
+
+
+DB Schema:
+{
+  "_id": {
+    "$oid": "6411dc7f34970c237ed0214e"
+  },
+  "ID": 93,
+  "COUNTRY_ID": 42,
+  "OLD_REGION_ID": 954,
+  "REGION_NAME": "Bremen",
+  "PARENT_ID": null,
+  "REGION_LEVEL": 1,
+  "ISO_3166_2": "HB",
+  "OBSOLETE": "N",
+  "HR_CODE": "bremen",
+  "table": "ORCLCDB.USER1.COUNTRY_REGION",
+  "scn": "675882678840",
+  "op_type": "R",
+  "op_ts": null,
+  "current_ts": "1656698849343",
+  "row_id": null,
+  "username": null,
+  "location": "US",
+  "areaCodes": ["",""]
+}
