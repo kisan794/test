@@ -6,8 +6,6 @@ import com.hireright.sourceintelligence.domain.entity.Country;
 import com.hireright.sourceintelligence.domain.entity.CountryRegion;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
-import org.mapstruct.Named;
-import org.mapstruct.NullValueCheckStrategy;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -16,41 +14,40 @@ import java.util.Map;
 
 import static org.mapstruct.ReportingPolicy.IGNORE;
 
-@Mapper(componentModel = "spring", nullValueCheckStrategy = NullValueCheckStrategy.ALWAYS,
-        unmappedTargetPolicy = IGNORE)
+@Mapper(componentModel = "spring", unmappedTargetPolicy = IGNORE)
 public interface CountryMapper {
 
     @Mapping(target = "countryId", expression = "java(convertBigDecimalToString(entity.getCountryId()))")
-    @Mapping(target = "name", source = "name")
+    @Mapping(target = "name", expression = "java(entity.getName())")
     @Mapping(target = "courtIntlCharge", expression = "java(convertBigDecimalToString(entity.getCourtIntlCharge()))")
     @Mapping(target = "eduIntlCharge", expression = "java(convertBigDecimalToString(entity.getEduIntlCharge()))")
     @Mapping(target = "emplIntlCharge", expression = "java(convertBigDecimalToString(entity.getEmplIntlCharge()))")
     @Mapping(target = "mvrIntlCharge", expression = "java(convertBigDecimalToString(entity.getMvrIntlCharge()))")
     @Mapping(target = "refIntlCharge", expression = "java(convertBigDecimalToString(entity.getRefIntlCharge()))")
-    @Mapping(target = "currency", source = "currency")
-    @Mapping(target = "dateFormat", source = "dateFormat")
-    @Mapping(target = "phoneCountryCode", source = "phoneCountryCode")
-    @Mapping(target = "ssnEquivalent", source = "ssnEquivalent")
-    @Mapping(target = "stateEquivalent", source = "stateEquivalent")
-    @Mapping(target = "zipEquivalent", source = "zipEquivalent")
-    @Mapping(target = "courtSearchLevel", source = "courtSearchLevel")
-    @Mapping(target = "dobRequired", source = "dobRequired")
+    @Mapping(target = "currency", expression = "java(entity.getCurrency())")
+    @Mapping(target = "dateFormat", expression = "java(entity.getDateFormat())")
+    @Mapping(target = "phoneCountryCode", expression = "java(entity.getPhoneCountryCode())")
+    @Mapping(target = "ssnEquivalent", expression = "java(entity.getSsnEquivalent())")
+    @Mapping(target = "stateEquivalent", expression = "java(entity.getStateEquivalent())")
+    @Mapping(target = "zipEquivalent", expression = "java(entity.getZipEquivalent())")
+    @Mapping(target = "courtSearchLevel", expression = "java(entity.getCourtSearchLevel())")
+    @Mapping(target = "dobRequired", expression = "java(entity.getDobRequired())")
     @Mapping(target = "timezone", expression = "java(convertBigDecimalToString(entity.getTimezone()))")
-    @Mapping(target = "dobInquiry", source = "dobInquiry")
-    @Mapping(target = "nidInquiry", source = "nidInquiry")
-    @Mapping(target = "nidRequired", source = "nidRequired")
-    @Mapping(target = "birthPlaceRequired", source = "birthPlaceRequired")
-    @Mapping(target = "birthPlaceSendToVerifier", source = "birthPlaceSendToVerifier")
-    @Mapping(target = "obsolete", source = "obsolete")
-    @Mapping(target = "financeRegion", source = "financeRegion")
-    @Mapping(target = "supportRegion", source = "supportRegion")
-    @Mapping(target = "table", source = "table")
-    @Mapping(target = "scn", source = "scn")
-    @Mapping(target = "opType", source = "opType")
+    @Mapping(target = "dobInquiry", expression = "java(entity.getDobInquiry())")
+    @Mapping(target = "nidInquiry", expression = "java(entity.getNidInquiry())")
+    @Mapping(target = "nidRequired", expression = "java(entity.getNidRequired())")
+    @Mapping(target = "birthPlaceRequired", expression = "java(entity.getBirthPlaceRequired())")
+    @Mapping(target = "birthPlaceSendToVerifier", expression = "java(entity.getBirthPlaceSendToVerifier())")
+    @Mapping(target = "obsolete", expression = "java(entity.getObsolete())")
+    @Mapping(target = "financeRegion", expression = "java(entity.getFinanceRegion())")
+    @Mapping(target = "supportRegion", expression = "java(entity.getSupportRegion())")
+    @Mapping(target = "table", expression = "java(entity.getTable())")
+    @Mapping(target = "scn", expression = "java(entity.getScn())")
+    @Mapping(target = "opType", expression = "java(entity.getOpType())")
     @Mapping(target = "opTs", expression = "java(createTimestampObject(entity.getOpTs()))")
     @Mapping(target = "currentTs", expression = "java(createTimestampObject(entity.getCurrentTs()))")
-    @Mapping(target = "rowId", source = "rowId")
-    @Mapping(target = "username", source = "username")
+    @Mapping(target = "rowId", expression = "java(entity.getRowId())")
+    @Mapping(target = "username", expression = "java(entity.getUsername())")
     CountryDTO entityToDTO(Country entity);
 
     List<CountryDTO> entityToDTOList(List<Country> entityList);
@@ -58,20 +55,20 @@ public interface CountryMapper {
     @Mapping(target = "id", expression = "java(convertIntegerToString(entity.getRegionId()))")
     @Mapping(target = "countryId", expression = "java(convertIntegerToString(entity.getCountryId()))")
     @Mapping(target = "oldRegionId", expression = "java(convertIntegerToString(entity.getOldRegionId()))")
-    @Mapping(target = "regionName", source = "regionName")
+    @Mapping(target = "regionName", expression = "java(entity.getRegionName())")
     @Mapping(target = "parentId", expression = "java(convertIntegerToString(entity.getParentId()))")
     @Mapping(target = "regionLevel", expression = "java(convertIntegerToString(entity.getRegionLevel()))")
-    @Mapping(target = "iso31662", source = "iso31662")
-    @Mapping(target = "obsolete", source = "obsolete")
-    @Mapping(target = "table", source = "table")
-    @Mapping(target = "scn", source = "scn")
-    @Mapping(target = "opType", source = "opType")
+    @Mapping(target = "iso31662", expression = "java(entity.getIso31662())")
+    @Mapping(target = "obsolete", expression = "java(entity.getObsolete())")
+    @Mapping(target = "table", expression = "java(entity.getTable())")
+    @Mapping(target = "scn", expression = "java(entity.getScn())")
+    @Mapping(target = "opType", expression = "java(entity.getOpType())")
     @Mapping(target = "opTs", expression = "java(createTimestampObject(entity.getOpTs()))")
     @Mapping(target = "currentTs", expression = "java(createTimestampObject(entity.getCurrentTs()))")
-    @Mapping(target = "rowId", source = "rowId")
-    @Mapping(target = "username", source = "username")
-    @Mapping(target = "hrCode", source = "hrCode")
-    @Mapping(target = "areaCodes", source = "areaCodes")
+    @Mapping(target = "rowId", expression = "java(entity.getRowId())")
+    @Mapping(target = "username", expression = "java(entity.getUsername())")
+    @Mapping(target = "hrCode", expression = "java(entity.getHrCode())")
+    @Mapping(target = "areaCodes", expression = "java(entity.getAreaCodes())")
     CountryRegionDTO entityToRegionDTO(CountryRegion entity);
 
     List<CountryRegionDTO> entityToRegionDTOList(List<CountryRegion> entityList);
