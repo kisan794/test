@@ -1,159 +1,188 @@
-public static GroupOperation operatorRoleGroupOperation() {
-    return Aggregation.group(CREATED_BY)
-            .first(CREATED_BY).as("operatorName")
+package com.hireright.sourceintelligence.domain.mapper;
 
-            // Added - Create action
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(CREATE),
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.PENDING_APPROVAL.getStatus()),
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.SAVE_PENDING_APPROVAL.getStatus())
-                            )
-                    ))
-                    .then(1).otherwise(0)).as("addedNew")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(CREATE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.IN_PROGRESS.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("addedInProgress")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(CREATE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.ONHOLD.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("addedOnHold")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(CREATE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.REJECTED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("addedCancelled")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(CREATE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.APPROVED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("addedCompleted")
+import com.hireright.sourceintelligence.api.dto.rds.CountryDTO;
+import com.hireright.sourceintelligence.api.dto.rds.CountryDTO.CountryDTOBuilder;
+import com.hireright.sourceintelligence.api.dto.rds.CountryRegionDTO;
+import com.hireright.sourceintelligence.api.dto.rds.CountryRegionDTO.CountryRegionDTOBuilder;
+import com.hireright.sourceintelligence.domain.entity.Country;
+import com.hireright.sourceintelligence.domain.entity.CountryRegion;
+import java.util.ArrayList;
+import java.util.List;
+import javax.annotation.processing.Generated;
+import org.springframework.stereotype.Component;
 
-            // Changed - Update action
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Edit"),
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Update")
-                            ),
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.PENDING_APPROVAL.getStatus()),
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.SAVE_PENDING_APPROVAL.getStatus())
-                            )
-                    ))
-                    .then(1).otherwise(0)).as("changedNew")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Edit"),
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Update")
-                            ),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.IN_PROGRESS.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("changedInProgress")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Edit"),
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Update")
-                            ),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.ONHOLD.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("changedOnHold")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Edit"),
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Update")
-                            ),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.REJECTED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("changedCancelled")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Edit"),
-                                    ComparisonOperators.Eq.valueOf(ACTION).equalToValue("Update")
-                            ),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.APPROVED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("changedCompleted")
+@Generated(
+    value = "org.mapstruct.ap.MappingProcessor",
+    date = "2026-02-24T09:24:56+0530",
+    comments = "version: 1.4.2.Final, compiler: IncrementalProcessingEnvironment from gradle-language-java-8.8.jar, environment: Java 21 (Oracle Corporation)"
+)
+@Component
+public class CountryMapperImpl implements CountryMapper {
 
-            // Archived action
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(ReportConstants.AggregateFields.ARCHIVED_ACTION),
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.PENDING_APPROVAL.getStatus()),
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.SAVE_PENDING_APPROVAL.getStatus())
-                            )
-                    ))
-                    .then(1).otherwise(0)).as("archivedNew")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(ReportConstants.AggregateFields.ARCHIVED_ACTION),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.IN_PROGRESS.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("archivedInProgress")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(ReportConstants.AggregateFields.ARCHIVED_ACTION),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.ONHOLD.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("archivedOnHold")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(ReportConstants.AggregateFields.ARCHIVED_ACTION),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.REJECTED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("archivedCancelled")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(ReportConstants.AggregateFields.ARCHIVED_ACTION),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.APPROVED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("archivedCompleted")
+    @Override
+    public CountryDTO entityToDTO(Country entity) {
+        if ( entity == null ) {
+            return null;
+        }
 
-            // Deleted action
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(DELETE),
-                            ComparisonOperators.Or.or(
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.PENDING_APPROVAL.getStatus()),
-                                    ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.SAVE_PENDING_APPROVAL.getStatus())
-                            )
-                    ))
-                    .then(1).otherwise(0)).as("deletedNew")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(DELETE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.IN_PROGRESS.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("deletedInProgress")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(DELETE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.ONHOLD.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("deletedOnHold")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(DELETE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.REJECTED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("deletedCancelled")
-            .sum(ConditionalOperators.when(
-                    BooleanOperators.And.and(
-                            ComparisonOperators.Eq.valueOf(ACTION).equalToValue(DELETE),
-                            ComparisonOperators.Eq.valueOf(APPROVAL_STATUS).equalToValue(ApprovalStatus.APPROVED.getStatus())
-                    ))
-                    .then(1).otherwise(0)).as("deletedCompleted");
+        CountryDTOBuilder countryDTO = CountryDTO.builder();
+
+        if ( entity.getName() != null ) {
+            countryDTO.name( createTimestampObject( entity.getName() ) );
+        }
+        if ( entity.getCurrency() != null ) {
+            countryDTO.currency( createTimestampObject( entity.getCurrency() ) );
+        }
+        if ( entity.getDateFormat() != null ) {
+            countryDTO.dateFormat( createTimestampObject( entity.getDateFormat() ) );
+        }
+        if ( entity.getPhoneCountryCode() != null ) {
+            countryDTO.phoneCountryCode( createTimestampObject( entity.getPhoneCountryCode() ) );
+        }
+        if ( entity.getSsnEquivalent() != null ) {
+            countryDTO.ssnEquivalent( createTimestampObject( entity.getSsnEquivalent() ) );
+        }
+        if ( entity.getStateEquivalent() != null ) {
+            countryDTO.stateEquivalent( createTimestampObject( entity.getStateEquivalent() ) );
+        }
+        if ( entity.getZipEquivalent() != null ) {
+            countryDTO.zipEquivalent( createTimestampObject( entity.getZipEquivalent() ) );
+        }
+        if ( entity.getCourtSearchLevel() != null ) {
+            countryDTO.courtSearchLevel( createTimestampObject( entity.getCourtSearchLevel() ) );
+        }
+        if ( entity.getDobRequired() != null ) {
+            countryDTO.dobRequired( createTimestampObject( entity.getDobRequired() ) );
+        }
+        if ( entity.getDobInquiry() != null ) {
+            countryDTO.dobInquiry( createTimestampObject( entity.getDobInquiry() ) );
+        }
+        if ( entity.getNidInquiry() != null ) {
+            countryDTO.nidInquiry( createTimestampObject( entity.getNidInquiry() ) );
+        }
+        if ( entity.getNidRequired() != null ) {
+            countryDTO.nidRequired( createTimestampObject( entity.getNidRequired() ) );
+        }
+        if ( entity.getBirthPlaceRequired() != null ) {
+            countryDTO.birthPlaceRequired( createTimestampObject( entity.getBirthPlaceRequired() ) );
+        }
+        if ( entity.getBirthPlaceSendToVerifier() != null ) {
+            countryDTO.birthPlaceSendToVerifier( createTimestampObject( entity.getBirthPlaceSendToVerifier() ) );
+        }
+        if ( entity.getObsolete() != null ) {
+            countryDTO.obsolete( createTimestampObject( entity.getObsolete() ) );
+        }
+        if ( entity.getFinanceRegion() != null ) {
+            countryDTO.financeRegion( createTimestampObject( entity.getFinanceRegion() ) );
+        }
+        if ( entity.getSupportRegion() != null ) {
+            countryDTO.supportRegion( createTimestampObject( entity.getSupportRegion() ) );
+        }
+        if ( entity.getTable() != null ) {
+            countryDTO.table( createTimestampObject( entity.getTable() ) );
+        }
+        if ( entity.getScn() != null ) {
+            countryDTO.scn( createTimestampObject( entity.getScn() ) );
+        }
+        if ( entity.getOpType() != null ) {
+            countryDTO.opType( createTimestampObject( entity.getOpType() ) );
+        }
+        if ( entity.getRowId() != null ) {
+            countryDTO.rowId( createTimestampObject( entity.getRowId() ) );
+        }
+        if ( entity.getUsername() != null ) {
+            countryDTO.username( createTimestampObject( entity.getUsername() ) );
+        }
+
+        countryDTO.countryId( convertBigDecimalToString(entity.getCountryId()) );
+        countryDTO.courtIntlCharge( convertBigDecimalToString(entity.getCourtIntlCharge()) );
+        countryDTO.eduIntlCharge( convertBigDecimalToString(entity.getEduIntlCharge()) );
+        countryDTO.emplIntlCharge( convertBigDecimalToString(entity.getEmplIntlCharge()) );
+        countryDTO.mvrIntlCharge( convertBigDecimalToString(entity.getMvrIntlCharge()) );
+        countryDTO.refIntlCharge( convertBigDecimalToString(entity.getRefIntlCharge()) );
+        countryDTO.timezone( convertBigDecimalToString(entity.getTimezone()) );
+        countryDTO.opTs( createTimestampObject(entity.getOpTs()) );
+        countryDTO.currentTs( createTimestampObject(entity.getCurrentTs()) );
+
+        return countryDTO.build();
+    }
+
+    @Override
+    public List<CountryDTO> entityToDTOList(List<Country> entityList) {
+        if ( entityList == null ) {
+            return null;
+        }
+
+        List<CountryDTO> list = new ArrayList<CountryDTO>( entityList.size() );
+        for ( Country country : entityList ) {
+            list.add( entityToDTO( country ) );
+        }
+
+        return list;
+    }
+
+    @Override
+    public CountryRegionDTO entityToRegionDTO(CountryRegion entity) {
+        if ( entity == null ) {
+            return null;
+        }
+
+        CountryRegionDTOBuilder countryRegionDTO = CountryRegionDTO.builder();
+
+        if ( entity.getRegionName() != null ) {
+            countryRegionDTO.regionName( createTimestampObject( entity.getRegionName() ) );
+        }
+        if ( entity.getIso31662() != null ) {
+            countryRegionDTO.iso31662( createTimestampObject( entity.getIso31662() ) );
+        }
+        if ( entity.getObsolete() != null ) {
+            countryRegionDTO.obsolete( createTimestampObject( entity.getObsolete() ) );
+        }
+        if ( entity.getTable() != null ) {
+            countryRegionDTO.table( createTimestampObject( entity.getTable() ) );
+        }
+        if ( entity.getScn() != null ) {
+            countryRegionDTO.scn( createTimestampObject( entity.getScn() ) );
+        }
+        if ( entity.getOpType() != null ) {
+            countryRegionDTO.opType( createTimestampObject( entity.getOpType() ) );
+        }
+        if ( entity.getRowId() != null ) {
+            countryRegionDTO.rowId( createTimestampObject( entity.getRowId() ) );
+        }
+        if ( entity.getUsername() != null ) {
+            countryRegionDTO.username( createTimestampObject( entity.getUsername() ) );
+        }
+        if ( entity.getHrCode() != null ) {
+            countryRegionDTO.hrCode( createTimestampObject( entity.getHrCode() ) );
+        }
+        List<String> list = entity.getAreaCodes();
+        if ( list != null ) {
+            countryRegionDTO.areaCodes( new ArrayList<String>( list ) );
+        }
+
+        countryRegionDTO.id( convertIntegerToString(entity.getRegionId()) );
+        countryRegionDTO.countryId( convertIntegerToString(entity.getCountryId()) );
+        countryRegionDTO.oldRegionId( convertIntegerToString(entity.getOldRegionId()) );
+        countryRegionDTO.parentId( convertIntegerToString(entity.getParentId()) );
+        countryRegionDTO.regionLevel( convertIntegerToString(entity.getRegionLevel()) );
+        countryRegionDTO.opTs( createTimestampObject(entity.getOpTs()) );
+        countryRegionDTO.currentTs( createTimestampObject(entity.getCurrentTs()) );
+
+        return countryRegionDTO.build();
+    }
+
+    @Override
+    public List<CountryRegionDTO> entityToRegionDTOList(List<CountryRegion> entityList) {
+        if ( entityList == null ) {
+            return null;
+        }
+
+        List<CountryRegionDTO> list = new ArrayList<CountryRegionDTO>( entityList.size() );
+        for ( CountryRegion countryRegion : entityList ) {
+            list.add( entityToRegionDTO( countryRegion ) );
+        }
+
+        return list;
+    }
 }
