@@ -1,133 +1,410 @@
 {
-"italy":{
-"Rome":"Roma",
-"Florence":"Firenze",
-"Venice":"Venezia",
-"Milan":"Milano",
-"Padua":"Padova",
-"Genoa":"Genova",
-"Mantua":"Mantova",
-"Naples":"Napoli",
-"Turin":"Torino",
-"Syracuse":"Siracusa",
-"Piedmont":"Piemonte",
-"Lombardy":"Lombardia",
-"Sardinia":"Sardegna",
-"Tuscany":"Toscana",
-"Sicily":"Sicilia",
-"Apulia":"Puglia"
-},
-"germany":{
-"munchen":"munich",
-"köln":"cologne",
-"Nürnberg":"Nuremberg",
-"Hannover":"Hanover",
-"Frankfurt":"Frankfort",
-"Düsseldorf":"Dusseldorf",
-"Regensburg":"Ratisbon",
-},
-"france":{
-"marseilles":"marseille",
-"lyons":"lyon"
+    "Marshall Islands": {
+        "Majuro": "Mājro",
+        "Kwajalein": "Kuwajleen",
+        "Ebeye": "Ebeje",
+        "Jaluit": "Jālwōj",
+        "Wotje": "Wōjje",
+        "Mili": "Mili Atoll",
+        "Bikini": "Pikinni",
+        "Enewetak": "Enewetok"
+    },
+    "Australia": {
+        "Sydney": "Warrane",
+        "Melbourne": "Naarm",
+        "Brisbane": "Meanjin",
+        "Perth": "Boorloo",
+        "Adelaide": "Tarntanya",
+        "Canberra": "Canberry",
+        "Hobart": "Hobart Town",
+        "Darwin": "Palmerston",
+        "Geelong": "Djilang",
+        "Alice Springs": "Mparntwe",
+        "Fraser Island": "K'gari",
+        "Ayers Rock": "Uluru",
+        "Mount Olga": "Kata Tjuta"
+    },
+    "Mayotte": {
+        "Mamoudzou": "Mamoudzu",
+        "Dzaoudzi": "Dzawudzi",
+        "Koungou": "Kunguu",
+        "Bandraboua": "Bandrabwa",
+        "Acoua": "Akua"
+    },
+    "Cambodia": {
+        "Phnom Penh": "Phnum Pénh",
+        "Siem Reap": "Siĕmréab",
+        "Battambang": "Batdambang",
+        "Sihanoukville": "Krong Preah Sihanouk",
+        "Kampong Cham": "Kampong Cam",
+        "Kampong Thom": "Kampong Thum",
+        "Pursat": "Pouthisat",
+        "Kep": "Kaeb",
+        "Takeo": "Ta Kev",
+        "Kratie": "Kracheh",
+        "Koh Kong": "Kaoh Kong",
+        "Stung Treng": "Stueng Traeng"
+    },
+    "Cook Islands": {
+        "Avarua": "Avarua Town"
+    },
+    "Mongolia": {
+        "Ulaanbaatar": "Ulan Bator",
+        "Choibalsan": "Bayan Tümen",
+        "Altai": "Altay",
+        "Ulaangom": "Ulangom",
+        "Sainshand": "Sайншанд"
+    },
+    "Timor-Leste": {
+        "Dili": "Díli",
+        "Baucau": "Vila Salazar",
+        "Oecusse": "Oecussi",
+        "Pante Macassar": "Pante Makasar",
+        "Liquiçá": "Likuça"
+    },
+    "New Zealand": {
+        "Auckland": "Tāmaki Makaurau",
+        "Wellington": "Te Whanganui-a-Tara",
+        "Christchurch": "Ōtautahi",
+        "Dunedin": "Ōtepoti",
+        "Hamilton": "Kirikiriroa",
+        "New Plymouth": "Ngāmotu",
+        "Napier": "Ahuriri",
+        "Gisborne": "Tūranga"
+    },
+    "China": {
+        "Beijing": "Peking",
+        "Guangzhou": "Canton",
+        "Chongqing": "Chungking",
+        "Nanjing": "Nanking",
+        "Tianjin": "Tientsin",
+        "Qingdao": "Tsingtao",
+        "Xiamen": "Amoy",
+        "Shenyang": "Mukden",
+        "Harbin": "Haerbin",
+        "Ürümqi": "Urumchi"
+    },
+    "Philippines": {
+        "Manila": "Maynila",
+        "Cebu": "Sugbo",
+        "Davao": "Dabaw",
+        "Iloilo": "Iloílo",
+        "Zamboanga": "Samboangan",
+        "Cotabato": "Kutawato"
+    },
+    "British Indian Ocean Territory": {
+        "Diego Garcia": "Diégo Garcia"
+    },
+    "Tokelau": {
+        "Fakaofo": "Fakaofu"
+    },
+    "French Southern Territories": {},
+    "Guam": {
+        "Hagatna": "Agana",
+        "Mangilao": "Mangilao Village",
+        "Dededo": "Dedidu",
+        "Barrigada": "Barigada",
+        "Tamuning": "Tamuning-Tumon-Harmon"
+    },
+    "Kiribati": {
+        "Tarawa": "Taraua",
+        "Kiritimati": "Christmas Island"
+    },
+    "Tuvalu": {
+        "Funafuti": "Fongafale",
+        "Tuvalu": "Ellice Islands"
+    },
+    "Niue": {},
+    "French Polynesia": {
+        "Papeete": "Papeʻete",
+        "Bora Bora": "Porapora",
+        "Moorea": "Moʻorea",
+        "Raiatea": "Raʻiātea"
+    },
+    "Thailand": {
+        "Bangkok": "Krung Thep Maha Nakhon",
+        "Ayutthaya": "Phra Nakhon Si Ayutthaya",
+        "Nakhon Si Thammarat": "Ligor",
+        "Songkhla": "Singgora",
+        "Pattani": "Patani"
+    },
+    "Antarctica": {},
+    "Singapore": {
+        "Singapore": "Singapura",
+        "Jurong": "Churong",
+        "Pulau Ujong": "Singapore Island"
+    },
+    "Vanuatu": {
+        "Port Vila": "Vila",
+        "Luganville": "Santo",
+        "Espiritu Santo": "Santo",
+        "Tanna": "Tana"
+    },
+    "Nauru": {
+        "Nauru": "Pleasant Island"
+    },
+    "Tonga": {
+        "Tongatapu": "Tongataboo"
+    },
+    "Laos": {
+        "Vientiane": "Viangchan",
+        "Luang Prabang": "Louangphrabang",
+        "Savannakhet": "Savanakhet",
+        "Champasak": "Champassak",
+        "Xieng Khouang": "Xiangkhouang"
+    },
+    "Norfolk Island": {},
+    "Palau": {
+        "Ngerulmud": "Melekeok",
+        "Koror": "Oreor",
+        "Peleliu": "Beliliou",
+        "Angaur": "Ngeaur",
+        "Kayangel": "Kayangel Atoll"
+    },
+    "American Samoa": {
+        "Pago Pago": "Pango Pango",
+        "Tutuila": "Tootuila",
+        "Aunu'u": "Aunuu",
+        "Ta'u": "Tau",
+        "Ofu": "Ofu Island"
+    },
+    "Korea, South": {
+        "Seoul": "Sŏul",
+        "Busan": "Pusan",
+        "Daegu": "Taegu",
+        "Incheon": "Inch'on",
+        "Daejeon": "Taejon",
+        "Gwangju": "Kwangju",
+        "Jeju": "Cheju",
+        "Ulsan": "Ulsan-si",
+        "Suwon": "Suwon-si"
+    },
+    "Solomon Islands": {
+        "Honiara": "Honiara Town",
+        "Auki": "Alki",
+        "Gizo": "Ghizo",
+        "Tulagi": "Tulaghi",
+        "Choiseul": "Lauru"
+    },
+    "Brunei": {
+        "Bandar Seri Begawan": "Brunei Town",
+        "Muara": "Pekan Muara",
+        "Seria": "Kuala Belait Oilfield",
+        "Kuala Belait": "Belait",
+        "Tutong": "Pekan Tutong"
+    },
+    "Turkmenistan": {
+        "Ashgabat": "Ashkhabad",
+        "Türkmenabat": "Chardzhou",
+        "Turkmenbashi": "Krasnovodsk",
+        "Dashoguz": "Tashauz",
+        "Mary": "Merv"
+    },
+    "Wallis and Futuna": {
+        "Mata-Utu": "Mata Utu",
+        "Uvea": "Wallis Island",
+        "Sigave": "Sigavé"
+    },
+    "Indonesia": {
+        "Jakarta": "Batavia",
+        "Yogyakarta": "Jogjakarta",
+        "Makassar": "Ujung Pandang",
+        "Semarang": "Samarang",
+        "Surabaya": "Soerabaja",
+        "Bandung": "Bandoeng",
+        "Bogor": "Buitenzorg",
+        "Malang": "Malangh"
+    },
+    "Macau SAR, PRC": {
+        "Macau": "Macao"
+    },
+    "Pakistan": {
+        "Lahore": "Lahor",
+        "Peshawar": "Peshawur",
+        "Quetta": "Shalkot",
+        "Multan": "Mooltan",
+        "Hyderabad": "Haidarabad",
+        "Sialkot": "Sealkote",
+        "Faisalabad": "Lyallpur",
+        "Islamabad": "Islamabad Capital Territory"
+    },
+    "Maldives": {
+        "Malé": "Male",
+        "Hulhumalé": "Hulhumale",
+        "Fuvahmulah": "Fua Mulaku",
+        "Addu City": "Seenu Atoll",
+        "Kulhudhuffushi": "Kulhudhufushi",
+        "Thinadhoo": "Tinadhoo"
+    },
+    "Reunion": {
+        "Le Tampon": "Tampon"
+    },
+    "Papua New Guinea": {
+        "Port Moresby": "Moresby",
+        "Mount Hagen": "Mt Hagen",
+        "Madang": "Friedrich-Wilhelmshafen",
+        "Kokopo": "Rabaul East",
+        "Arawa": "Arawa Town",
+        "Kimbe": "Kimbe Bay"
+    },
+    "Vietnam": {
+        "Ho Chi Minh City": "Saigon",
+        "Hà Nội": "Hanoi",
+        "Hải Phòng": "Haiphong",
+        "Đà Nẵng": "Danang",
+        "Cần Thơ": "Can Tho",
+        "Nha Trang": "Nhatrang",
+        "Huế": "Hue",
+        "Phan Thiết": "Phanthiet",
+        "Biên Hòa": "Bien Hoa",
+        "Vũng Tàu": "Vung Tau"
+    },
+    "Christmas Island": {
+        "Flying Fish Cove": "The Settlement",
+        "Ethel Beach": "Ethel Bay",
+        "South Point": "South Cape"
+    },
+    "Burma": {
+        "Yangon": "Rangoon",
+        "Mandalay": "Mandalay City",
+        "Naypyidaw": "Nay Pyi Taw",
+        "Bago": "Pegu",
+        "Pathein": "Bassein",
+        "Taunggyi": "Taungyi",
+        "Mawlamyine": "Moulmein",
+        "Myitkyina": "Myitkyina Town"
+    },
+    "Pitcairn Islands": {
+        "Adamstown": "Pitcairn Settlement"
+    },
+    "Korea, North": {
+        "Pyongyang": "P'yŏngyang",
+        "Hamhung": "Hamheung",
+        "Chongjin": "Chongjin-si",
+        "Nampo": "Namp’o",
+        "Wonsan": "Mansudae",
+        "Kaesong": "Kaesŏng"
+    },
+    "Bhutan": {
+        "Thimphu": "Timphu",
+        "Paro": "Para",
+        "Phuntsholing": "Phuentsholing",
+        "Punakha": "Pungakha",
+        "Wangdue Phodrang": "Wangdi Phodrang",
+        "Trongsa": "Tongsa",
+        "Bumthang": "Bumthhang"
+    },
+    "Micronesia, Federated States of": {
+        "Palikir": "Pohnpei Village",
+        "Kolonia": "Kolonya",
+        "Weno": "Moen",
+        "Lukop": "Lukop Village",
+        "Sapwuahfik": "Ngatik"
+    },
+    "Timor Leste": {
+        "Dili": "Díli",
+        "Baucau": "Vila Salazar",
+        "Oecusse": "Oecussi",
+        "Pante Macassar": "Pante Makasar",
+        "Liquiçá": "Likuça"
+    },
+    "Cocos (Keeling) Islands": {},
+    "Nepal": {
+        "Kathmandu": "Katmandu",
+        "Biratnagar": "Biratnuggur",
+        "Bhaktapur": "Bhadgaon",
+        "Lalitpur": "Patan",
+        "Janakpur": "Janakpurdham"
+    },
+    "Western Samoa": {
+        "Apia": "Apii",
+        "Savai'i": "Savaii"
+    },
+    "Samoa": {
+        "Apia": "Apii",
+        "Savai'i": "Savaii"
+    },
+    "Heard Island and McDonald Islands": {
+        "Mawson Peak": "Big Ben"
+    },
+    "New Caledonia": {
+        "Nouméa": "Noumea",
+        "Koné": "Kone",
+        "Lifou": "Île Lifou",
+        "Île des Pins": "Isle of Pines",
+        "Bourail": "Bouraïl"
+    },
+    "Uzbekistan": {
+        "Tashkent": "Toshkent",
+        "Samarkand": "Samarqand",
+        "Bukhara": "Buxoro",
+        "Khiva": "Xiva",
+        "Nukus": "No’kis",
+        "Andijan": "Andijon",
+        "Fergana": "Farg‘ona"
+    },
+    "Tajikistan": {
+        "Dushanbe": "Dyushambe",
+        "Khujand": "Leninabad",
+        "Kulob": "Kulyab",
+        "Bokhtar": "Qurghonteppa",
+        "Istaravshan": "Ura-Tyube",
+        "Khorugh": "Khorog"
+    },
+    "Taiwan, China": {
+        "Taipei": "Taihoku",
+        "Kaohsiung": "Takao",
+        "Taichung": "Taichū",
+        "Hsinchu": "Shinchiku",
+        "Keelung": "Kelung",
+        "Yilan": "Giran",
+        "Chiayi": "Kagi"
+    },
+    "Hong Kong SAR, PRC": {
+        "Hong Kong": "Heung Kong",
+        "Victoria Harbour": "Victoria Habor",
+        "Kowloon": "Gowloon",
+        "Lantau Island": "Tai Yu Shan",
+        "New Territories": "San Tin",
+        "Cheung Chau": "Cheung Chaw"
+    },
+    "Northern Mariana Islands": {
+        "Saipan": "Saipahn",
+        "Tinian": "Tinihan",
+        "Rota": "Luta",
+        "Garapan": "Kampan",
+        "San Roque": "San Roqui"
+    },
+    "Malaysia": {
+        "Kuala Lumpur": "Kwala Lumpur",
+        "George Town": "Tanjong Penaga",
+        "Malacca": "Melaka",
+        "Johor Bahru": "Johore Bahru",
+        "Kota Kinabalu": "Jesselton",
+        "Kuching": "Antanan"
+    },
+    "Fiji": {
+        "Suva": "Sova",
+        "Lautoka": "Lautoca",
+        "Nadi": "Nandi",
+        "Levuka": "Levuca",
+        "Savusavu": "Sauvasa",
+        "Ba": "Baa"
+    },
+    "Myanmar": {
+        "Yangon": "Rangoon",
+        "Naypyidaw": "Nay Pyi Taw",
+        "Bago": "Pegu",
+        "Pathein": "Bassein",
+        "Mawlamyine": "Moulmein",
+        "Sagaing": "Sagain"
+    },
+    "Japan": {
+        "Tokyo": "Edo",
+        "Osaka": "Ōsaka",
+        "Kyoto": "Kyouto",
+        "Kobe": "Kōbe",
+        "Nagoya": "Nagoia",
+        "Hiroshima": "Hiroshoma"
+    }
 }
-"poland": {},
-"spain": {},
-"portugal": {},
-"Spain":{},
-"Portugal":{}
-"Czech Republic":{},
-"Austria":{},
-"Hungary":{},
-"China":{}
-"Japan":{},
-"Greece":{},
-"India":{},
-"Philippines":{}
-"Turky":{}
-
-
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-   "Marshall Islands",
-    "Australia",
-    "Mayotte",
-    "Cambodia",
-    "Cook Islands",
-    "Mongolia",
-    "Timor-Leste",
-    "New Zealand",
-    "China",
-    "Philippines",
-    "British Indian Ocean Territory",
-    "Tokelau",
-    "French Southern Territories",
-    "Guam",
-    "Kiribati",
-    "Tuvalu",
-    "Niue",
-    "French Polynesia",
-    "Thailand",
-    "Antarctica",
-    "Singapore",
-    "Vanuatu",
-    "Nauru",
-    "Tonga",
-    "Laos",
-    "Norfolk Island",
-    "Palau",
-    "American Samoa",
-    "Korea, South",
-    "Solomon Islands",
-    "Brunei",
-    "Turkmenistan",
-    "Wallis and Futuna",
-    "Indonesia",
-    "Macau SAR, PRC",
-    "Pakistan",
-    "Maldives",
-    "Reunion",
-    "Papua New Guinea",
-    "Vietnam",
-    "Christmas Island",
-    "Burma",
-    "Pitcairn Islands",
-    "Korea, North",
-    "Bhutan",
-    "Micronesia, Federated States of",
-    "Timor Leste",
-    "Cocos (Keeling) Islands",
-    "Nepal",
-    "Western Samoa",
-    "Samoa",
-    "Heard Island and McDonald Islands",
-    "New Caledonia",
-    "Uzbekistan",
-    "Tajikistan",
-    "Taiwan, China",
-    "Hong Kong SAR, PRC",
-    "Northern Mariana Islands",
-    "Malaysia",
-    "Fiji",
-    "Myanmar",
-    "Japan"
