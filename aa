@@ -1,259 +1,569 @@
 package com.hireright.sourceintelligence.reports.service.impl;
 
-import com.hireright.sourceintelligence.domain.enums.ApprovalStatus;
 import com.hireright.sourceintelligence.domain.repository.CustomSourceRepository;
 import com.hireright.sourceintelligence.reports.domain.entity.Reports;
 import com.hireright.sourceintelligence.reports.domain.entity.ReportSearchResult;
-import com.hireright.sourceintelligence.reports.domain.entity.ResponseReport;
-import com.hireright.sourceintelligence.reports.domain.entity.TATReport;
 import com.hireright.sourceintelligence.reports.domain.mapper.ReportMapper;
-import com.hireright.sourceintelligence.reports.dto.GenericResponseDTO;
-import com.hireright.sourceintelligence.reports.dto.MetaDTO;
-import com.hireright.sourceintelligence.reports.dto.ReportResponseDTO;
-import com.hireright.sourceintelligence.reports.dto.ReportsRequestDTO;
-import com.hireright.sourceintelligence.reports.service.ApprovalTATService;
+import com.hireright.sourceintelligence.reports.dto.*;
+import com.hireright.sourceintelligence.reports.service.SourceInformationService;
 import com.hireright.sourceintelligence.service.impl.QueryBuilder;
 import com.hireright.sourceintelligence.service.impl.helperservices.CountryRegionMappingUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.mongodb.core.aggregation.*;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.AUTO_APPOVED;
 import static com.hireright.sourceintelligence.constants.ApplicationConstants.REPORTS_COLLECTION;
-import static com.hireright.sourceintelligence.reports.service.impl.ReportConstants.AggregateFields.APPROVED;
-import static com.hireright.sourceintelligence.reports.service.impl.ReportConstants.AggregateFields.TAT_REPORT_LIST;
-import static com.hireright.sourceintelligence.reports.service.impl.ReportConstants.ReportTypes.APPROVAL_TAT;
-import static com.hireright.sourceintelligence.reports.service.impl.ReportUtils.getMetaDataByReport;
+import static com.hireright.sourceintelligence.reports.service.impl.ReportConstants.ReportTypes.*;
+import static com.hireright.sourceintelligence.reports.service.impl.ReportsQueryBuilder.limitOperation;
+import static com.hireright.sourceintelligence.reports.service.impl.ReportsQueryBuilder.skipOperation;
 
 @Slf4j
 @RequiredArgsConstructor
 @Service
-public class ApprovalTATServiceImpl implements ApprovalTATService {
+public class SourceInformationServiceImpl implements SourceInformationService {
+
+    private static final String TOTAL_FIELD = "total";
+    private static final String COUNT_FIELD = "count";
 
     private final ReportMapper reportMapper;
     private final CustomSourceRepository<Reports> customSourceRepository;
     private final CountryRegionMappingUtils countryRegionMappingUtils;
 
     @Override
-    public ReportResponseDTO getApprovalAverageTAT(ReportsRequestDTO reportsRequestDTO) {
+    public ReportResponseDTO getSourceInformation(ReportsRequestDTO reportsRequestDTO) {
+        String operatorRole = reportsRequestDTO.getOperatorRole();
+        if (!StringUtils.isEmpty(operatorRole)) {
+            if ("Originator".equalsIgnoreCase(operatorRole)) {
+                return getOperatorReport(reportsRequestDTO);
+            } else if ("Reviewer".equalsIgnoreCase(operatorRole)) {
+                return getReviewerReport(reportsRequestDTO);
+            } else if ("Originator & Reviewer".equalsIgnoreCase(operatorRole)) {
+                return getOperatorAndReviewerReport(reportsRequestDTO);
+            } else {
+                throw new IllegalArgumentException("Invalid operator role: " + operatorRole);
+            }
+        } else {
+            throw new IllegalArgumentException("Operator role cannot be null or empty");
+        }
+    }
+
+    private ReportResponseDTO getOperatorReport(ReportsRequestDTO reportsRequestDTO) {
+        List<String> countryList = getCountryListFromRegion(reportsRequestDTO);
+        Criteria criteria = ReportsQueryBuilder.queryBuilderForSourceInformationAndTat(reportsRequestDTO, countryList);
+        MatchOperation matchOperation = ReportsQueryBuilder.matchOperation(criteria);
+        GroupOperation groupOperation = ReportsQueryBuilder.operatorRoleGroupOperation();
+        SortOperation sortOperation = ReportsQueryBuilder.buildSortOperationForOperator(reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
+        FacetOperation facetOperation = Aggregation.facet()
+                .and(Aggregation.count().as(COUNT_FIELD)).as(TOTAL_FIELD)
+                .and(sortOperation, skipOperation(reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize()),
+                        limitOperation(reportsRequestDTO.getBatchSize())).as("data");
+        ProjectionOperation finalProject = ReportsQueryBuilder.operatorRoleFinalProjection();
+        AggregationOptions aggregationOptionsToAllowDiskUse = AggregationOptions.builder()
+                .allowDiskUse(true).build();
+        Aggregation aggregation = Aggregation.newAggregation(matchOperation, groupOperation, facetOperation, finalProject)
+                .withOptions(aggregationOptionsToAllowDiskUse);
+
+        var response = customSourceRepository.reportCustomAggregate(aggregation, REPORTS_COLLECTION, ReportSearchResult.class);
+        log.info("Operator Report Response: {}", response);
+
+        List<OperatorReportDTO> operatorReports = new ArrayList<>();
+        if (response.getOperatorReportFlatList() != null && !response.getOperatorReportFlatList().isEmpty()) {
+            operatorReports = mapFlatToNestedOperatorReport(response.getOperatorReportFlatList());
+        }
+
+        if (requiresManualSorting(reportsRequestDTO.getSort())) {
+            sortOperatorReportsByNestedTotal(operatorReports, reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
+        }
+
+        List<GenericResponseDTO> genericResponse = convertOperatorToGenericResponse(operatorReports);
+
+        List<NestedMetaDTO> metaList = SourceInformationMetaUtils.getOperatorMetadata();
+
+        return ReportResponseDTO.builder()
+                .reportType(SOURCE_INFORMATION)
+                .nestedMeta(metaList)
+                .response(genericResponse)
+                .currentPage(reportsRequestDTO.getStartPage())
+                .totalItems(response.getTotal())
+                .totalPages(QueryBuilder.getTotalPages(response.getTotal(), reportsRequestDTO.getBatchSize()))
+                .build();
+    }
+
+    private List<String> getCountryListFromRegion(ReportsRequestDTO reportsRequestDTO) {
         List<String> countryList = null;
-        if(reportsRequestDTO.getRegion() != null && !reportsRequestDTO.getRegion().isEmpty()){
+        if(!StringUtils.isEmpty(reportsRequestDTO.getRegion())){
             countryList = countryRegionMappingUtils.findDistinctCountriesByRegion(reportsRequestDTO.getRegion());
         }
-        Criteria criteria = ReportsQueryBuilder.queryBuilderForApprovalTat(reportsRequestDTO, countryList);
-        MatchOperation matchOperation = ReportsQueryBuilder.matchOperation(criteria);
+        return countryList;
+    }
 
-        Criteria criteria2 = ReportsQueryBuilder.queryBuilderForTatFilter();
-        MatchOperation matchOperation2 = ReportsQueryBuilder.matchOperation(criteria2);
+    private List<OperatorReportDTO> mapFlatToNestedOperatorReport(List<OperatorReportFlatDTO> flatList) {
+        List<OperatorReportDTO> nestedList = new ArrayList<>();
 
-        ProjectionOperation projectionOperation = ReportsQueryBuilder.excludeProjection();
-        GroupOperation groupOperation = ReportsQueryBuilder.approvalTATGroupOperation();
-        SortOperation sortOperation = ReportsQueryBuilder.buildSortOperationForTAT(reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
-        FacetOperation facetOperation = ReportsQueryBuilder.facetOperation(reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize());
-        if(!reportsRequestDTO.getSort().isEmpty()){
-            facetOperation = ReportsQueryBuilder.facetOperationWithSorting(sortOperation, reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize());
+        for (OperatorReportFlatDTO flat : flatList) {
+            ActionStatusCountDTO added = ActionStatusCountDTO.builder()
+                    .newCount(flat.getAddedNew())
+                    .inProgress(flat.getAddedInProgress())
+                    .onHold(flat.getAddedOnHold())
+                    .cancelled(flat.getAddedCancelled())
+                    .completed(flat.getAddedCompleted())
+                    .build();
+
+            ActionStatusCountDTO changed = ActionStatusCountDTO.builder()
+                    .newCount(flat.getChangedNew())
+                    .inProgress(flat.getChangedInProgress())
+                    .onHold(flat.getChangedOnHold())
+                    .cancelled(flat.getChangedCancelled())
+                    .completed(flat.getChangedCompleted())
+                    .build();
+
+            ActionStatusCountDTO archived = ActionStatusCountDTO.builder()
+                    .newCount(flat.getArchivedNew())
+                    .inProgress(flat.getArchivedInProgress())
+                    .onHold(flat.getArchivedOnHold())
+                    .cancelled(flat.getArchivedCancelled())
+                    .completed(flat.getArchivedCompleted())
+                    .build();
+
+            ActionStatusCountDTO deleted = ActionStatusCountDTO.builder()
+                    .newCount(flat.getDeletedNew())
+                    .inProgress(flat.getDeletedInProgress())
+                    .onHold(flat.getDeletedOnHold())
+                    .cancelled(flat.getDeletedCancelled())
+                    .completed(flat.getDeletedCompleted())
+                    .build();
+
+            OperatorReportDTO nested = OperatorReportDTO.builder()
+                    .operatorName(flat.getOperatorName())
+                    .added(added)
+                    .changed(changed)
+                    .archived(archived)
+                    .deleted(deleted)
+                    .build();
+
+            nestedList.add(nested);
         }
-        ProjectionOperation finalProject = ReportsQueryBuilder.finalProjectionWithTotalCountInPipeline(TAT_REPORT_LIST);
+
+        return nestedList;
+    }
+
+    private ReportResponseDTO getReviewerReport(ReportsRequestDTO reportsRequestDTO) {
+        List<String> countryList = getCountryListFromRegion(reportsRequestDTO);
+        Criteria criteria = ReportsQueryBuilder.queryBuilderForReviewerRole(reportsRequestDTO, countryList);
+        MatchOperation matchOperation = ReportsQueryBuilder.matchOperation(criteria);
+        GroupOperation groupOperation = ReportsQueryBuilder.reviewerRoleGroupOperation();
+        SortOperation sortOperation = ReportsQueryBuilder.buildSortOperationForReviewer(reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
+        FacetOperation facetOperation = Aggregation.facet()
+                .and(Aggregation.count().as(COUNT_FIELD)).as(TOTAL_FIELD)
+                .and(sortOperation, skipOperation(reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize()),
+                        limitOperation(reportsRequestDTO.getBatchSize())).as("data");
+        ProjectionOperation finalProject = ReportsQueryBuilder.reviewerRoleFinalProjection();
 
         AggregationOptions aggregationOptionsToAllowDiskUse = AggregationOptions.builder()
                 .allowDiskUse(true).build();
-        Aggregation aggregation;
-        aggregation = Aggregation.newAggregation(matchOperation,projectionOperation, groupOperation, matchOperation2, facetOperation, finalProject).withOptions(aggregationOptionsToAllowDiskUse);
-        log.info("Aggregation:{}",aggregation);
+        Aggregation aggregation = Aggregation.newAggregation(matchOperation, groupOperation, facetOperation, finalProject)
+                .withOptions(aggregationOptionsToAllowDiskUse);
 
-        var response = customSourceRepository.reportCustomAggregate(aggregation,REPORTS_COLLECTION, ReportSearchResult.class);
-        log.info("Response: {}", response);
-        List<GenericResponseDTO> responseDTOS = new ArrayList<>();
-        var res = timeCalculations(response.getTatResponseReportList());
-        if(!res.isEmpty()){
-            responseDTOS = reportMapper.toDTOList(res);
-            if(reportsRequestDTO.getSort() != null && !reportsRequestDTO.getSort().isEmpty() && (reportsRequestDTO.getSort().equalsIgnoreCase("Approval_Status")|| reportsRequestDTO.getSort().equalsIgnoreCase("Action"))){
-               sorting(responseDTOS, reportsRequestDTO);
-            }
-        }
-        List<MetaDTO> metaDTOList = getMetaDataByReport(APPROVAL_TAT);
-        return pagination(responseDTOS, metaDTOList, reportsRequestDTO);
+        var response = customSourceRepository.reportCustomAggregate(aggregation, REPORTS_COLLECTION, ReportSearchResult.class);
+        log.info("Reviewer Report Response: {}", response);
 
-    }
-    private ReportResponseDTO pagination(List<GenericResponseDTO> responseDTOS, List<MetaDTO> metaDTOList, ReportsRequestDTO reportsRequestDTO){
-
-        int page = reportsRequestDTO.getStartPage();   // assuming 1-based index
-        int size = reportsRequestDTO.getBatchSize();
-
-        int totalItems = responseDTOS.size();
-        int totalPages = QueryBuilder.getTotalPages(totalItems, size);
-
-        // Convert to zero-based index
-        int fromIndex = (page - 1) * size;
-        int toIndex = Math.min(fromIndex + size, totalItems);
-
-        List<GenericResponseDTO> paginatedList;
-
-        if (fromIndex >= totalItems || fromIndex < 0) {
-            paginatedList = Collections.emptyList();
-        } else {
-            paginatedList = responseDTOS.subList(fromIndex, toIndex);
+        List<ReviewerReportDTO> reviewerReports = new ArrayList<>();
+        if (response.getReviewerReportList() != null && !response.getReviewerReportList().isEmpty()) {
+            reviewerReports = response.getReviewerReportList();
         }
 
-        return ReportResponseDTO.builder().
-                meta(metaDTOList).response(paginatedList)
+        if (TOTAL_FIELD.equalsIgnoreCase(reportsRequestDTO.getSort())) {
+            sortReviewerReportsByTotal(reviewerReports, reportsRequestDTO.getOrder());
+        }
+
+        List<GenericResponseDTO> genericResponse = convertReviewerToGenericResponse(reviewerReports);
+
+        List<MetaDTO> metaList = SourceInformationMetaUtils.getReviewerMetadata();
+
+        return ReportResponseDTO.builder()
+                .reportType(SOURCE_INFORMATION)
+                .meta(metaList)
+                .response(genericResponse)
                 .currentPage(reportsRequestDTO.getStartPage())
-                .totalItems(totalItems)
-                .totalPages(totalPages)
-                .reportType(APPROVAL_TAT).build();
+                .totalItems(response.getTotal())
+                .totalPages(QueryBuilder.getTotalPages(response.getTotal(), reportsRequestDTO.getBatchSize()))
+                .build();
     }
 
-    private List<ResponseReport> timeCalculations(List<TATReport> tatReportList){
-        List<ResponseReport> responseReportList = new ArrayList<>();
-        for (TATReport tatReport : tatReportList) {
-            if(!tatReport.getData().isEmpty()){
-                processReportData(tatReport, responseReportList);
-            }
-        }
-        return responseReportList;
+    private ReportResponseDTO getOperatorAndReviewerReport(ReportsRequestDTO reportsRequestDTO) {
+        List<String> countryList = getCountryListFromRegion(reportsRequestDTO);
+        Criteria actionCriteria = ReportsQueryBuilder.queryBuilderForSourceInformationAndTat(reportsRequestDTO, countryList);
+        MatchOperation actionMatch = ReportsQueryBuilder.matchOperation(actionCriteria);
+        GroupOperation actionGroup = ReportsQueryBuilder.operatorAndReviewerActionGroupOperation();
+        FacetOperation actionFacet = Aggregation.facet()
+                .and(Aggregation.count().as(COUNT_FIELD)).as(TOTAL_FIELD)
+                .and(skipOperation(reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize()),
+                        limitOperation(reportsRequestDTO.getBatchSize())).as("data");
+        ProjectionOperation actionProjection = Aggregation.project()
+                .and(ArrayOperators.ArrayElemAt.arrayOf(TOTAL_FIELD + "." + COUNT_FIELD).elementAt(0)).as(TOTAL_FIELD)
+                .and("data").as("operatorReviewerReportList");
+
+        AggregationOptions aggregationOptions = AggregationOptions.builder()
+                .allowDiskUse(true).build();
+
+        Aggregation actionAggregation = Aggregation.newAggregation(actionMatch, actionGroup, actionFacet, actionProjection)
+                .withOptions(aggregationOptions);
+
+        var actionResponse = customSourceRepository.reportCustomAggregate(actionAggregation, REPORTS_COLLECTION, ReportSearchResult.class);
+        log.info("Action counts response: {}", actionResponse);
+
+        Criteria statusCriteria = ReportsQueryBuilder.queryBuilderForReviewerRole(reportsRequestDTO, countryList);
+        MatchOperation statusMatch = ReportsQueryBuilder.matchOperation(statusCriteria);
+        GroupOperation statusGroup = ReportsQueryBuilder.operatorAndReviewerStatusGroupOperation();
+
+        FacetOperation statusFacet = Aggregation.facet().and(Aggregation.count().as(COUNT_FIELD)).as(TOTAL_FIELD)
+                .and(skipOperation(reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize()),
+                        limitOperation(reportsRequestDTO.getBatchSize())).as("data");
+        ProjectionOperation statusProjection = Aggregation.project()
+                .and(ArrayOperators.ArrayElemAt.arrayOf(TOTAL_FIELD + "." + COUNT_FIELD).elementAt(0)).as(TOTAL_FIELD)
+                .and("data").as("operatorReviewerReportList");
+
+        Aggregation statusAggregation = Aggregation.newAggregation(statusMatch, statusGroup, statusFacet, statusProjection)
+                .withOptions(aggregationOptions);
+
+        var statusResponse = customSourceRepository.reportCustomAggregate(statusAggregation, REPORTS_COLLECTION, ReportSearchResult.class);
+        log.info("Status counts response: {}", statusResponse);
+
+        List<OperatorReviewerReportDTO> combinedReports = mergeActionAndStatusData(actionResponse, statusResponse);
+        sortCombinedReports(combinedReports, reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
+        int startIndex = (reportsRequestDTO.getStartPage()-1) * reportsRequestDTO.getBatchSize();
+        int endIndex = Math.min(startIndex + reportsRequestDTO.getBatchSize(), combinedReports.size());
+        List<OperatorReviewerReportDTO> paginatedReports = combinedReports.subList(startIndex, endIndex);
+
+        List<MetaDTO> metaList = SourceInformationMetaUtils.getOperatorAndReviewerMetadata();
+
+        return ReportResponseDTO.builder()
+                .reportType(SOURCE_INFORMATION)
+                .meta(metaList)
+                .response(convertToGenericResponse(paginatedReports))
+                .currentPage(reportsRequestDTO.getStartPage())
+                .totalItems(combinedReports.size())
+                .totalPages(QueryBuilder.getTotalPages(combinedReports.size(), reportsRequestDTO.getBatchSize()))
+                .build();
     }
 
-    private void processReportData(TATReport tatReport, List<ResponseReport> responseReportList) {
-        List<ResponseReport> data = tatReport.getData();
-        if (data.size() == 1 && data.get(0).getApprovalStatus().equalsIgnoreCase(APPROVED)) {
-            handleSingleApprovedReport(data.get(0), responseReportList);
+    private List<OperatorReviewerReportDTO> mergeActionAndStatusData(ReportSearchResult actionResponse, ReportSearchResult statusResponse) {
+        Map<String, OperatorReviewerReportDTO> mergedMap = new HashMap<>();
+
+        processActionData(actionResponse, mergedMap);
+        processStatusData(statusResponse, mergedMap);
+
+        return new ArrayList<>(mergedMap.values());
+    }
+
+    private void processActionData(ReportSearchResult actionResponse, Map<String, OperatorReviewerReportDTO> mergedMap) {
+        if (actionResponse.getOperatorReviewerReportList() == null) {
             return;
         }
 
-        TATCalculationContext context = new TATCalculationContext();
-        for (ResponseReport rsReport : data) {
-            processReportByStatus(rsReport, context, responseReportList);
-        }
-    }
-
-    private void handleSingleApprovedReport(ResponseReport report, List<ResponseReport> responseReportList) {
-        report.setApprovalDuration(String.valueOf(0));
-        report.setTotalApprovalDuration(String.valueOf(0));
-        responseReportList.add(report);
-    }
-
-    private void processReportByStatus(ResponseReport rsReport, TATCalculationContext context, List<ResponseReport> responseReportList) {
-        String status = rsReport.getApprovalStatus();
-
-        if (isPendingApprovalStatus(status)) {
-            handlePendingApproval(rsReport, context);
-        } else if (status.equals(ApprovalStatus.IN_PROGRESS.getStatus())) {
-            handleInProgress(rsReport, context);
-        } else if (status.equals(ApprovalStatus.ONHOLD.getStatus())) {
-            handleOnHold(rsReport, context);
-        } else if (isCompletedStatus(status)) {
-            handleCompletedStatus(rsReport, context, responseReportList);
-        }
-    }
-
-    private boolean isPendingApprovalStatus(String status) {
-        return status.equals(ApprovalStatus.PENDING_APPROVAL.getStatus())
-                || status.equals(ApprovalStatus.SAVE_PENDING_APPROVAL.getStatus());
-    }
-
-    private boolean isCompletedStatus(String status) {
-        return status.equals(ApprovalStatus.APPROVED.getStatus())
-                || status.equals(ApprovalStatus.REJECTED.getStatus());
-    }
-
-    private void handlePendingApproval(ResponseReport rsReport, TATCalculationContext context) {
-        context.action = rsReport.getAction();
-        context.startDate = rsReport.getCreatedDate();
-        context.roundActive = true;
-        context.tempDate = null;
-        context.minutes = 0;
-        context.totalMinutes = 0;
-    }
-
-    private void handleInProgress(ResponseReport rsReport, TATCalculationContext context) {
-        context.tempDate = rsReport.getCreatedDate();
-    }
-
-    private void handleOnHold(ResponseReport rsReport, TATCalculationContext context) {
-        if (context.tempDate != null && rsReport.getCreatedDate() != null) {
-            context.minutes += Math.abs(Duration.between(context.tempDate,
-                    rsReport.getCreatedDate()).toMillis());
-        }
-        context.tempDate = rsReport.getCreatedDate();
-    }
-
-    private void handleCompletedStatus(ResponseReport rsReport, TATCalculationContext context, List<ResponseReport> responseReportList) {
-        if (context.roundActive) {
-            processActiveRound(rsReport, context, responseReportList);
-        } else if (rsReport.getReason().equalsIgnoreCase(AUTO_APPOVED)) {
-            handleAutoApproved(rsReport, responseReportList);
-        }
-    }
-
-    private void processActiveRound(ResponseReport rsReport, TATCalculationContext context, List<ResponseReport> responseReportList) {
-        Instant endDate = rsReport.getCreatedDate();
-
-        if (context.tempDate != null) {
-            context.minutes += Math.abs(Duration.between(context.tempDate, rsReport.getCreatedDate()).toMillis());
-        }
-
-        if (context.startDate != null && endDate != null && context.startDate.isBefore(endDate)) {
-            context.totalMinutes = Math.abs(Duration.between(context.startDate, endDate).toMillis());
-        }
-
-        if (!rsReport.getAction().equals(context.action) && context.action != null && !context.action.isEmpty()) {
-            rsReport.setAction(context.action);
-        }
-
-        rsReport.setApprovalDuration(String.valueOf(context.minutes));
-        rsReport.setTotalApprovalDuration(String.valueOf(context.totalMinutes));
-        responseReportList.add(rsReport);
-        context.roundActive = false;
-    }
-
-    private void handleAutoApproved(ResponseReport rsReport, List<ResponseReport> responseReportList) {
-        rsReport.setApprovalDuration(String.valueOf(0));
-        rsReport.setTotalApprovalDuration(String.valueOf(0));
-        responseReportList.add(rsReport);
-    }
-
-    private static class TATCalculationContext {
-        Instant startDate;
-        Instant tempDate;
-        long totalMinutes;
-        long minutes;
-        String action = "";
-        boolean roundActive;
-    }
-
-    private void sorting(List<GenericResponseDTO> responseDTOS, ReportsRequestDTO reportsRequestDTO){
-            String sortField = reportsRequestDTO.getSort();
-            String sortOrder = reportsRequestDTO.getOrder(); // "ASC" or "DESC"
-
-            Comparator<GenericResponseDTO> comparator = null;
-            switch (sortField) {
-                case "Approval_Status":
-                    comparator = Comparator.comparing(GenericResponseDTO::getApprovalStatus,
-                            Comparator.nullsLast(String::compareTo));
-                    break;
-                case "Action":
-                    comparator = Comparator.comparing(GenericResponseDTO::getAction,
-                            Comparator.nullsLast(String::compareTo));
-                    break;
-                default:
-                    break;
-            }
-
-            if (comparator != null) {
-                if ("DESC".equalsIgnoreCase(sortOrder)) {
-                    comparator = comparator.reversed();
-                }
-                responseDTOS.sort(comparator);
+        for (OperatorReviewerReportDTO actionData : actionResponse.getOperatorReviewerReportList()) {
+            String researcherName = actionData.getResearcherName();
+            if (isValidResearcherName(researcherName)) {
+                mergedMap.put(researcherName, createActionOnlyReport(actionData));
             }
         }
+    }
 
+    private void processStatusData(ReportSearchResult statusResponse, Map<String, OperatorReviewerReportDTO> mergedMap) {
+        if (statusResponse.getOperatorReviewerReportList() == null) {
+            return;
+        }
+
+        for (OperatorReviewerReportDTO statusData : statusResponse.getOperatorReviewerReportList()) {
+            String researcherName = statusData.getResearcherName();
+            if (isValidResearcherName(researcherName)) {
+                updateOrCreateStatusReport(researcherName, statusData, mergedMap);
+            }
+        }
+    }
+
+    private boolean isValidResearcherName(String researcherName) {
+        return researcherName != null && !researcherName.isEmpty();
+    }
+
+    private OperatorReviewerReportDTO createActionOnlyReport(OperatorReviewerReportDTO actionData) {
+        int actionTotal = actionData.getAdded() + actionData.getChanged() +
+                         actionData.getArchived() + actionData.getDeleted();
+
+        return OperatorReviewerReportDTO.builder()
+                .researcherName(actionData.getResearcherName())
+                .hon(actionData.getHon() != null ? actionData.getHon() : "")
+                .added(actionData.getAdded())
+                .changed(actionData.getChanged())
+                .archived(actionData.getArchived())
+                .deleted(actionData.getDeleted())
+                .newCount(0)
+                .inProgress(0)
+                .onHold(0)
+                .cancelled(0)
+                .completed(0)
+                .total(actionTotal)
+                .build();
+    }
+
+    private void updateOrCreateStatusReport(String researcherName, OperatorReviewerReportDTO statusData,
+                                           Map<String, OperatorReviewerReportDTO> mergedMap) {
+        OperatorReviewerReportDTO existing = mergedMap.get(researcherName);
+
+        if (existing != null) {
+            updateExistingWithStatus(existing, statusData);
+        } else {
+            mergedMap.put(researcherName, createStatusOnlyReport(statusData));
+        }
+    }
+
+    private void updateExistingWithStatus(OperatorReviewerReportDTO existing, OperatorReviewerReportDTO statusData) {
+        existing.setNewCount(statusData.getNewCount());
+        existing.setInProgress(statusData.getInProgress());
+        existing.setOnHold(statusData.getOnHold());
+        existing.setCancelled(statusData.getCancelled());
+        existing.setCompleted(statusData.getCompleted());
+
+        int combinedTotal = existing.getAdded() + existing.getChanged() + existing.getArchived() + existing.getDeleted() +
+                           statusData.getNewCount() + statusData.getInProgress() + statusData.getOnHold() +
+                           statusData.getCancelled() + statusData.getCompleted();
+        existing.setTotal(combinedTotal);
+    }
+
+    private OperatorReviewerReportDTO createStatusOnlyReport(OperatorReviewerReportDTO statusData) {
+        int statusTotal = statusData.getNewCount() + statusData.getInProgress() + statusData.getOnHold() +
+                         statusData.getCancelled() + statusData.getCompleted();
+
+        return OperatorReviewerReportDTO.builder()
+                .researcherName(statusData.getResearcherName())
+                .hon(statusData.getHon() != null ? statusData.getHon() : "")
+                .added(0)
+                .changed(0)
+                .archived(0)
+                .deleted(0)
+                .newCount(statusData.getNewCount())
+                .inProgress(statusData.getInProgress())
+                .onHold(statusData.getOnHold())
+                .cancelled(statusData.getCancelled())
+                .completed(statusData.getCompleted())
+                .total(statusTotal)
+                .build();
+    }
+
+    private List<GenericResponseDTO> convertToGenericResponse(List<OperatorReviewerReportDTO> reports) {
+        List<GenericResponseDTO> genericList = new ArrayList<>();
+        for (OperatorReviewerReportDTO report : reports) {
+            GenericResponseDTO generic = GenericResponseDTO.builder()
+                    .researcherName(report.getResearcherName())
+                    .added(report.getAdded())
+                    .changed(report.getChanged())
+                    .archived(report.getArchived())
+                    .deleted(report.getDeleted())
+                    .newCount(report.getNewCount())
+                    .inProgress(report.getInProgress())
+                    .onHold(report.getOnHold())
+                    .cancelled(report.getCancelled())
+                    .completed(report.getCompleted())
+                    .total(report.getTotal())
+                    .build();
+            genericList.add(generic);
+        }
+        return genericList;
+    }
+
+    private List<GenericResponseDTO> convertOperatorToGenericResponse(List<OperatorReportDTO> reports) {
+        List<GenericResponseDTO> genericList = new ArrayList<>();
+        for (OperatorReportDTO report : reports) {
+            ActionStatusCountDTO added = calculateActionTotal(report.getAdded());
+            ActionStatusCountDTO changed = calculateActionTotal(report.getChanged());
+            ActionStatusCountDTO archived = calculateActionTotal(report.getArchived());
+            ActionStatusCountDTO deleted = calculateActionTotal(report.getDeleted());
+
+            int overallTotal = added.getTotal() + changed.getTotal() + archived.getTotal() + deleted.getTotal();
+
+            GenericResponseDTO generic = GenericResponseDTO.builder()
+                    .operatorName(report.getOperatorName())
+                    .addedNested(added)
+                    .changedNested(changed)
+                    .archivedNested(archived)
+                    .deletedNested(deleted)
+                    .total(overallTotal)
+                    .build();
+            genericList.add(generic);
+        }
+        return genericList;
+    }
+
+    private ActionStatusCountDTO calculateActionTotal(ActionStatusCountDTO action) {
+        if (action == null) {
+            return ActionStatusCountDTO.builder()
+                    .newCount(0)
+                    .inProgress(0)
+                    .onHold(0)
+                    .cancelled(0)
+                    .completed(0)
+                    .total(0)
+                    .build();
+        }
+
+        int total = action.getNewCount() + action.getInProgress() + action.getOnHold() +
+                    action.getCancelled() + action.getCompleted();
+        action.setTotal(total);
+        return action;
+    }
+
+    private List<GenericResponseDTO> convertReviewerToGenericResponse(List<ReviewerReportDTO> reports) {
+        List<GenericResponseDTO> genericList = new ArrayList<>();
+        for (ReviewerReportDTO report : reports) {
+            int total = report.getNewCount() + report.getInProgress() + report.getOnHold() + report.getCancelled() + report.getCompleted();
+
+            GenericResponseDTO generic = GenericResponseDTO.builder()
+                    .researcherName(report.getResearcherName())
+                    .newCount(report.getNewCount())
+                    .inProgress(report.getInProgress())
+                    .onHold(report.getOnHold())
+                    .cancelled(report.getCancelled())
+                    .completed(report.getCompleted())
+                    .total(total)
+                    .build();
+            genericList.add(generic);
+        }
+        return genericList;
+    }
+
+    private void sortCombinedReports(List<OperatorReviewerReportDTO> reports, String sort, String order) {
+        if (reports == null || reports.isEmpty()) {
+            return;
+        }
+
+        Comparator<OperatorReviewerReportDTO> comparator = getComparatorForOperatorReviewer(sort);
+
+        if ("desc".equalsIgnoreCase(order)) {
+            comparator = comparator.reversed();
+        }
+
+        reports.sort(comparator);
+    }
+
+    private Comparator<OperatorReviewerReportDTO> getComparatorForOperatorReviewer(String sort) {
+        if (sort == null) {
+            return Comparator.comparing(OperatorReviewerReportDTO::getResearcherName,
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+        }
+
+        return switch (sort.toLowerCase()) {
+            case "researcher_name", "researchername" ->
+                    Comparator.comparing(OperatorReviewerReportDTO::getResearcherName,
+                            Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+            case "added" -> Comparator.comparingInt(OperatorReviewerReportDTO::getAdded);
+            case "changed" -> Comparator.comparingInt(OperatorReviewerReportDTO::getChanged);
+            case "archived" -> Comparator.comparingInt(OperatorReviewerReportDTO::getArchived);
+            case "deleted" -> Comparator.comparingInt(OperatorReviewerReportDTO::getDeleted);
+            case "new", "newcount" -> Comparator.comparingInt(OperatorReviewerReportDTO::getNewCount);
+            case "in_progress", "inprogress" -> Comparator.comparingInt(OperatorReviewerReportDTO::getInProgress);
+            case "on_hold", "onhold" -> Comparator.comparingInt(OperatorReviewerReportDTO::getOnHold);
+            case "cancelled" -> Comparator.comparingInt(OperatorReviewerReportDTO::getCancelled);
+            case "completed" -> Comparator.comparingInt(OperatorReviewerReportDTO::getCompleted);
+            case TOTAL_FIELD -> Comparator.comparingInt(OperatorReviewerReportDTO::getTotal);
+            default -> Comparator.comparing(OperatorReviewerReportDTO::getResearcherName,
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+        };
+    }
+
+    private void sortOperatorReportsByTotal(List<OperatorReportDTO> reports, String order) {
+        reports.sort((r1, r2) -> {
+            int total1 = calculateTotal(r1);
+            int total2 = calculateTotal(r2);
+
+            int comparison = Integer.compare(total1, total2);
+            return "desc".equalsIgnoreCase(order) ? -comparison : comparison;
+        });
+    }
+
+    private int calculateTotal(OperatorReportDTO report) {
+        int total = 0;
+        if (report.getAdded() != null) {
+            total += report.getAdded().getNewCount() + report.getAdded().getInProgress() +
+                    report.getAdded().getOnHold() + report.getAdded().getCancelled() +
+                    report.getAdded().getCompleted();
+        }
+        if (report.getChanged() != null) {
+            total += report.getChanged().getNewCount() + report.getChanged().getInProgress() +
+                    report.getChanged().getOnHold() + report.getChanged().getCancelled() +
+                    report.getChanged().getCompleted();
+        }
+        if (report.getArchived() != null) {
+            total += report.getArchived().getNewCount() + report.getArchived().getInProgress() +
+                    report.getArchived().getOnHold() + report.getArchived().getCancelled() +
+                    report.getArchived().getCompleted();
+        }
+        if (report.getDeleted() != null) {
+            total += report.getDeleted().getNewCount() + report.getDeleted().getInProgress() +
+                    report.getDeleted().getOnHold() + report.getDeleted().getCancelled() +
+                    report.getDeleted().getCompleted();
+        }
+        return total;
+    }
+
+    private void sortReviewerReportsByTotal(List<ReviewerReportDTO> reports, String order) {
+        reports.sort((r1, r2) -> {
+            int total1 = calculateReviewerTotal(r1);
+            int total2 = calculateReviewerTotal(r2);
+
+            int comparison = Integer.compare(total1, total2);
+            return "desc".equalsIgnoreCase(order) ? -comparison : comparison;
+        });
+    }
+
+    private int calculateReviewerTotal(ReviewerReportDTO report) {
+        return report.getNewCount() + report.getInProgress() + report.getOnHold() +
+                report.getCancelled() + report.getCompleted();
+    }
+
+    private boolean requiresManualSorting(String sort) {
+        if (sort == null) return false;
+        String sortLower = sort.toLowerCase();
+        return sortLower.equals(TOTAL_FIELD) || sortLower.equals("added_total")  || sortLower.equals("changed_total") ||
+                sortLower.equals("archived_total") || sortLower.equals("deleted_total");
+    }
+
+    private void sortOperatorReportsByNestedTotal(List<OperatorReportDTO> reports, String sort, String order) {
+        reports.sort((r1, r2) -> {
+            int total1 = getNestedTotalForSort(r1, sort);
+            int total2 = getNestedTotalForSort(r2, sort);
+
+            int comparison = Integer.compare(total1, total2);
+            return "desc".equalsIgnoreCase(order) ? -comparison : comparison;
+        });
+    }
+
+    private int getNestedTotalForSort(OperatorReportDTO report, String sort) {
+        if (sort == null) return 0;
+
+        String sortLower = sort.toLowerCase();
+
+        if (sortLower.equals(TOTAL_FIELD)) {
+            return calculateTotal(report);
+        } else if (sortLower.equals("added_total")) {
+            return calculateActionStatusTotal(report.getAdded());
+        } else if (sortLower.equals("changed_total")) {
+            return calculateActionStatusTotal(report.getChanged());
+        } else if (sortLower.equals("archived_total")) {
+            return calculateActionStatusTotal(report.getArchived());
+        } else if (sortLower.equals("deleted_total")) {
+            return calculateActionStatusTotal(report.getDeleted());
+        }
+        return 0;
+    }
+
+    private int calculateActionStatusTotal(ActionStatusCountDTO action) {
+        if (action == null) return 0;
+        return action.getNewCount() + action.getInProgress() + action.getOnHold() +
+                action.getCancelled() + action.getCompleted();
+    }
 }
