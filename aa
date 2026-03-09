@@ -72,33 +72,62 @@ public class SourceHistoryServiceImpl implements SourceHistoryService {
         double latestActiveVersion = getLatestActiveVersion(hon);
         List<ChangelogResponseDTO> activeSources = new ArrayList<>();
         String historyCollectionName = Helper.getCollectionName(hon, SOURCE_HISTORY_COLLECTION_SUFFIX);
-        int  version = (int) Math.round(latestActiveVersion);
-        for (int i = version; i > 0; i--) {
-            ChangelogResponseDTO changeLogResponse = new ChangelogResponseDTO();
-            List<Source> activeSource = getActiveSources(hon,version,i,historyCollectionName);
-            double subVersion = (i - 1);
-            if (activeSource != null && !activeSource.isEmpty()) {
-                for (int j = 0; j < activeSource.size(); j++) {
-                    ChangelogResponseDTO changeLogResponseDTO = new ChangelogResponseDTO();
-                    changeLogResponseDTO.setSourceDTO(sourceMapper.entitySourceToDTO(activeSource.get(j)));
-                    if(j == activeSource.size()-1){
-                        getSubVersions(hon, subVersion, changeLogResponseDTO, historyCollectionName);
-                    }
-                    activeSources.add(changeLogResponseDTO);
-                }
-            }else{
-                getSubVersions(hon, subVersion, changeLogResponse, historyCollectionName);
-                if(changeLogResponse.getSourceDTO() == null && (changeLogResponse.getVersions() == null || changeLogResponse.getVersions().isEmpty())){
-                    String collectionName =  Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);;
-                    getSubVersions(hon, subVersion, changeLogResponse, collectionName);
-                    break;
-                }
-                activeSources.add(changeLogResponse);
-            }
+        int version = (int) Math.round(latestActiveVersion);
 
+        for (int i = version; i > 0; i--) {
+            if (!processVersionChangelog(hon, version, i, historyCollectionName, activeSources)) {
+                break;
+            }
         }
+
         result.setActiveSources(activeSources);
         return result;
+    }
+
+    private boolean processVersionChangelog(String hon, int version, int currentVersion,
+                                            String historyCollectionName, List<ChangelogResponseDTO> activeSources) {
+        List<Source> activeSource = getActiveSources(hon, version, currentVersion, historyCollectionName);
+        double subVersion = (currentVersion - 1);
+
+        if (activeSource != null && !activeSource.isEmpty()) {
+            processActiveSourceList(hon, activeSource, subVersion, historyCollectionName, activeSources);
+            return true;
+        } else {
+            return processEmptySource(hon, subVersion, historyCollectionName, activeSources);
+        }
+    }
+
+    private void processActiveSourceList(String hon, List<Source> activeSource, double subVersion,
+                                         String historyCollectionName, List<ChangelogResponseDTO> activeSources) {
+        for (int j = 0; j < activeSource.size(); j++) {
+            ChangelogResponseDTO changeLogResponseDTO = new ChangelogResponseDTO();
+            changeLogResponseDTO.setSourceDTO(sourceMapper.entitySourceToDTO(activeSource.get(j)));
+
+            if (j == activeSource.size() - 1) {
+                getSubVersions(hon, subVersion, changeLogResponseDTO, historyCollectionName);
+            }
+            activeSources.add(changeLogResponseDTO);
+        }
+    }
+
+    private boolean processEmptySource(String hon, double subVersion, String historyCollectionName,
+                                       List<ChangelogResponseDTO> activeSources) {
+        ChangelogResponseDTO changeLogResponse = new ChangelogResponseDTO();
+        getSubVersions(hon, subVersion, changeLogResponse, historyCollectionName);
+
+        if (isEmptyChangeLog(changeLogResponse)) {
+            String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+            getSubVersions(hon, subVersion, changeLogResponse, collectionName);
+            return false;
+        }
+
+        activeSources.add(changeLogResponse);
+        return true;
+    }
+
+    private boolean isEmptyChangeLog(ChangelogResponseDTO changeLogResponse) {
+        return changeLogResponse.getSourceDTO() == null &&
+               (changeLogResponse.getVersions() == null || changeLogResponse.getVersions().isEmpty());
     }
 
     @Override
@@ -110,7 +139,7 @@ public class SourceHistoryServiceImpl implements SourceHistoryService {
             if(response == null){
                 logAndThrowResourceNotFound(SOURCE_VERSION_NOT_FOUND, null, hon, version);
             }
-            }
+        }
         return sourceMapper.entitySourceToDTO(response);
     }
 
