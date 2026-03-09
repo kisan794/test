@@ -1,428 +1,207 @@
 package com.hireright.sourceintelligence.service.impl;
 
-import static com.hireright.sourceintelligence.api.ApiConstants.HON;
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.*;
-import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
-
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchFields.*;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.PayloadFields.*;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchFields.ORGANIZATION_NAME;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchFields.ORGANIZATION_TYPE;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchScore.*;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowInternalServiceException;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowInvalidRequest;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowResourceNotFound;
-import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
-
-import com.hireright.sourceintelligence.api.dto.*;
-import com.hireright.sourceintelligence.api.dto.timezone.DropDownDTO;
-import com.hireright.sourceintelligence.domain.entity.MongoSearchResult;
+import com.hireright.sourceintelligence.api.dto.SourceOrganizationDTO;
+import com.hireright.sourceintelligence.api.dto.history.ChangeLogResponse;
+import com.hireright.sourceintelligence.api.dto.history.ChangelogResponseDTO;
 import com.hireright.sourceintelligence.domain.entity.Source;
 import com.hireright.sourceintelligence.domain.enums.ApprovalStatus;
-import com.hireright.sourceintelligence.domain.enums.OrganizationType;
-import com.hireright.sourceintelligence.domain.enums.SourceOrganizationStatus;
-import com.hireright.sourceintelligence.domain.mapper.SourceDTOMapper;
 import com.hireright.sourceintelligence.domain.mapper.SourceMapper;
 import com.hireright.sourceintelligence.domain.repository.CustomSourceRepository;
-import java.util.Collections;
-
-
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
-
-import com.hireright.sourceintelligence.service.SearchService;
-import com.hireright.sourceintelligence.service.impl.helperservices.CountryRegionMappingUtils;
+import com.hireright.sourceintelligence.service.SourceHistoryService;
 import com.hireright.sourceintelligence.util.Helper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.dao.DataAccessException;
-import org.springframework.data.domain.*;
-import org.springframework.data.mongodb.core.aggregation.*;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
 
+import jakarta.validation.constraints.NotNull;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Objects;
+
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.*;
+import static com.hireright.sourceintelligence.constants.ErrorConstants.SOURCE_VERSION_NOT_FOUND;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.APPROVED;
+import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowResourceNotFound;
+
+@Primary
 @Slf4j
 @RequiredArgsConstructor
+@Transactional
 @Service
-public class SearchServiceImpl implements SearchService {
+public class SourceHistoryServiceImpl implements SourceHistoryService {
 
     private final SourceMapper sourceMapper;
-    private final SourceDTOMapper sourceDTOMapper;
     private final CustomSourceRepository<Source> customSourceRepository;
-    private final CountryRegionMappingUtils countryRegionMappingUtils;
 
     @Override
-    public SearchResponseDTO getSourceOrganizationList(SearchDTO searchDTO) {
+    public List<SourceOrganizationDTO> getSourcesByHonAndApprovalStatusAndVersionLessThanOrderByVersionDesc(String hon, ApprovalStatus approvalStatus, Double version) {
+        String collectionName = Helper.getCollectionName(hon, SOURCE_HISTORY_COLLECTION_SUFFIX);
+        List<Source> sourceOrganizationHistories = customSourceRepository
+                .findByHonAndApprovalStatusAndVersionLessThanOrderByVersionDesc(hon, approvalStatus, version, Source.class, collectionName);
+        return sourceMapper.toSourceDTOList(sourceOrganizationHistories);
+    }
 
-        if (StringUtils.isEmpty(searchDTO.getSearchText())) {
-            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
+    //TODO - revalidate when approval flow starts[Dont touch for now]
+    @Override
+    public List<SourceOrganizationDTO> getSourcesByHonAndApprovalStatusOrderByVersionDesc(String hon, ApprovalStatus approvalStatus) {
+        List<Source> result = new LinkedList<>();
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        List<Source> source = customSourceRepository.findByHon(hon, Source.class, collectionName);
+
+        String historyCollectionName = Helper.getCollectionName(hon, SOURCE_HISTORY_COLLECTION_SUFFIX);
+
+        List<Source> sourceOrganizationHistories = customSourceRepository.findByHonAndApprovalStatusOrderByVersionDesc(hon,
+                approvalStatus, Source.class, historyCollectionName);
+        if(!source.isEmpty()){
+            result.addFirst(source.getFirst());
         }
-        var criteria = QueryBuilder.buildCriteriaForLikeStartsWith(ORGANIZATION_NAME, searchDTO.getSearchText());
-        var matchOperation = QueryBuilder.buildMatch(criteria);
-
-        var facetOperation = QueryBuilder.facetOperation(searchDTO.getStartIndex(), searchDTO.getBatchSize());
-        var projectionOperation = QueryBuilder.finalProjectionWithTotalCountInPipeline();
-
-        Aggregation aggregation = QueryBuilder.aggregateWithMatch(matchOperation, facetOperation, projectionOperation);
-
-        String collectionName = Helper.getCollectionName(searchDTO.getOrganizationType().getType(), SOURCE_COLLECTION_SUFFIX);
-        var organization = customSourceRepository.customAggregate(aggregation, collectionName, MongoSearchResult.class);
-
-        List<SourceOrganizationDTO> organizationDTOs = sourceMapper.toSourceDTOList(organization.getOrganizationList());
-
-        return SearchResponseDTO.builder()
-                .sourceList(organizationDTOs)
-                .currentPage((searchDTO.getStartIndex()))
-                .totalItems(organization.getTotal())
-                .totalPages(QueryBuilder.getTotalPages(organization.getTotal(), searchDTO.getBatchSize()))
-                .build();
+        if(!sourceOrganizationHistories.isEmpty()){
+            result.addAll(1, sourceOrganizationHistories);
+        }
+        return sourceMapper.toSourceDTOList(result);
     }
 
     @Override
-    public SearchResponseDTO getSourceOrganizationListForAutocomplete(SearchDTO searchDTO) {
-        if (StringUtils.isEmpty(searchDTO.getSearchText())) {
-            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
-        }
+    public ChangeLogResponse getChangeLogByHon(String hon, ApprovalStatus approvalStatus) {
+        ChangeLogResponse result = new ChangeLogResponse();
+        double latestActiveVersion = getLatestActiveVersion(hon);
+        List<ChangelogResponseDTO> activeSources = new ArrayList<>();
+        String historyCollectionName = Helper.getCollectionName(hon, SOURCE_HISTORY_COLLECTION_SUFFIX);
+        int version = (int) Math.round(latestActiveVersion);
 
-        Query query = QueryBuilder.searchQuery(searchDTO);
-
-        List<String> organizations = new ArrayList<>();
-        try {
-            String collectionName = Helper.getCollectionName(searchDTO.getOrganizationType().getType(), SOURCE_COLLECTION_SUFFIX);
-            organizations = customSourceRepository.findByFieldDistinct(query, ORGANIZATION_NAME, collectionName);
-
-        } catch (DataAccessException dataAccessException) {
-            logAndThrowInternalServiceException(DATA_ACCESS_ERROR, dataAccessException);
-        }
-        if (CollectionUtils.isEmpty(organizations)) {
-            logAndThrowResourceNotFound(NO_SEARCH_RESULT_FOUND, null, searchDTO.getSearchText());
-        }
-        int total = organizations.size();
-        List<String> pagedOrganizations = organizations.stream()
-                .skip((long) searchDTO.getStartIndex() * searchDTO.getBatchSize())
-                .limit(searchDTO.getBatchSize())
-                .toList();
-
-        return SearchResponseDTO.builder()
-                .organizationNames(pagedOrganizations)
-                .totalItems(total)
-                .totalPages(total / searchDTO.getBatchSize())
-                .currentPage(searchDTO.getStartIndex())
-                .build();
-    }
-
-    @Override
-    public SearchResponseDTO getSourceOrganizationContactListByHon(SearchDTO searchDTO) {
-
-        if (!StringUtils.isNotEmpty(searchDTO.getHon())) {
-            logAndThrowInvalidRequest(HON_MISSING_IN_REQUEST, null);
-        }
-        Query query = QueryBuilder.searchQuery(searchDTO);
-        query.fields().include(HON, ORGANIZATION_TYPE, ORGANIZATION_NAME, STATUS, PAYLOAD_CONTACTS);
-        String collectionName = Helper.getCollectionName(searchDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
-
-        List<Source> contacts = customSourceRepository.findByQuery(query, Source.class, collectionName);
-        if (CollectionUtils.isEmpty(contacts)) {
-            logAndThrowResourceNotFound(CONTACT_NOT_FOUND, null, searchDTO.getHon());
-        }
-        return buildSearchResponseDTO(searchDTO, contacts, ORGANIZATION_NAME);
-    }
-
-    @Override
-    public SearchResponseDTO getSourceOrganizationAddressByHon(SearchDTO searchDTO) {
-
-        if (!StringUtils.isNotEmpty(searchDTO.getHon())) {
-            logAndThrowInvalidRequest(HON_MISSING_IN_REQUEST, null);
-        }
-        Query query = QueryBuilder.searchQuery(searchDTO);
-        query.fields().include(HON, ORGANIZATION_TYPE, ORGANIZATION_NAME, STATUS, PAYLOAD_ADDRESS);
-        String collectionName = Helper.getCollectionName(searchDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
-        List<Source> address = customSourceRepository.findByQuery(query, Source.class, collectionName);
-        if (CollectionUtils.isEmpty(address)) {
-            logAndThrowResourceNotFound(ADDRESS_NOT_FOUND, null, searchDTO.getHon());
-
-        }
-        return buildSearchResponseDTO(searchDTO, address, ORGANIZATION_NAME);
-    }
-
-
-    @Override
-    public SearchResponseDTO getSourcesByFilters(SearchFilter searchFilter, String order, String sort, int startPage, int pageSize) {
-        String collectionName = Helper.getCollectionName(searchFilter.getOrganizationType(), SOURCE_COLLECTION_SUFFIX);
-
-        log.info("criteria start time: {}", Instant.now());
-        Criteria criteria = buildCriteriaWithRegion(searchFilter);
-        log.info("criteria end time: {}", Instant.now());
-
-        String normalizedSort = normalizeSortField(sort);
-        SortOperation sortOperation = buildSortOperation(order, normalizedSort);
-
-        Aggregation aggregation = buildAggregation(criteria, normalizedSort, sortOperation, startPage, pageSize);
-
-        long searchCountResult = executeCountQuery(criteria, collectionName);
-        List<Source> searchResult = executeAggregation(aggregation, collectionName);
-
-        if (searchResult.isEmpty()) {
-            return SearchResponseDTO.builder().build();
-        }
-
-        return buildSearchResponse(searchResult, (int) searchCountResult, startPage, pageSize);
-    }
-
-    private Criteria buildCriteriaWithRegion(SearchFilter searchFilter) {
-        Criteria criteria = QueryBuilder.buildDocumentForApprovalManager(searchFilter);
-        String region = searchFilter.getRegionValue();
-
-        if (org.springframework.util.StringUtils.hasText(region) && !"ALL".equalsIgnoreCase(region)) {
-            List<String> countries = countryRegionMappingUtils.findDistinctCountriesByRegion(region);
-            if (countries != null && !countries.isEmpty()) {
-                criteria.and(COUNTRY).in(countries);
+        for (int i = version; i > 0; i--) {
+            if (!processVersionChangelog(hon, version, i, historyCollectionName, activeSources)) {
+                break;
             }
         }
 
-        return criteria;
-    }
-
-    private String normalizeSortField(String sort) {
-        if (sort == null) {
-            return null;
-        }
-
-        if (sort.equals(SearchConstants.SortFields.ORGANIZATION_NAME)) {
-            return SEARCH_ORG;
-        } else if (sort.equals(SearchConstants.SortFields.LAST_MODIFIED_BY)) {
-            return SearchConstants.SortFields.SORT_LAST_MODIFIED_BY;
-        } else if (sort.equals(SearchConstants.SortFields.ASSIGNED_TO)) {
-            return SearchConstants.SortFields.SORTASSIGNEDTO;
-        }
-
-        return sort;
-    }
-
-    private SortOperation buildSortOperation(String order, String sort) {
-        if (!StringUtils.isEmpty(order) && !StringUtils.isEmpty(sort)) {
-            return QueryBuilder.buildSortOperation(sort, order);
-        }
-        return QueryBuilder.buildSortOperation(FLAG_PRIORITY, "desc");
-    }
-
-    private Aggregation buildAggregation(Criteria criteria, String sort, SortOperation sortOperation,
-                                        int startPage, int pageSize) {
-        MatchOperation matchOperation = QueryBuilder.buildMatch(criteria);
-        ProjectionOperation projectSelectiveData = QueryBuilder.sourceByFiltersProjection();
-        LimitOperation limit = QueryBuilder.limitOperation(pageSize);
-        SkipOperation skip = QueryBuilder.skipOperation(startPage, pageSize);
-        AddFieldsOperation addFieldsOperation = QueryBuilder.addLastModifiedBy();
-
-        AggregationOptions aggregationOptions = AggregationOptions.builder()
-                .allowDiskUse(true).build();
-
-        if (requiresAddFieldsFirst(sort)) {
-            return Aggregation.newAggregation(matchOperation, addFieldsOperation, sortOperation,
-                                             skip, limit, projectSelectiveData)
-                             .withOptions(aggregationOptions);
-        } else {
-            return Aggregation.newAggregation(matchOperation, sortOperation, skip, limit,
-                                             addFieldsOperation, projectSelectiveData)
-                             .withOptions(aggregationOptions);
-        }
-    }
-
-    private boolean requiresAddFieldsFirst(String sort) {
-        return sort != null &&
-               (sort.equals(SearchConstants.SortFields.SORT_LAST_MODIFIED_BY) ||
-                sort.equals(SearchConstants.SortFields.SORTASSIGNEDTO));
-    }
-
-    private long executeCountQuery(Criteria criteria, String collectionName) {
-        Query query = Query.query(criteria);
-        long count = customSourceRepository.queryCount(query, collectionName, Source.class);
-        log.info("RAM Aggregate Document Result Time: {}, count:{}", LocalDateTime.now(), count);
-        return count;
-    }
-
-    private List<Source> executeAggregation(Aggregation aggregation, String collectionName) {
-        log.info("RAM Aggregation: {}", aggregation);
-        log.info("RAM Aggregate Start Time: {}", LocalDateTime.now());
-        List<Source> result = customSourceRepository.aggregate(aggregation, collectionName, Source.class);
-        log.info("RAM Aggregate Document Result Time: {}, searchResult size:{}", LocalDateTime.now(), result.size());
+        result.setActiveSources(activeSources);
         return result;
     }
 
-    private SearchResponseDTO buildSearchResponse(List<Source> searchResult, int total, int startPage, int pageSize) {
-        List<SourceDTO> searchList = sourceDTOMapper.entityToSourceList(searchResult);
-        return SearchResponseDTO.builder()
-                .searchList(searchList)
-                .currentPage(startPage)
-                .totalItems(total)
-                .totalPages(QueryBuilder.getTotalPages(total, pageSize))
-                .build();
+    private boolean processVersionChangelog(String hon, int version, int currentVersion,
+                                            String historyCollectionName, List<ChangelogResponseDTO> activeSources) {
+        List<Source> activeSource = getActiveSources(hon, version, currentVersion, historyCollectionName);
+        double subVersion = (currentVersion - 1);
+
+        if (activeSource != null && !activeSource.isEmpty()) {
+            processActiveSourceList(hon, activeSource, subVersion, historyCollectionName, activeSources);
+            return true;
+        } else {
+            return processEmptySource(hon, subVersion, historyCollectionName, activeSources);
+        }
     }
 
-    @Override
-    public SearchFilter getFiltersForSourceOrganizations() {
-        SearchFilter searchHistoryFilter = new SearchFilter();
-        searchHistoryFilter.setVerificationTypes(Arrays.stream(OrganizationType.values()).toList());
-        searchHistoryFilter.setStatuses(Arrays.stream(ApprovalStatus.values()).toList());
-        searchHistoryFilter.setRegion(countryRegionMappingUtils.getRegionList());
-        return searchHistoryFilter;
-    }
+    private void processActiveSourceList(String hon, List<Source> activeSource, double subVersion,
+                                         String historyCollectionName, List<ChangelogResponseDTO> activeSources) {
+        for (int j = 0; j < activeSource.size(); j++) {
+            ChangelogResponseDTO changeLogResponseDTO = new ChangelogResponseDTO();
+            changeLogResponseDTO.setSourceDTO(sourceMapper.entitySourceToDTO(activeSource.get(j)));
 
-    @Override
-    public List<DropDownDTO> getRegionList() {
-        return countryRegionMappingUtils.getRegionList();
-    }
-
-    @Override
-    public SearchResponseDTO getDetailedAutocompletedSearchResult(String keyword, OrganizationType orgType, SourceOrganizationStatus status, String country) {
-
-        List<SourceOrganizationDTO> searchOrganizationDTOList = new ArrayList<>();
-        OrganizationType organizationTypeValue = null;
-
-        List<Source> sourceOrganizations = getDetailedAutocompleteHits(keyword, orgType, status, country);
-
-        for (Source sourceOrganization : sourceOrganizations) {
-            organizationTypeValue = sourceOrganization.getOrganizationType();
-            SourceOrganizationDTO sourceDTO = sourceMapper.entitySourceToDTO(sourceOrganization);
-            if (!sourceDTO.getPayload().has(USED_COUNT)) {
-                sourceDTO.setUsedCount(0);
-            } else {
-                sourceDTO.setUsedCount((Integer) sourceDTO.getPayload().get(USED_COUNT));
+            if (j == activeSource.size() - 1) {
+                getSubVersions(hon, subVersion, changeLogResponseDTO, historyCollectionName);
             }
-            searchOrganizationDTOList.add(sourceDTO);
+            activeSources.add(changeLogResponseDTO);
+        }
+    }
+
+    private boolean processEmptySource(String hon, double subVersion, String historyCollectionName,
+                                       List<ChangelogResponseDTO> activeSources) {
+        ChangelogResponseDTO changeLogResponse = new ChangelogResponseDTO();
+        getSubVersions(hon, subVersion, changeLogResponse, historyCollectionName);
+
+        if (changeLogResponse.getSourceDTO() == null &&
+            (changeLogResponse.getVersions() == null || changeLogResponse.getVersions().isEmpty())) {
+            return false;
         }
 
-        Comparator<SourceOrganizationDTO> reverseScoreComparator = (s1, s2) -> s2.getScore().compareTo(s1.getScore());
-
-        List<SourceOrganizationDTO> sortedList;
-
-        if (organizationTypeValue != null && organizationTypeValue.equals(OrganizationType.EDUCATION)) {
-            sortedList = searchOrganizationDTOList.stream()
-                    .limit(SEARCH_LIMIT).collect(Collectors.toCollection(LinkedList::new));
-        } else {
-            sortedList = searchOrganizationDTOList.stream().sorted(Comparator.comparing(SourceOrganizationDTO::getUsedCount).reversed()
-                    .thenComparing(reverseScoreComparator)).limit(SEARCH_LIMIT).collect(Collectors.toCollection(LinkedList::new));
-        }
-
-        return SearchResponseDTO.builder()
-                //.organizationNames(organization.getOrganizationList())
-                .sourceList(sortedList)
-                .currentPage(1)
-                .totalItems(sortedList.size())
-                .totalPages(QueryBuilder.getTotalPages(sortedList.size(), 10))
-                .build();
+        activeSources.add(changeLogResponse);
+        return true;
     }
 
     @Override
-    public SearchResponseDTO getAutocompletedSuggestionForPossibleDuplicates(String keyword, OrganizationType orgType) {
+    public SourceOrganizationDTO getSourceByHonAndVersion(@NotNull String hon, @NotNull Double version) {
+        var response = findSourceOrganizationHistoryByHonAndVersion(hon, version);
+        if (response == null) {
+            String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+            response = findSourceByHonAndVersion(hon, version,collectionName);
+            if(response == null){
+                logAndThrowResourceNotFound(SOURCE_VERSION_NOT_FOUND, null, hon, version);
+            }
+            }
+        return sourceMapper.entitySourceToDTO(response);
+    }
 
-        Criteria criteria = QueryBuilder.buildDuplicateSearchDocument(keyword);
-        MatchOperation matchOperation = QueryBuilder.buildMatch(criteria);
-        ProjectionOperation projectSelectiveData = QueryBuilder.possibleDuplicateProjection();
-        Aggregation aggregation = newAggregation(matchOperation, projectSelectiveData, limit(SEARCH_LIMIT));
+    //TODO - Async implementation pending
+    @Override
+    public List<SourceOrganizationDTO> getSourcesForDiff(String hon, Double version, String sourceType) {
+        log.info("getSourcesForDiff Starts");
+        //current - source and source history
+        List<SourceOrganizationDTO> sourceOrganizationHistories = new LinkedList<>();
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        String historyCollectionName = Helper.getCollectionName(hon, SOURCE_HISTORY_COLLECTION_SUFFIX);
 
-        String collectionName = Helper.getCollectionName(orgType.getType(), SOURCE_COLLECTION_SUFFIX);
-        log.info("possible duplicate query: {}", aggregation);
-        List<Source> sourceOrganizations = customSourceRepository.aggregate(aggregation, collectionName, Source.class);
-        if (ObjectUtils.isEmpty(sourceOrganizations)) {
-            return SearchResponseDTO.builder().sourceList(new ArrayList<>()).build();
+        if(Objects.equals(sourceType, CURRENT)){
+            Source currentSourceOrganization = customSourceRepository.findOneByHonAndVersion(hon, version, Source.class, collectionName);
+            Source lastSourceOrganization = customSourceRepository.findOneByHonAndVersion(hon, version-1, Source.class, historyCollectionName);
+            sourceOrganizationHistories.add(!ObjectUtils.isEmpty(currentSourceOrganization) ? sourceMapper.entitySourceToDTO(currentSourceOrganization) : null);
+            sourceOrganizationHistories.add(!ObjectUtils.isEmpty(lastSourceOrganization) ? sourceMapper.entitySourceToDTO(lastSourceOrganization) : null);
+
+        }else {
+            //PREVIOUS
+            Double[] versions = new Double[]{version,version-1};
+            List<Source> approvedSourceOrganizations = customSourceRepository
+                    .findByHonAndVersionInOrderByVersionDesc(hon, versions, Source.class, historyCollectionName);
+            if(!approvedSourceOrganizations.isEmpty()){
+                sourceOrganizationHistories = sourceMapper.toSourceDTOList(approvedSourceOrganizations);
+            }
         }
-
-        List<SourceOrganizationDTO> searchOrganizationDTOList = sourceMapper.toSourceDTOList(sourceOrganizations);
-
-        return SearchResponseDTO.builder()
-                //.organizationNames(organization.getOrganizationList())
-                .sourceList(searchOrganizationDTOList)
-                .currentPage(1)
-                .totalItems(searchOrganizationDTOList.size())
-                .totalPages(QueryBuilder.getTotalPages(searchOrganizationDTOList.size(), 10))
-                .build();
+        log.info("getSourcesForDiff Ends");
+        return sourceOrganizationHistories;
     }
 
-    private List<Source> getDetailedAutocompleteHits(String keyword, OrganizationType orgType,
-                                                     SourceOrganizationStatus status, String country) {
+    private Source findSourceOrganizationHistoryByHonAndVersion(@NotNull String hon, @NotNull Double version) {
+        String collectionName = Helper.getCollectionName(hon, SOURCE_HISTORY_COLLECTION_SUFFIX);
+        return customSourceRepository.findOneByHonAndVersion(hon, version, Source.class, collectionName);
+    }
 
-        Criteria criteria = QueryBuilder.buildAutocompleteSearchDocument(keyword, country, status);
-        MatchOperation matchOperation = QueryBuilder.buildMatch(criteria);
-        ProjectionOperation projectSelectiveData = QueryBuilder.autoCompleteHitsProjection();
-        Aggregation aggregation = newAggregation(matchOperation, projectSelectiveData, limit(SEARCH_LIMIT));
-        String collectionName = Helper.getCollectionName(orgType.getType(), SOURCE_COLLECTION_SUFFIX);
-        List<Source> sourceOrganizations = customSourceRepository.aggregate(aggregation, collectionName, Source.class);
-        if (ObjectUtils.isEmpty(sourceOrganizations)) {
-            logAndThrowResourceNotFound(NO_SEARCH_RESULT_FOUND, null, keyword);
+    private Source findSourceByHonAndVersion(@NotNull String hon, @NotNull Double version, String collectionName) {
+        return customSourceRepository.findOneByHonAndVersion(hon, version, Source.class, collectionName);
+    }
+
+    private double getLatestActiveVersion(String hon){
+        double latestActiveVersion = 0.0;
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        List<Source> sourceList = customSourceRepository.findByHonOrderByLastModifiedDateDesc(hon, Source.class, collectionName);
+        if(!sourceList.isEmpty()){
+            Source source = sourceList.getFirst();
+            latestActiveVersion = source.getVersion();
+            if(source.getApprovalStatus() != null && !source.getApprovalStatus().equals(APPROVED)){
+                latestActiveVersion = latestActiveVersion + 1;
+            }
         }
-        return sourceOrganizations;
+        return latestActiveVersion;
     }
 
-    private SearchResponseDTO buildSearchResponseDTO(SearchDTO searchDTO,
-                                                     List<Source> organizations,
-                                                     String sortByName) {
-        if (canDoPaging(organizations.size(), searchDTO)) {
-            return buildPagedResponse(searchDTO, organizations, sortByName);
-        } else {
-            return buildSimpleResponse(organizations);
-        }
-    }
-
-    private SearchResponseDTO buildPagedResponse(SearchDTO searchDTO, List<Source> organizations, String sortByName) {
-        Sort sortBy = Sort.by(sortByName).descending();
-        Pageable pageable = PageRequest.of(searchDTO.getStartIndex() - 1, searchDTO.getBatchSize(), sortBy);
-
-        int start = calculateStartIndex(searchDTO, organizations.size());
-        int end = calculateEndIndex(searchDTO, start, organizations.size());
-
-        log.info("start:{}end:{}", start, end);
-
-        Page<Source> page = new PageImpl<>(organizations.subList(start, end), pageable, organizations.size());
-        validatePageContent(page, searchDTO);
-
-        List<SourceOrganizationDTO> organizationDTOS = sourceMapper.toSourceDTOList(page.getContent());
-
-        return SearchResponseDTO.builder()
-                .sourceList(organizationDTOS)
-                .currentPage(page.getNumber() + 1)
-                .totalItems(page.getTotalElements())
-                .totalPages(page.getTotalPages())
-                .build();
-    }
-
-    private SearchResponseDTO buildSimpleResponse(List<Source> organizations) {
-        List<SourceOrganizationDTO> organizationDTOS = sourceMapper.toSourceDTOList(organizations);
-
-        return SearchResponseDTO.builder()
-                .sourceList(organizationDTOS)
-                .currentPage(1)
-                .totalItems(organizations.size())
-                .totalPages(1)
-                .build();
-    }
-
-    private int calculateStartIndex(SearchDTO searchDTO, int totalSize) {
-        return Math.min(Math.max(searchDTO.getBatchSize() * (searchDTO.getStartIndex() - 1), 0), totalSize);
-    }
-
-    private int calculateEndIndex(SearchDTO searchDTO, int start, int totalSize) {
-        return Math.min(Math.max(searchDTO.getBatchSize() * searchDTO.getStartIndex(), start), totalSize);
-    }
-
-    private void validatePageContent(Page<Source> page, SearchDTO searchDTO) {
-        if (page.getContent().isEmpty()) {
-            int num = page.getNumber() + 1;
-            logAndThrowResourceNotFound(NO_DATA_FOUND, null, num, page.getTotalElements(),
-                                       page.getTotalPages(), searchDTO.getBatchSize());
+    private void getSubVersions(String hon,double version, ChangelogResponseDTO changeLogResponse, String historyCollectionName){
+        List<Source> sourceOrganizationHistories = customSourceRepository.getHistoryByHonAndVersion(hon, version, Source.class, historyCollectionName);
+        if(sourceOrganizationHistories != null && !sourceOrganizationHistories.isEmpty()){
+            changeLogResponse.setVersions(sourceMapper.toSourceDTOList(sourceOrganizationHistories));
         }
     }
 
-    private boolean canDoPaging(int resultCount, SearchDTO searchDTO) {
-        if (resultCount == 0)
-            return false;
-        return resultCount > searchDTO.getStartIndex() + searchDTO.getBatchSize();
+    private List<Source> getActiveSources(String hon, double version,int i, String historyCollectionName){
+        List<Source> activeSource = customSourceRepository.findByHonAndVersionAndApprovalStatus(hon, i, Source.class, historyCollectionName);
+        if(version == i && (activeSource == null || activeSource.isEmpty())){
+            String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+            activeSource = customSourceRepository.findByHonAndVersionAndApprovalStatus(hon, i, Source.class, collectionName);
+        }
+        return activeSource;
     }
 
 }
