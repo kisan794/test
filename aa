@@ -1,85 +1,259 @@
-ApprovalTATServiceImpl
-Cognitive Complexity from 66 to the 15 allowed. : private List<ResponseReport> timeCalculations(List<TATReport> tatReportList)
+package com.hireright.sourceintelligence.reports.service.impl;
 
+import com.hireright.sourceintelligence.domain.enums.ApprovalStatus;
+import com.hireright.sourceintelligence.domain.repository.CustomSourceRepository;
+import com.hireright.sourceintelligence.reports.domain.entity.Reports;
+import com.hireright.sourceintelligence.reports.domain.entity.ReportSearchResult;
+import com.hireright.sourceintelligence.reports.domain.entity.ResponseReport;
+import com.hireright.sourceintelligence.reports.domain.entity.TATReport;
+import com.hireright.sourceintelligence.reports.domain.mapper.ReportMapper;
+import com.hireright.sourceintelligence.reports.dto.GenericResponseDTO;
+import com.hireright.sourceintelligence.reports.dto.MetaDTO;
+import com.hireright.sourceintelligence.reports.dto.ReportResponseDTO;
+import com.hireright.sourceintelligence.reports.dto.ReportsRequestDTO;
+import com.hireright.sourceintelligence.reports.service.ApprovalTATService;
+import com.hireright.sourceintelligence.service.impl.QueryBuilder;
+import com.hireright.sourceintelligence.service.impl.helperservices.CountryRegionMappingUtils;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.aggregation.*;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.stereotype.Service;
 
-SourceInformationServiceImpl.java
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 
-Define a constant instead of duplicating this literal "total" 9 times.
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.AUTO_APPOVED;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.REPORTS_COLLECTION;
+import static com.hireright.sourceintelligence.reports.service.impl.ReportConstants.AggregateFields.APPROVED;
+import static com.hireright.sourceintelligence.reports.service.impl.ReportConstants.AggregateFields.TAT_REPORT_LIST;
+import static com.hireright.sourceintelligence.reports.service.impl.ReportConstants.ReportTypes.APPROVAL_TAT;
+import static com.hireright.sourceintelligence.reports.service.impl.ReportUtils.getMetaDataByReport;
 
-12 days ago
-L59
+@Slf4j
+@RequiredArgsConstructor
+@Service
+public class ApprovalTATServiceImpl implements ApprovalTATService {
 
-Code Smell
+    private final ReportMapper reportMapper;
+    private final CustomSourceRepository<Reports> customSourceRepository;
+    private final CountryRegionMappingUtils countryRegionMappingUtils;
 
-Critical
+    @Override
+    public ReportResponseDTO getApprovalAverageTAT(ReportsRequestDTO reportsRequestDTO) {
+        List<String> countryList = null;
+        if(reportsRequestDTO.getRegion() != null && !reportsRequestDTO.getRegion().isEmpty()){
+            countryList = countryRegionMappingUtils.findDistinctCountriesByRegion(reportsRequestDTO.getRegion());
+        }
+        Criteria criteria = ReportsQueryBuilder.queryBuilderForApprovalTat(reportsRequestDTO, countryList);
+        MatchOperation matchOperation = ReportsQueryBuilder.matchOperation(criteria);
 
-Open
+        Criteria criteria2 = ReportsQueryBuilder.queryBuilderForTatFilter();
+        MatchOperation matchOperation2 = ReportsQueryBuilder.matchOperation(criteria2);
 
-Not assigned
-20min effort
+        ProjectionOperation projectionOperation = ReportsQueryBuilder.excludeProjection();
+        GroupOperation groupOperation = ReportsQueryBuilder.approvalTATGroupOperation();
+        SortOperation sortOperation = ReportsQueryBuilder.buildSortOperationForTAT(reportsRequestDTO.getSort(), reportsRequestDTO.getOrder());
+        FacetOperation facetOperation = ReportsQueryBuilder.facetOperation(reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize());
+        if(!reportsRequestDTO.getSort().isEmpty()){
+            facetOperation = ReportsQueryBuilder.facetOperationWithSorting(sortOperation, reportsRequestDTO.getStartPage(), reportsRequestDTO.getBatchSize());
+        }
+        ProjectionOperation finalProject = ReportsQueryBuilder.finalProjectionWithTotalCountInPipeline(TAT_REPORT_LIST);
 
-Comment
+        AggregationOptions aggregationOptionsToAllowDiskUse = AggregationOptions.builder()
+                .allowDiskUse(true).build();
+        Aggregation aggregation;
+        aggregation = Aggregation.newAggregation(matchOperation,projectionOperation, groupOperation, matchOperation2, facetOperation, finalProject).withOptions(aggregationOptionsToAllowDiskUse);
+        log.info("Aggregation:{}",aggregation);
 
-design
-Define a constant instead of duplicating this literal "count" 4 times.
+        var response = customSourceRepository.reportCustomAggregate(aggregation,REPORTS_COLLECTION, ReportSearchResult.class);
+        log.info("Response: {}", response);
+        List<GenericResponseDTO> responseDTOS = new ArrayList<>();
+        var res = timeCalculations(response.getTatResponseReportList());
+        if(!res.isEmpty()){
+            responseDTOS = reportMapper.toDTOList(res);
+            if(reportsRequestDTO.getSort() != null && !reportsRequestDTO.getSort().isEmpty() && (reportsRequestDTO.getSort().equalsIgnoreCase("Approval_Status")|| reportsRequestDTO.getSort().equalsIgnoreCase("Action"))){
+               sorting(responseDTOS, reportsRequestDTO);
+            }
+        }
+        List<MetaDTO> metaDTOList = getMetaDataByReport(APPROVAL_TAT);
+        return pagination(responseDTOS, metaDTOList, reportsRequestDTO);
 
-12 days ago
-L59
+    }
+    private ReportResponseDTO pagination(List<GenericResponseDTO> responseDTOS, List<MetaDTO> metaDTOList, ReportsRequestDTO reportsRequestDTO){
 
-Code Smell
+        int page = reportsRequestDTO.getStartPage();   // assuming 1-based index
+        int size = reportsRequestDTO.getBatchSize();
 
-Critical
+        int totalItems = responseDTOS.size();
+        int totalPages = QueryBuilder.getTotalPages(totalItems, size);
 
-Open
+        // Convert to zero-based index
+        int fromIndex = (page - 1) * size;
+        int toIndex = Math.min(fromIndex + size, totalItems);
 
-Not assigned
-10min effort
+        List<GenericResponseDTO> paginatedList;
 
-Comment
+        if (fromIndex >= totalItems || fromIndex < 0) {
+            paginatedList = Collections.emptyList();
+        } else {
+            paginatedList = responseDTOS.subList(fromIndex, toIndex);
+        }
 
-design
-Refactor this method to reduce its Cognitive Complexity from 28 to the 15 allowed.
+        return ReportResponseDTO.builder().
+                meta(metaDTOList).response(paginatedList)
+                .currentPage(reportsRequestDTO.getStartPage())
+                .totalItems(totalItems)
+                .totalPages(totalPages)
+                .reportType(APPROVAL_TAT).build();
+    }
 
+    private List<ResponseReport> timeCalculations(List<TATReport> tatReportList){
+        List<ResponseReport> responseReportList = new ArrayList<>();
+        for (TATReport tatReport : tatReportList) {
+            if(!tatReport.getData().isEmpty()){
+                processReportData(tatReport, responseReportList);
+            }
+        }
+        return responseReportList;
+    }
 
-SearchServiceImpl.java
-src/.../service/impl/SearchServiceImpl.java
-Refactor this method to reduce its Cognitive Complexity from 17 to the 15 allowed.
+    private void processReportData(TATReport tatReport, List<ResponseReport> responseReportList) {
+        List<ResponseReport> data = tatReport.getData();
+        if (data.size() == 1 && data.get(0).getApprovalStatus().equalsIgnoreCase(APPROVED)) {
+            handleSingleApprovedReport(data.get(0), responseReportList);
+            return;
+        }
 
+        TATCalculationContext context = new TATCalculationContext();
+        for (ResponseReport rsReport : data) {
+            processReportByStatus(rsReport, context, responseReportList);
+        }
+    }
 
-SourceHistoryServiceImpl.java
-src/.../service/impl/SourceHistoryServiceImpl.java
-Refactor this method to reduce its Cognitive Complexity from 17 to the 15 allowed.
+    private void handleSingleApprovedReport(ResponseReport report, List<ResponseReport> responseReportList) {
+        report.setApprovalDuration(String.valueOf(0));
+        report.setTotalApprovalDuration(String.valueOf(0));
+        responseReportList.add(report);
+    }
 
+    private void processReportByStatus(ResponseReport rsReport, TATCalculationContext context, List<ResponseReport> responseReportList) {
+        String status = rsReport.getApprovalStatus();
 
-SourceServiceImpl.java
-src/.../service/impl/SourceServiceImpl.java
-Refactor this method to reduce its Cognitive Complexity from 22 to the 15 allowed.
+        if (isPendingApprovalStatus(status)) {
+            handlePendingApproval(rsReport, context);
+        } else if (status.equals(ApprovalStatus.IN_PROGRESS.getStatus())) {
+            handleInProgress(rsReport, context);
+        } else if (status.equals(ApprovalStatus.ONHOLD.getStatus())) {
+            handleOnHold(rsReport, context);
+        } else if (isCompletedStatus(status)) {
+            handleCompletedStatus(rsReport, context, responseReportList);
+        }
+    }
 
-1 month ago
-L151
+    private boolean isPendingApprovalStatus(String status) {
+        return status.equals(ApprovalStatus.PENDING_APPROVAL.getStatus())
+                || status.equals(ApprovalStatus.SAVE_PENDING_APPROVAL.getStatus());
+    }
 
-Code Smell
+    private boolean isCompletedStatus(String status) {
+        return status.equals(ApprovalStatus.APPROVED.getStatus())
+                || status.equals(ApprovalStatus.REJECTED.getStatus());
+    }
 
-Critical
+    private void handlePendingApproval(ResponseReport rsReport, TATCalculationContext context) {
+        context.action = rsReport.getAction();
+        context.startDate = rsReport.getCreatedDate();
+        context.roundActive = true;
+        context.tempDate = null;
+        context.minutes = 0;
+        context.totalMinutes = 0;
+    }
 
-Open
+    private void handleInProgress(ResponseReport rsReport, TATCalculationContext context) {
+        context.tempDate = rsReport.getCreatedDate();
+    }
 
-Not assigned
-12min effort
+    private void handleOnHold(ResponseReport rsReport, TATCalculationContext context) {
+        if (context.tempDate != null && rsReport.getCreatedDate() != null) {
+            context.minutes += Math.abs(Duration.between(context.tempDate,
+                    rsReport.getCreatedDate()).toMillis());
+        }
+        context.tempDate = rsReport.getCreatedDate();
+    }
 
-Comment
+    private void handleCompletedStatus(ResponseReport rsReport, TATCalculationContext context, List<ResponseReport> responseReportList) {
+        if (context.roundActive) {
+            processActiveRound(rsReport, context, responseReportList);
+        } else if (rsReport.getReason().equalsIgnoreCase(AUTO_APPOVED)) {
+            handleAutoApproved(rsReport, responseReportList);
+        }
+    }
 
-brain-overload
-Refactor this method to reduce its Cognitive Complexity from 21 to the 15 allowed.
+    private void processActiveRound(ResponseReport rsReport, TATCalculationContext context, List<ResponseReport> responseReportList) {
+        Instant endDate = rsReport.getCreatedDate();
 
+        if (context.tempDate != null) {
+            context.minutes += Math.abs(Duration.between(context.tempDate, rsReport.getCreatedDate()).toMillis());
+        }
 
-UpdateSourceService.java
-src/.../service/impl/helperservices/UpdateSourceService.java
-Refactor this method to reduce its Cognitive Complexity from 20 to the 15 allowed.
+        if (context.startDate != null && endDate != null && context.startDate.isBefore(endDate)) {
+            context.totalMinutes = Math.abs(Duration.between(context.startDate, endDate).toMillis());
+        }
 
+        if (!rsReport.getAction().equals(context.action) && context.action != null && !context.action.isEmpty()) {
+            rsReport.setAction(context.action);
+        }
 
+        rsReport.setApprovalDuration(String.valueOf(context.minutes));
+        rsReport.setTotalApprovalDuration(String.valueOf(context.totalMinutes));
+        responseReportList.add(rsReport);
+        context.roundActive = false;
+    }
 
-DeepDiffUtil.java
-src/.../sourceintelligence/util/DeepDiffUtil.java
-Refactor this method to reduce its Cognitive Complexity from 40 to the 15 allowed.
+    private void handleAutoApproved(ResponseReport rsReport, List<ResponseReport> responseReportList) {
+        rsReport.setApprovalDuration(String.valueOf(0));
+        rsReport.setTotalApprovalDuration(String.valueOf(0));
+        responseReportList.add(rsReport);
+    }
 
+    private static class TATCalculationContext {
+        Instant startDate;
+        Instant tempDate;
+        long totalMinutes;
+        long minutes;
+        String action = "";
+        boolean roundActive;
+    }
+
+    private void sorting(List<GenericResponseDTO> responseDTOS, ReportsRequestDTO reportsRequestDTO){
+            String sortField = reportsRequestDTO.getSort();
+            String sortOrder = reportsRequestDTO.getOrder(); // "ASC" or "DESC"
+
+            Comparator<GenericResponseDTO> comparator = null;
+            switch (sortField) {
+                case "Approval_Status":
+                    comparator = Comparator.comparing(GenericResponseDTO::getApprovalStatus,
+                            Comparator.nullsLast(String::compareTo));
+                    break;
+                case "Action":
+                    comparator = Comparator.comparing(GenericResponseDTO::getAction,
+                            Comparator.nullsLast(String::compareTo));
+                    break;
+                default:
+                    break;
+            }
+
+            if (comparator != null) {
+                if ("DESC".equalsIgnoreCase(sortOrder)) {
+                    comparator = comparator.reversed();
+                }
+                responseDTOS.sort(comparator);
+            }
+        }
+
+}
