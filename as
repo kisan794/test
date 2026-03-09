@@ -1,54 +1,35 @@
-package com.hireright.sourceintelligence.service.impl;
+package com.hireright.sourceintelligence.service.impl.helperservices;
 
-import static com.hireright.sourceintelligence.api.ApiConstants.FAILURE;
-import static com.hireright.sourceintelligence.api.ApiConstants.SUCCESS;
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.*;
-import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
-import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.*;
-import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.APPROVED;
-import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.IN_PROGRESS;
-import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.REJECTED;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.ErrorMessages.*;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.ReportActions.*;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchFields.*;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.StatusCode.*;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.*;
-
-import com.hireright.sourceintelligence.api.dto.*;
-import com.hireright.sourceintelligence.api.dto.optool.AutoMatchResponseDTO;
-import com.hireright.sourceintelligence.api.dto.optool.AutoMatchSourceDTO;
-import com.hireright.sourceintelligence.constants.ApplicationConstants;
+import com.hireright.sourceintelligence.api.dto.CycleResult;
+import com.hireright.sourceintelligence.api.dto.SourceOrganizationDTO;
+import com.hireright.sourceintelligence.api.dto.UIActionsDTO;
 import com.hireright.sourceintelligence.domain.entity.Source;
 import com.hireright.sourceintelligence.domain.enums.ApprovalStatus;
 import com.hireright.sourceintelligence.domain.enums.SourceOrganizationStatus;
-import com.hireright.sourceintelligence.domain.mapper.AutoMatchMapper;
 import com.hireright.sourceintelligence.domain.mapper.SourceMapper;
-import com.hireright.sourceintelligence.domain.repository.*;
-import com.hireright.sourceintelligence.service.*;
-import com.hireright.sourceintelligence.service.impl.helperservices.CreateSourceService;
-import com.hireright.sourceintelligence.service.impl.helperservices.ArchiveSourceService;
-import com.hireright.sourceintelligence.service.impl.helperservices.ReportDataUtils;
-import com.hireright.sourceintelligence.service.impl.helperservices.UpdateSourceService;
+import com.hireright.sourceintelligence.service.impl.SearchConstants;
+import com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchService;
+import com.hireright.sourceintelligence.service.impl.MongoSourceService;
 import com.hireright.sourceintelligence.util.Helper;
-
-import java.time.Instant;
-import java.util.*;
-
-import com.mongodb.client.MongoClient;
-import jakarta.validation.constraints.NotNull;
-
+import com.mongodb.DBObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.ObjectUtils;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.ArrayList;
+
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.*;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.UPDATE;
+import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchFields.USED_COUNT;
+import static com.hireright.sourceintelligence.util.LoggingThrowable.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.LogFlagConstants.*;
 
 
 @Primary
@@ -56,555 +37,307 @@ import org.springframework.util.ObjectUtils;
 @RequiredArgsConstructor
 @Transactional
 @Service
-public class SourceServiceImpl implements SourceService {
+public class UpdateSourceService {
 
-    private static final String SOURCE_ORGANIZATION_WITH_HON = "SourceOrganization with HON: ";
-
-    private final CustomSourceRepository<Source> customSourceRepository;
     private final SourceMapper sourceMapper;
-    private final ReportDataUtils reportDataUtils;
-    private final AutoMatchMapper autoMatchMapper;
-
-    private final CreateSourceService createSourceService;
-    private final UpdateSourceService updateSourceService;
-    private final ArchiveSourceService archiveSourceService;
+    private final SourceUtils sourceUtils;
+    private final CountryRegionMappingUtils countryRegionMappingUtils;
     private final MongoSourceService mongoSourceService;
+    private final ElasticsearchService elasticsearchService;
+    private final ReportDataUtils reportDataUtils;
 
     @Transactional
-    @Override
-    public SourceOrganizationDTO createSource(@NotNull SourceOrganizationDTO sourceOrganizationDTO, UIActionsDTO uiActionsDTO) {
-        try {
-            return createSourceService.createSource(sourceOrganizationDTO, uiActionsDTO);
-        } catch (Exception e) {
-            logAndThrowServiceException(CREATE_SOURCE_ERROR, e, sourceOrganizationDTO.getOrganizationName(), e.getMessage());
-        }
-        return null;
-    }
-
-    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
-    @Override
-    public SourceOrganizationDTO updateSource(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO) {
-        try {
-            return updateSourceService.updateSource(sourceDTO, uiActionsDTO);
-        } catch (Exception e) {
-            logAndThrowServiceException(UPDATE_SOURCE_ERROR, e, sourceDTO.getHon(), e.getMessage());
-        }
-        return null;
-    }
-
-    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
-    @Override
-    public ResponseObject archiveSource(String hon, UIActionsDTO uiActionsDTO) {
-        ResponseObject responseObject = null;
-        try {
-            boolean response = archiveSourceService.archiveSource(hon, uiActionsDTO);
-            if(response){
-                responseObject = ResponseObject.baseBuilder(SUCCESS,ARCHIVE_SUCCESS,SUCCESS_CODE).build();
-            }else{
-                responseObject = ResponseObject.baseBuilder(FAILURE,ARCHIVE_FAILURE,FAILURE_CODE).build();
-            }
-        } catch (Exception e) {
-            logAndThrowServiceException(DELETE_SOURCE_ERROR, e, hon, e.getMessage());
-        }
-        return responseObject;
-    }
-
-    @Override
-    @Transactional
-    public AutoMatchResponseDTO incrementUsedCount(String hon, ApprovalStatus approvalStatus) {
-        log.info("Manual select source request: {}", hon);
-        Instant requestTime = Instant.now();
-        var entityFromDb = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
-        if (entityFromDb == null) {
-            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
-        }
-        if (entityFromDb != null && entityFromDb.getPayload() == null) {
-            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
-        }
-        log.info("current system date: {}", requestTime);
-        AutoMatchSourceDTO response = autoMatchMapper.toAutoMatchDTO(entityFromDb);
-        assert entityFromDb != null;
-        log.info("Manual select source response: {}", response);
-        log.info("Source organization with hon: {} was last verified on {}", hon, requestTime);
-        return AutoMatchResponseDTO.baseBuilder("", requestTime).source(response).build();
-    }
-
-    @Override
-    public List<SourceOrganizationDTO> getSourcesByHonIds(List<String> honIds) {
-        List<Source> sourceList = customSourceRepository.findByHonIn(honIds, Source.class, Helper.getCollectionName(honIds.get(0), SOURCE_COLLECTION_SUFFIX));
-        if (!ObjectUtils.isEmpty(sourceList)) {
-            return sourceMapper.toSourceDTOList(sourceList);
-        }
-        return Collections.emptyList();
-    }
-
-    @Override
-    public SourceOrganizationDTO getSourceByHon(@NotNull String hon) {
-        Source source = mongoSourceService.findSourceByHon(hon);
-        if (source == null) {
-            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
-        }
-        return sourceMapper.entitySourceToDTO(source);
-    }
-
-    @Override
-    public ResponseObject assignApproveManagerToSource(ApprovalRequestDTO approvalRequestDTO) {
-        List<String> hons = new ArrayList<>();
-        Query query = new Query();
-        List<String> approvalStatuses = createApprovalStatusesList();
-
-        ResponseObject validationResult = validateAndProcessSourceDetails(approvalRequestDTO, hons, query, approvalStatuses);
-        if (validationResult != null) {
-            return validationResult;
-        }
-
-        if (!hons.isEmpty()) {
-            return processAssignment(approvalRequestDTO, query);
-        }
-
-        return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE, FAILURE2_CODE).build();
-    }
-
-    private List<String> createApprovalStatusesList() {
-        List<String> approvalStatuses = new ArrayList<>();
-        approvalStatuses.add(IN_PROGRESS.toString());
-        approvalStatuses.add(ONHOLD.toString());
-        return approvalStatuses;
-    }
-
-    private ResponseObject validateAndProcessSourceDetails(ApprovalRequestDTO approvalRequestDTO,
-                                                           List<String> hons, Query query,
-                                                           List<String> approvalStatuses) {
-        if (approvalRequestDTO.getSourceDetails().isEmpty()) {
-            return null;
-        }
-
-        for (AssignSourceDTO assignSourceDTO : approvalRequestDTO.getSourceDetails()) {
-            ResponseObject result = processSourceDetail(assignSourceDTO, hons, query, approvalStatuses);
-            if (result != null) {
-                return result;
-            }
-        }
-        return null;
-    }
-
-    private ResponseObject processSourceDetail(AssignSourceDTO assignSourceDTO, List<String> hons,
-                                               Query query, List<String> approvalStatuses) {
-        String collectionName = Helper.getCollectionName(assignSourceDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
-        Source source = mongoSourceService.findSourceById(new ObjectId(assignSourceDTO.getId()), collectionName);
-
-        if (source == null) {
-            return null;
-        }
-
-        if (!isValidApprovalStatus(source.getApprovalStatus())) {
-            return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE, FAILURE_CODE).build();
-        }
-
-        Source existingSource = mongoSourceService.findSourceByHonAndApprovalStatuses(
-            assignSourceDTO.getHon(), approvalStatuses);
-
-        if (existingSource != null) {
-            return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE_2, FAILURE_CODE).build();
-        }
-
-        hons.add(assignSourceDTO.getHon());
-        query.addCriteria(Criteria.where(HON).is(assignSourceDTO.getHon()));
-        query.addCriteria(Criteria.where(APPROVAL_STATUS).is(assignSourceDTO.getApprovalStatus()));
-        return null;
-    }
-
-    private boolean isValidApprovalStatus(ApprovalStatus status) {
-        return status.equals(PENDING_APPROVAL) ||
-               status.equals(SAVE_PENDING_APPROVAL) ||
-               status.equals(ONHOLD);
-    }
-
-    private ResponseObject processAssignment(ApprovalRequestDTO approvalRequestDTO, Query query) {
-        if (approvalRequestDTO.getAssignType().equalsIgnoreCase(ASSIGN_MYSELF)) {
-            assignToMyself(approvalRequestDTO, query);
+    public SourceOrganizationDTO updateSource(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO) throws Exception {
+        boolean isEdit = uiActionsDTO.getUserAction().equals(ACTION_SAVE) || uiActionsDTO.getUserAction().equals(ACTION_SAVE_AND_USE);
+        boolean isCreateEdit = isEdit && sourceDTO.getAction().equals(CREATE);
+        boolean isVersionExists = sourceDTO.getVersion() > 0;
+        Source source;
+        if (isEdit && isCreateEdit && !isVersionExists) {
+            //editing the creation source
+            source = updateSourceByResearcher(sourceDTO, uiActionsDTO, NEW_SOURCE);
+        } else if (isEdit && isVersionExists) {
+            //Editing the existing source
+            source = updateSourceByResearcher(sourceDTO, uiActionsDTO, EXISTING_SOURCE);
+        } else if (!isEdit) {
+            //Approve or reject or on hold
+            source = updateSourceByApprovalManager(sourceDTO, uiActionsDTO);
         } else {
-            assignToOther(approvalRequestDTO, query);
-        }
-        return ResponseObject.baseBuilder(SUCCESS, ASSIGN_SUCCESS, SUCCESS_CODE).build();
-    }
-
-    private void assignToMyself(ApprovalRequestDTO approvalRequestDTO, Query query) {
-        String collectionName = Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX);
-        Query query1 = new Query();
-        query1.addCriteria(Criteria.where(ID).is(approvalRequestDTO.getSourceDetails().getFirst().getId()));
-
-        Update update = new Update();
-        update.set(ASSIGNED_TO, approvalRequestDTO.getApproverName());
-        update.set(ASSIGNED_ID, approvalRequestDTO.getApproverEmail());
-        update.set(APPROVAL_STATUS, IN_PROGRESS.getStatus());
-
-        customSourceRepository.updateFieldsByQuery(query, update, Source.class, collectionName);
-        Source source = mongoSourceService.findSourceById(
-            new ObjectId(approvalRequestDTO.getSourceDetails().getFirst().getId()), collectionName);
-        reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0,
-                                   MANUAL_PROCESS, source.getVersion(), source.getTempVersion(), APPROVAL_FLOW);
-    }
-
-    private void assignToOther(ApprovalRequestDTO approvalRequestDTO, Query query) {
-        customSourceRepository.assignApproverToSource(query, approvalRequestDTO.getApproverName(),
-                                                     approvalRequestDTO.getApproverEmail(),
-                                                     Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX));
-    }
-
-    @Override
-    @Transactional
-    public boolean updateFlagForPriority(String hon, Double version) {
-        var entityFromDb = findSourceByHonAndVersion(hon, version);
-        if (entityFromDb == null) {
-            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
-            return false;
-        }
-        Boolean flag = entityFromDb.getFlagPriority() == null ? Boolean.TRUE : !entityFromDb.getFlagPriority();
-        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
-        Update update = new Update().set(FLAG_PRIORITY, flag);
-        update.set(LAST_ACTION_DATE, Instant.now());
-        Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
-        updateByIdWithCustomFields(query, update, collectionName);
-        log.info("Organization with hon:{} flagged {} for priority", hon, entityFromDb.getFlagPriority());
-        return flag;
-    }
-
-    @Override
-    public ResponseObject deleteSource(String hon, DeleteRequestDTO deleteRequestDTO) {
-        try {
-            long count = mongoSourceService.hardDeleteSource(hon, deleteRequestDTO);
-            if(count == 0){
-                return ResponseObject.baseBuilder(FAILURE,DELETE_FAILURE,FAILURE2_CODE).build();
-            }
-            return ResponseObject.baseBuilder(SUCCESS,DELETE_SUCCESS,SUCCESS_CODE).build();
-        }catch (Exception e) {
-            return ResponseObject.baseBuilder(FAILURE,INTERNAL_FAILURE,INTERNAL_ERROR_CODE).build();
-        }
-    }
-
-    @Override
-    public ResponseObject lockSource(String hon, UIActionsDTO uiActionsDTO) {
-        Source source = mongoSourceService.findSourceByHon(hon);
-        if(source != null){
-            if(Boolean.FALSE.equals(source.getIsLockEnabled())){
-                String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
-                Update update = new Update().set(IS_LOCK_ENABLED, true)
-                        .set(LAST_LOCKED_BY,uiActionsDTO.getUserName())
-                        .set(LAST_LOCKED_ID,uiActionsDTO.getUserEmail())
-                        .set(LAST_LOCKED_DATE,Instant.now())
-                        .set(LOG_FLAG,SearchConstants.LogFlagConstants.LOCKED);
-                Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
-                updateByIdWithCustomFields(query, update, collectionName);
-                Source sourceHistory = updateLockAndUnlockFields(source, uiActionsDTO);
-                mongoSourceService.insertSourceHistory(sourceHistory);
-                reportDataUtils.reportData(source, LOCK, SIDB_ORIGIN,0,null, source.getVersion(), source.getTempVersion(), LOCK);
-                return ResponseObject.baseBuilder(SUCCESS,LOCK_SUCCESS,SUCCESS_CODE).build();
-            }else{
-                return ResponseObject.baseBuilder(FAILURE,LOCK_FAILURE,FAILURE_CODE).build();
-            }
-        }
-        return ResponseObject.baseBuilder(FAILURE,LOCK_FAILURE_2,FAILURE2_CODE).build();
-    }
-
-    @Override
-    public ResponseObject unlockSource(String hon, UIActionsDTO uiActionsDTO) {
-        Source source = mongoSourceService.findSourceByHon(hon);
-        if(source != null){
-            if(Boolean.TRUE.equals(source.getIsLockEnabled())){
-              String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
-                Update update = new Update().set(IS_LOCK_ENABLED, false)
-                        .set(LAST_LOCKED_BY,uiActionsDTO.getUserName())
-                        .set(LAST_LOCKED_ID,uiActionsDTO.getUserEmail())
-                        .set(LAST_LOCKED_DATE,Instant.now())
-                        .set(LOG_FLAG,source.getAction().equalsIgnoreCase(ApplicationConstants.CREATE) ? SearchConstants.LogFlagConstants.NEW_RECORD : SearchConstants.LogFlagConstants.DETAILS_CHANGED);
-                Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
-                updateByIdWithCustomFields(query, update, collectionName);
-                Source sourceHistory = updateLockAndUnlockFields(source, uiActionsDTO);
-                mongoSourceService.insertSourceHistory(sourceHistory);
-                reportDataUtils.reportData(source, UNLOCK, SIDB_ORIGIN,0,null, source.getVersion(), source.getTempVersion(), UNLOCK);
-                return ResponseObject.baseBuilder(SUCCESS,UNLOCK_SUCCESS,SUCCESS_CODE).build();
-            }else{
-                return ResponseObject.baseBuilder(FAILURE,UNLOCK_FAILURE,FAILURE_CODE).build();
-            }
-        }
-        return ResponseObject.baseBuilder(FAILURE,UNLOCK_FAILURE2,FAILURE2_CODE).build();
-    }
-
-    @Override
-    public boolean updateUsedCount(String hon, boolean isAutoMatch) {
-        log.info("Update used count source request: {}", hon);
-        var entityFromDb = findSourceByHonAndStatusAndApprovalStatus(hon, SourceOrganizationStatus.ACTIVE.getStatus(), APPROVED.getStatus());
-        if (entityFromDb == null) {
-            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
-        }
-        if (entityFromDb != null && entityFromDb.getPayload() == null) {
-            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
-        }
-        log.info("current system date: {}", Instant.now().toString());
-        Source source = customSourceRepository.UpdateDateOnIncrementByHon(hon, Instant.now().toString(), Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
-        if (source != null) {
-            /* Report Data Starts */
-            int autoMatch = isAutoMatch ? 1 : 0;
-            assert entityFromDb != null;
-            reportDataUtils.reportData(entityFromDb, SearchConstants.ReportActions.USED_COUNT, ORIGIN, autoMatch, null, entityFromDb.getVersion(), entityFromDb.getTempVersion(), SearchConstants.ReportActions.USED_COUNT);
-            /* Report Data Ends */
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public SourceOrganizationDTO getSourceByHonAndApprovalStatus(@NotNull String hon, ApprovalStatus approvalStatus) {
-        Source source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
-
-        if (source == null) {
-            return handleSourceNotFound(hon, approvalStatus);
-        }
-
-        if (source.getApprovalStatus().getStatus().equals(approvalStatus.getStatus())) {
-            return sourceMapper.entitySourceToDTO(source);
-        }
-
-        return handleStatusMismatch(hon, approvalStatus);
-    }
-
-    private SourceOrganizationDTO handleSourceNotFound(String hon, ApprovalStatus approvalStatus) {
-        log.info("getSourceByHonAndApprovalStatus: source not found: {}, {}", hon, approvalStatus);
-
-        if (isApprovedOrRejectedStatus(approvalStatus)) {
-            return null;
-        }
-
-        return retryFindSource(hon, approvalStatus);
-    }
-
-    private SourceOrganizationDTO handleStatusMismatch(String hon, ApprovalStatus approvalStatus) {
-        log.info("temp fix");
-
-        if (isApprovedOrRejectedStatus(approvalStatus)) {
-            return null;
-        }
-
-        return retryFindSource(hon, approvalStatus);
-    }
-
-    private boolean isApprovedOrRejectedStatus(ApprovalStatus approvalStatus) {
-        return approvalStatus.getStatus().equals(APPROVED.getStatus()) ||
-               approvalStatus.getStatus().equals(REJECTED.getStatus());
-    }
-
-    private SourceOrganizationDTO retryFindSource(String hon, ApprovalStatus approvalStatus) {
-        Source source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
-
-        if (source == null) {
-            return null;
-        }
-
-        if (source.getApprovalStatus().equals(approvalStatus)) {
-            return sourceMapper.entitySourceToDTO(source);
-        }
-
-        return null;
-    }
-
-    @Override
-    public SourceOrganizationDTO getSourceByHonForOpTool(@NotNull String hon) {
-        Source source = mongoSourceService.findSourceByHonOrderByLastModifiedBy(hon);
-        if (source == null) {
-            return null;
-            //logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+            source = null;
+            logAndThrowInvalidRequest(INVALID_ACTION_REQUEST, null);
         }
         return sourceMapper.entitySourceToDTO(source);
     }
 
-    @Override
-    public SourceOrganizationDTO getSourceForEditByHon(@NotNull String hon, String action) {
-        Source source = mongoSourceService.findSourceByHonOrderByLastModifiedBy(hon);
-        if (source == null && action.equalsIgnoreCase(action)) {
-            Source source2 = mongoSourceService.findSourceByHon(hon);
-            if (source2 == null) {
-                return null;
-            }
-            log.info("id: {}", source2.getId());
-            source2.setApprovalStatus(PENDING_APPROVAL);
-            source2.setAssignedTo(UNASSIGNED);
-            source2.setAssignedId(UNASSIGNED);
-            source2.setGeneralErrors(new ArrayList<>());
-            source2.setFieldErrors(new ArrayList<>());
-            source2.setComments("");
-            return sourceMapper.entitySourceToDTO(source2);
-        }
-        if (source != null) {
-            log.info("id: {}", source.getId());
-            return sourceMapper.entitySourceToDTO(source);
-        }
-        return null;
-    }
+    private Source updateSourceByResearcher(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO, String sourceType) throws Exception {
+        SourceUpdateContext context = prepareSourceUpdateContext(sourceDTO, sourceType);
+        Source updateSource = sourceMapper.dtoToEntitySource(sourceDTO);
 
-
-    @Transactional
-    @Override
-    public boolean updateSourceStatus(String hon, String version, String tempVersion, ApprovalStatus approvalStatus) {
-        Query query = new Query();
-        query.addCriteria(Criteria.where(HON).is(hon));
-        query.addCriteria(Criteria.where(APPROVAL_STATUS).in(IN_PROGRESS, ONHOLD));
-        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
-        var entityFromDb = findSourceByQuery(query, collectionName);
-        if (entityFromDb == null || (entityFromDb != null && entityFromDb.getVersion() == Double.parseDouble(version) && entityFromDb.getTempVersion() == Double.parseDouble(tempVersion))) {
-            Query query1 = new Query();
-            query1.addCriteria(Criteria.where(HON).is(hon));
-            query1.addCriteria(Criteria.where(SearchConstants.SearchFields.VERSION).is(Double.parseDouble(version)));
-            query1.addCriteria(Criteria.where(TEMP_VERSION).is(Double.parseDouble(tempVersion)));
-            query1.addCriteria(Criteria.where(APPROVAL_STATUS).in(PENDING_APPROVAL, SAVE_PENDING_APPROVAL, ONHOLD));
-            var currentSource = findSourceByQuery(query1, collectionName);
-            if (currentSource == null) {
-                logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
-            }
-            assert currentSource != null;
-            currentSource.setApprovalStatus(approvalStatus);
-            currentSource.setApprovalStartDate(Instant.now());
-            Update update = new Update().set(APPROVAL_STATUS, approvalStatus).set("approvalStartDate",Instant.now());
-            Query query2 = new Query().addCriteria(Criteria.where("_id").is(currentSource.getId()));
-            var response = updateByIdWithCustomFields(query2, update, collectionName);
-            log.info("Organization with hon: {} approvedStatus: {}", hon, currentSource.getApprovalStatus());
-            reportDataUtils.reportData(currentSource, currentSource.getAction(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, currentSource.getVersion(), currentSource.getTempVersion(),APPROVAL_FLOW);
-            return response;
-        }else{
-            logAndThrowResourceNotFound(SOURCE_ALREADY_IN_PROGRESS, null, hon);
-        }
-        return false;
-    }
-
-    /**
-     * @param hon
-     * @param uiActionsDTO
-     * @return
-     */
-    @Override
-    public RamResponseDTO getSourceForRAM(String hon, SourceRequestDTO sourceRequestDTO) {
-        UIActionsDTO uiActionsDTO = sourceRequestDTO.getUiActionsDTO();
-        String id = sourceRequestDTO.getSourceOrganizationDTO().getId();
-        RamResponseDTO response = new RamResponseDTO();
-        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
-        Source source = mongoSourceService.findSourceById(new ObjectId(id),collectionName);
-        if(!(uiActionsDTO.getUserAction().equalsIgnoreCase(APPROVED.getStatus()) || uiActionsDTO.getUserAction().equalsIgnoreCase(REJECTED.getStatus()))){
-            fetchApprovedSource(hon, response);
-        }
-        if((uiActionsDTO.getUserAction().equals(PENDING_APPROVAL.getStatus()) || uiActionsDTO.getUserAction().equals(SAVE_PENDING_APPROVAL.getStatus()) || uiActionsDTO.getUserAction().equals(ONHOLD.getStatus())) && source.getAssignedTo() != null && source.getAssignedTo().equals(uiActionsDTO.getUserName())){
-            updateInProgressStatusById(hon, id, collectionName);
-            reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, source.getVersion(), source.getTempVersion(),APPROVAL_FLOW);
-        }
-        getCurrentSource(id, collectionName, response);
-        return response;
-    }
-
-    private void fetchApprovedSource(String hon, RamResponseDTO response){
-        var approvedSource = mongoSourceService.findSourceByHonAndApprovalStatus(hon, APPROVED);
-        if(approvedSource != null){
-            var approvedSourceDTO = sourceMapper.entitySourceToDTO(approvedSource);
-            response.setApprovedSource(approvedSourceDTO);
+        if (sourceType.equals(EXISTING_SOURCE)) {
+            return handleExistingSourceUpdate(sourceDTO, uiActionsDTO, context, updateSource);
+        } else {
+            return handleNewSourceUpdate(sourceDTO, uiActionsDTO, context, updateSource);
         }
     }
 
-    private void updateInProgressStatusById(String hon, String id, String collectionName){
-        Update update = new Update().set(APPROVAL_STATUS, IN_PROGRESS.getStatus());
-        update.set("approvalStartDate",Instant.now());
-        update.set(LAST_ACTION_DATE, Instant.now());
-        Query query = new Query().addCriteria(Criteria.where(HON).is(hon).and("_id").is(new ObjectId(id)));
-        mongoSourceService.updateByIdWithCustomFields(query, update, collectionName);
+    private SourceUpdateContext prepareSourceUpdateContext(SourceOrganizationDTO sourceDTO, String sourceType) {
+        SourceUpdateContext context = new SourceUpdateContext();
+        context.entityFromDb = mongoSourceService.findSourceByHonAndApprovalStatus(sourceDTO.getHon(), sourceDTO.getApprovalStatus());
+
+        if (context.entityFromDb == null && sourceType.equals(NEW_SOURCE) && sourceDTO.getAction().equals(CREATE)) {
+            context.entityFromDb = mongoSourceService.findSourceByHon(sourceDTO.getHon());
+            context.isNewSource = isInProgressOrOnHold(context.entityFromDb);
+        }
+
+        if (context.entityFromDb == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, sourceDTO.getHon());
+        }
+
+        return context;
     }
 
-    private void getCurrentSource(String id, String collectionName, RamResponseDTO response){
-        Source currentSource = mongoSourceService.findSourceById(new ObjectId(id), collectionName);
-        if(currentSource != null){
-            var currentSourceDTO = sourceMapper.entitySourceToDTO(currentSource);
-            response.setCurrentSource(currentSourceDTO);
+    private boolean isInProgressOrOnHold(Source source) {
+        return source != null &&
+               (source.getApprovalStatus().equals(IN_PROGRESS) ||
+                source.getApprovalStatus().equals(ONHOLD));
+    }
+
+    private Source handleExistingSourceUpdate(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO,
+                                              SourceUpdateContext context, Source updateSource) throws Exception {
+        Source compareSource = mongoSourceService.findSourceByHonAndApprovalStatus(sourceDTO.getHon(), APPROVED);
+
+        if (Helper.checkIsSkipApprovalFlow(updateSource, compareSource)) {
+            return updateSourceByResearcherWithManual(context.entityFromDb, updateSource, uiActionsDTO, context.isNewSource);
+        }
+
+        if (Helper.checkIsAutoApproval(updateSource, compareSource)) {
+            return updateSourceByResearcherWithAutoApproval(context.entityFromDb, updateSource, uiActionsDTO);
+        }
+
+        return updateSourceBasedOnTrustCycle(context.entityFromDb, updateSource, sourceDTO.getCountry(),
+                                            context.isNewSource, uiActionsDTO);
+    }
+
+    private Source handleNewSourceUpdate(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO,
+                                        SourceUpdateContext context, Source updateSource) throws Exception {
+        if (hasOrganizationAlias(sourceDTO, context.entityFromDb)) {
+            return updateSourceByResearcherWithManual(context.entityFromDb, updateSource, uiActionsDTO, context.isNewSource);
+        }
+
+        return updateSourceBasedOnTrustCycle(context.entityFromDb, updateSource, sourceDTO.getCountry(),
+                                            context.isNewSource, uiActionsDTO);
+    }
+
+    private boolean hasOrganizationAlias(SourceOrganizationDTO sourceDTO, Source entityFromDb) {
+        return sourceDTO.getOrganizationAlias().length > 0 || entityFromDb.getOrganizationAlias().length > 0;
+    }
+
+    private static class SourceUpdateContext {
+        Source entityFromDb;
+        boolean isNewSource = false;
+    }
+
+    private Source updateSourceBasedOnTrustCycle(Source entityFromDb, Source updateSource, String country, boolean isNewSource, UIActionsDTO uiActionsDTO) throws Exception {
+        String region = countryRegionMappingUtils.getRegionByCountry(country);
+        String approvalStatus = AUTO_APPOVED;
+        CycleResult cycleResult;
+        if (Helper.fromActionForApprovalFlow(uiActionsDTO.getUserAction()) == null) {
+            cycleResult = sourceUtils.checkForAutoApproval(uiActionsDTO.getUserTrustScore(), region, uiActionsDTO.getUserEmail());
+            approvalStatus = cycleResult.getStatus();
+        }
+        if (approvalStatus.equals(AUTO_APPOVED)) {
+            return updateSourceByResearcherWithAutoApproval(entityFromDb, updateSource, uiActionsDTO);
+        } else {
+            //Manual flow
+            return updateSourceByResearcherWithManual(entityFromDb, updateSource, uiActionsDTO, isNewSource);
         }
     }
 
-    private Source findSourceByHon(@NotNull String hon) {
-        try {
-            return customSourceRepository.findOneByHon(hon, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
-        } catch (Exception ex) {
-            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+    private Source updateSourceByResearcherWithManual(Source entityFromDb, Source updateSource, UIActionsDTO uiActionsDTO, boolean isNewSource) {
+        updateSource.setVersion(entityFromDb.getVersion());
+        updateSource.setTempVersion(entityFromDb.getTempVersion() + 1);
+        updateSource.setAction(updateSource.getVersion() > 0 ? UPDATE : CREATE);
+        updateSource.setLogFlag(updateSource.getVersion() > 0 ? DETAILS_CHANGED : NEW_RECORD);
+
+        updateSource.setLastModifiedDate(Instant.now());
+        updateSource.setLastModifiedBy(uiActionsDTO.getUserName());
+        updateSource.setLastModifierId(uiActionsDTO.getUserEmail());
+        updateSource.setSearchOrg(updateSource.getOrganizationName().toLowerCase().trim());
+        if (updateSource.getAction().equals(CREATE)) {
+            updateSource.setCreatedDate(Instant.now());
+            updateSource.setCreatedBy(uiActionsDTO.getUserName());
+            updateSource.setCreatorId(uiActionsDTO.getUserEmail());
+            updateSource.setAssignedTo(UNASSIGNED);
+            updateSource.setAssignedId(UNASSIGNED);
         }
-        return null;
-    }
-
-    private Source findSourceByHonAndStatusAndApprovalStatus(@NotNull String hon, String status, String approvalStatus) {
-        try {
-            List<Source> sources = customSourceRepository.findByHonAndStatusAndApprovalStatus(hon, status, approvalStatus, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
-            if (!sources.isEmpty()) {
-                return sources.get(0);
-            }
-        } catch (Exception ex) {
-            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        if (entityFromDb.getTempVersion() == 0) {
+            updateSource.setAssignedTo(UNASSIGNED);
+            updateSource.setAssignedId(UNASSIGNED);
         }
-        return null;
-    }
-
-    private Boolean updateByQuery(Query query, @NotNull Source entityToPersist, String collectionName) {
-        //entityToPersist.setId(null);
-        return customSourceRepository.updateByQuery(query, entityToPersist, Source.class, collectionName);
-    }
-
-
-    private Source findSourceByHonAndVersion(@NotNull String hon, Double version) {
-        try {
-            Query query = new Query();
-            query.addCriteria(Criteria.where(HON).is(hon));
-            query.addCriteria(Criteria.where(SearchConstants.SearchFields.VERSION).is(version));
-            //query.addCriteria(Criteria.where(APPROVAL_STATUS).in(PENDING_APPROVAL, SAVE_PENDING_APPROVAL,IN_PROGRESS));
-            List<Source> result = customSourceRepository.findByQuery(query, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
-            log.info("FindByHonAndVersion: Result: {}", result);
-            if (!result.isEmpty()) {
-                return result.get(0);
-            }
-        } catch (Exception ex) {
-            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        copyUsedCount(entityFromDb, updateSource);
+        updateSource.setApprovalStatus(Helper.fromAction(uiActionsDTO.getUserAction()));
+        updateSource.setStatus(SourceOrganizationStatus.INACTIVE);
+        String collectionName = Helper.getCollectionName(updateSource.getHon(), SOURCE_COLLECTION_SUFFIX);
+        if (!isNewSource && (entityFromDb.getApprovalStatus().equals(PENDING_APPROVAL) || entityFromDb.getApprovalStatus().equals(SAVE_PENDING_APPROVAL))) {
+            deleteSourceById(entityFromDb.getId(), collectionName);
         }
-        return null;
+        updateSource.setLastActionDate(Instant.now());
+        mongoSourceService.insert(updateSource, collectionName);
+        mongoSourceService.insertSourceHistory(updateSource);
+        reportDataUtils.reportData(updateSource, updateSource.getAction(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, updateSource.getVersion(), updateSource.getTempVersion(),APPROVAL_FLOW);
+        return updateSource;
     }
 
-    private Source findSourceByQuery(Query query, String collectionName) {
-        try {
-            List<Source> result = customSourceRepository.findByQuery(query, Source.class, collectionName);
-            log.info("FindByHonAndVersion: Result: {}", result);
-            if (!result.isEmpty()) {
-                return result.get(0);
-            }
-        } catch (Exception ex) {
-            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+    private Source updateSourceByResearcherWithAutoApproval(Source entityFromDb, Source updateSource, UIActionsDTO uiActionsDTO) throws Exception {
+        updateSource.setVersion(entityFromDb.getVersion() + 1);
+        updateSource.setTempVersion(0);
+        if (entityFromDb.getVersion() >= 1) {
+            updateSource.setAction(UPDATE);
+            updateSource.setLogFlag(DETAILS_CHANGED);
+        } else {
+            updateSource.setAction(CREATE);
+            updateSource.setLogFlag(NEW_RECORD);
         }
-        return null;
-    }
-
-    private Boolean update(String queryField, String queryValue, @NotNull Source entityToPersist, String collectionName) {
-        entityToPersist.setId(null);
-        return customSourceRepository.update(queryField, queryValue, entityToPersist, Source.class, collectionName);
-    }
-
-    private Boolean updateByIdWithCustomFields(Query query, Update update, String collectionName) {
-        return customSourceRepository.updateFieldsByQuery(query, update, Source.class, collectionName);
-    }
-
-    private Source updateLockAndUnlockFields(Source source, UIActionsDTO uiActionsDTO){
-        source.setLastActionDate(Instant.now());
-        if(uiActionsDTO.getUserAction().equalsIgnoreCase(LOCK)){
-            source.setIsLockEnabled(true);
-            source.setLastLockedBy(uiActionsDTO.getUserName());
-            source.setLastLockedId(uiActionsDTO.getUserEmail());
-            source.setLastLockedDate(Instant.now());
-            source.setLogFlag(SearchConstants.LogFlagConstants.LOCKED);
-        }else{
-            source.setIsLockEnabled(false);
-            source.setLastUnLockedBy(uiActionsDTO.getUserName());
-            source.setLastUnLockedId(uiActionsDTO.getUserEmail());
-            source.setLastUnLockedDate(Instant.now());
-            source.setLogFlag(source.getAction().equalsIgnoreCase(ApplicationConstants.CREATE) ? SearchConstants.LogFlagConstants.NEW_RECORD : SearchConstants.LogFlagConstants.DETAILS_CHANGED);
+        updateSource.setLastModifiedDate(Instant.now());
+        updateSource.setLastModifiedBy(uiActionsDTO.getUserName());
+        updateSource.setLastModifierId(uiActionsDTO.getUserEmail());
+        updateSource.setApprovalStatus(APPROVED);
+        updateSource.setStatus(SourceOrganizationStatus.ACTIVE);
+        updateSource.setSearchOrg(updateSource.getOrganizationName().toLowerCase().trim());
+        updateApprovalDetails(updateSource, uiActionsDTO);
+        copyUsedCount(entityFromDb, updateSource);
+        String collectionName = Helper.getCollectionName(updateSource.getHon(), SOURCE_COLLECTION_SUFFIX);
+        if (entityFromDb.getId() != null) {
+            deleteSourceById(entityFromDb.getId(), collectionName);
         }
-        return source;
+        mongoSourceService.insert(updateSource, collectionName);
+        mongoSourceService.insertSourceHistory(updateSource);
+        updateESLogic(updateSource);
+        reportDataUtils.reportData(updateSource, updateSource.getAction(), SIDB_APPROVAL_FLOW, 0, SearchConstants.ReportActions.AUTO_APPROVED, updateSource.getVersion(), updateSource.getTempVersion(),APPROVAL_FLOW);
+        return updateSource;
     }
 
+    private Source updateSourceByApprovalManager(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO) throws Exception {
+        String collectionName = Helper.getCollectionName(sourceDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
+        Source entityFromDb = mongoSourceService.findSourceByHonAndApprovalStatus(sourceDTO.getHon(), IN_PROGRESS);
+
+        if (entityFromDb == null) {
+            log.error("source not found");
+        }
+        assert entityFromDb != null;
+
+        Source updateSource = prepareUpdateSource(sourceDTO, entityFromDb);
+
+        switch (uiActionsDTO.getUserAction()) {
+            case ACTION_APPROVED:
+                handleApproval(sourceDTO, updateSource, uiActionsDTO, collectionName);
+                break;
+            case ACTION_REJECTED:
+                handleRejection(sourceDTO, updateSource, uiActionsDTO, collectionName);
+                break;
+            case ACTION_ON_HOLD:
+                handleOnHold(sourceDTO, updateSource, uiActionsDTO, collectionName);
+                break;
+            default:
+                break;
+        }
+        return updateSource;
+    }
+
+    private Source prepareUpdateSource(SourceOrganizationDTO sourceDTO, Source entityFromDb) {
+        Source updateSource = sourceMapper.dtoToEntitySource(sourceDTO);
+        updateSource.setId(entityFromDb.getId());
+        updateSource.setSearchOrg(updateSource.getOrganizationName().toLowerCase().trim());
+        return updateSource;
+    }
+
+    private void handleApproval(SourceOrganizationDTO sourceDTO, Source updateSource, UIActionsDTO uiActionsDTO, String collectionName) throws Exception {
+        updateSource.setApprovalStatus(APPROVED);
+        updateSource.setStatus(SourceOrganizationStatus.ACTIVE);
+        updateSource.setTempVersion(0);
+        updateSource.setGeneralErrors(new ArrayList<>());
+        updateSource.setFieldErrors(new ArrayList<>());
+        updateSource.setComments("");
+        updateApprovalDetails(updateSource, uiActionsDTO);
+
+        Source approvedDbEntity = mongoSourceService.findSourceByHonAndApprovalStatus(sourceDTO.getHon(), APPROVED);
+
+        if (approvedDbEntity == null) {
+            handleFirstApproval(updateSource, collectionName);
+        } else {
+            handleSubsequentApproval(updateSource, approvedDbEntity, collectionName);
+        }
+
+        mongoSourceService.updateById(updateSource, collectionName);
+        updateESLogic(updateSource);
+        mongoSourceService.insertSourceHistory(updateSource);
+        reportDataUtils.reportData(updateSource, sourceDTO.getAction(), SIDB_APPROVAL_FLOW, 0,
+                                   MANUAL_PROCESS, sourceDTO.getVersion(), sourceDTO.getTempVersion() + 1, APPROVAL_FLOW);
+    }
+
+    private void handleFirstApproval(Source updateSource, String collectionName) {
+        updateSource.setVersion(1.0);
+        Source entityFromDb = mongoSourceService.findSourceByHonAndApprovalStatus(updateSource.getHon(), IN_PROGRESS);
+        copyUsedCount(entityFromDb, updateSource);
+    }
+
+    private void handleSubsequentApproval(Source updateSource, Source approvedDbEntity, String collectionName) {
+        updateSource.setAction(UPDATE);
+        updateSource.setVersion(approvedDbEntity.getVersion() + 1.0);
+        deleteSourceById(approvedDbEntity.getId(), collectionName);
+        copyUsedCount(approvedDbEntity, updateSource);
+    }
+
+    private void handleRejection(SourceOrganizationDTO sourceDTO, Source updateSource, UIActionsDTO uiActionsDTO, String collectionName) {
+        updateSource.setApprovalStatus(REJECTED);
+        updateSource.setStatus(SourceOrganizationStatus.INACTIVE);
+        updateApprovalDetails(updateSource, uiActionsDTO);
+        mongoSourceService.updateById(updateSource, collectionName);
+        mongoSourceService.insertSourceHistory(updateSource);
+        reportDataUtils.reportData(updateSource, updateSource.getAction(), SIDB_APPROVAL_FLOW, 0,
+                                   MANUAL_PROCESS, sourceDTO.getVersion(), sourceDTO.getTempVersion(), APPROVAL_FLOW);
+    }
+
+    private void handleOnHold(SourceOrganizationDTO sourceDTO, Source updateSource, UIActionsDTO uiActionsDTO, String collectionName) {
+        updateSource.setApprovalStatus(ONHOLD);
+        updateSource.setStatus(SourceOrganizationStatus.INACTIVE);
+        updateApprovalDetails(updateSource, uiActionsDTO);
+        mongoSourceService.updateById(updateSource, collectionName);
+        mongoSourceService.insertSourceHistory(updateSource);
+        reportDataUtils.reportData(updateSource, updateSource.getAction(), SIDB_APPROVAL_FLOW, 0,
+                                   MANUAL_PROCESS, sourceDTO.getVersion(), sourceDTO.getTempVersion(), APPROVAL_FLOW);
+    }
+
+    private void updateApprovalDetails(Source updateSource, UIActionsDTO uiActionsDTO) {
+        updateSource.setApprovedBy(uiActionsDTO.getUserName());
+        updateSource.setApproverId(uiActionsDTO.getUserEmail());
+        updateSource.setLastApprovedDate(Instant.now());
+        updateSource.setLastActionDate(Instant.now());
+    }
+
+    private void deleteSourceById(ObjectId id, String collectionName) {
+        mongoSourceService.deleteSourceById(id, collectionName);
+    }
+
+    protected void updateESLogic(Source updateSource)
+            throws IOException, IllegalAccessException {
+
+        String action = updateSource.getAction();
+        ApprovalStatus approval = updateSource.getApprovalStatus();
+
+        if (CREATE.equals(action) && APPROVED.equals(approval)) {
+            elasticsearchService.createSource(updateSource);
+            return;
+        }
+        if (UPDATE.equals(action) && APPROVED.equals(approval)) {
+            elasticsearchService.updateSourceIndex(updateSource);
+        }
+    }
+
+    private void copyUsedCount(Source entityFromDb, Source updateSource) {
+        DBObject obj = updateSource.getPayload();
+        DBObject entityPayload = entityFromDb.getPayload();
+        var usedCount = entityPayload.get(USED_COUNT);
+        obj.put(USED_COUNT, usedCount);
+        updateSource.setPayload(obj);
+    }
 }
