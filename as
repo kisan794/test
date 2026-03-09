@@ -1,212 +1,538 @@
-package com.hireright.sourceintelligence.util;
+package com.hireright.sourceintelligence.service.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.node.MissingNode;
-import com.fasterxml.jackson.databind.node.NullNode;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import static com.hireright.sourceintelligence.api.ApiConstants.FAILURE;
+import static com.hireright.sourceintelligence.api.ApiConstants.SUCCESS;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.*;
+import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.*;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.APPROVED;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.IN_PROGRESS;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.REJECTED;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.ErrorMessages.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.ReportActions.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchFields.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.StatusCode.*;
+import static com.hireright.sourceintelligence.util.LoggingThrowable.*;
 
+import com.hireright.sourceintelligence.api.dto.*;
+import com.hireright.sourceintelligence.api.dto.optool.AutoMatchResponseDTO;
+import com.hireright.sourceintelligence.api.dto.optool.AutoMatchSourceDTO;
+import com.hireright.sourceintelligence.constants.ApplicationConstants;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.enums.ApprovalStatus;
+import com.hireright.sourceintelligence.domain.enums.SourceOrganizationStatus;
+import com.hireright.sourceintelligence.domain.mapper.AutoMatchMapper;
+import com.hireright.sourceintelligence.domain.mapper.SourceMapper;
+import com.hireright.sourceintelligence.domain.repository.*;
+import com.hireright.sourceintelligence.service.*;
+import com.hireright.sourceintelligence.service.impl.helperservices.CreateSourceService;
+import com.hireright.sourceintelligence.service.impl.helperservices.ArchiveSourceService;
+import com.hireright.sourceintelligence.service.impl.helperservices.ReportDataUtils;
+import com.hireright.sourceintelligence.service.impl.helperservices.UpdateSourceService;
+import com.hireright.sourceintelligence.util.Helper;
+
+import java.time.Instant;
 import java.util.*;
 
-public class DeepDiffUtil {
+import com.mongodb.client.MongoClient;
+import jakarta.validation.constraints.NotNull;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.types.ObjectId;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.ObjectUtils;
 
 
-    private DeepDiffUtil() {
+@Primary
+@Slf4j
+@RequiredArgsConstructor
+@Transactional
+@Service
+public class SourceServiceImpl implements SourceService {
 
+    private static final String SOURCE_ORGANIZATION_WITH_HON = "SourceOrganization with HON: ";
+
+    private final CustomSourceRepository<Source> customSourceRepository;
+    private final SourceMapper sourceMapper;
+    private final ReportDataUtils reportDataUtils;
+    private final AutoMatchMapper autoMatchMapper;
+
+    private final CreateSourceService createSourceService;
+    private final UpdateSourceService updateSourceService;
+    private final ArchiveSourceService archiveSourceService;
+    private final MongoSourceService mongoSourceService;
+
+    @Transactional
+    @Override
+    public SourceOrganizationDTO createSource(@NotNull SourceOrganizationDTO sourceOrganizationDTO, UIActionsDTO uiActionsDTO) {
+        try {
+            return createSourceService.createSource(sourceOrganizationDTO, uiActionsDTO);
+        } catch (Exception e) {
+            logAndThrowServiceException(CREATE_SOURCE_ERROR, e, sourceOrganizationDTO.getOrganizationName(), e.getMessage());
+        }
+        return null;
     }
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-
-
-    // Configure these as needed
-    private static final Set<String> SKIP_FIELDS = Set.of("id","searchOrg","createdDate", "lastModifiedDate", "createdBy",
-            "creatorId", "action", "tempVersion", "version", "logFlag", "approvalStatus", "status","approvedBy","approverId","lastModifierId","lastModifiedBy",
-            "assignedTo", "assignedId", "payload.usedCount", "payload.lastUsedDateTime","isLockEnabled","location","comments","generalErrors","fieldErrors");
-
-    public static List<String> findChangedFields(Object obj1, Object obj2) {
-        JsonNode left = obj1 == null ? NullNode.getInstance() : MAPPER.valueToTree(obj1);
-        JsonNode right = obj2 == null ? NullNode.getInstance() : MAPPER.valueToTree(obj2);
-
-        List<String> changes = new ArrayList<>();
-        diffNodes(left, right, "", changes);
-        return changes;
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    @Override
+    public SourceOrganizationDTO updateSource(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO) {
+        try {
+            return updateSourceService.updateSource(sourceDTO, uiActionsDTO);
+        } catch (Exception e) {
+            logAndThrowServiceException(UPDATE_SOURCE_ERROR, e, sourceDTO.getHon(), e.getMessage());
+        }
+        return null;
     }
-    private static void diffNodes(JsonNode left, JsonNode right, String path, List<String> changes) {
 
-
-// Normalize nulls to MissingNode to simplify checks
-        if (left == null) left = MissingNode.getInstance();
-        if (right == null) right = MissingNode.getInstance();
-
-// === SPECIAL RULE: empty array == missing field ===
-        boolean leftEmptyArray = left.isArray() && left.isEmpty();
-        boolean rightEmptyArray = right.isArray() && right.isEmpty();
-        boolean leftMissing = left.isMissingNode() || left.isNull();
-        boolean rightMissing = right.isMissingNode() || right.isNull();
-
-        // If left is empty array and right missing (or vice versa), skip diff for this path
-        if ((leftEmptyArray && rightMissing) || (rightEmptyArray && leftMissing)) {
-            return; // treat as equal
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    @Override
+    public ResponseObject archiveSource(String hon, UIActionsDTO uiActionsDTO) {
+        ResponseObject responseObject = null;
+        try {
+            boolean response = archiveSourceService.archiveSource(hon, uiActionsDTO);
+            if(response){
+                responseObject = ResponseObject.baseBuilder(SUCCESS,ARCHIVE_SUCCESS,SUCCESS_CODE).build();
+            }else{
+                responseObject = ResponseObject.baseBuilder(FAILURE,ARCHIVE_FAILURE,FAILURE_CODE).build();
+            }
+        } catch (Exception e) {
+            logAndThrowServiceException(DELETE_SOURCE_ERROR, e, hon, e.getMessage());
         }
+        return responseObject;
+    }
 
-        // Handle null nodes and type differences first
-//        if (isMissingOrNull(left) && isMissingOrNull(right)) {
-//            return; // both absent/null → equal
-//        }
-//        if (isMissingOrNull(left) || isMissingOrNull(right)) {
-//            // One is null/missing, other is not
-//            recordChange(path, changes);
-//            return;
-//        }
-
-        // Different node types → changed
-        if (!left.getNodeType().equals(right.getNodeType())) {
-            recordChange(path, changes);
-            return;
+    @Override
+    @Transactional
+    public AutoMatchResponseDTO incrementUsedCount(String hon, ApprovalStatus approvalStatus) {
+        log.info("Manual select source request: {}", hon);
+        Instant requestTime = Instant.now();
+        var entityFromDb = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+        if (entityFromDb == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
         }
+        if (entityFromDb != null && entityFromDb.getPayload() == null) {
+            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
+        }
+        log.info("current system date: {}", requestTime);
+        AutoMatchSourceDTO response = autoMatchMapper.toAutoMatchDTO(entityFromDb);
+        assert entityFromDb != null;
+        log.info("Manual select source response: {}", response);
+        log.info("Source organization with hon: {} was last verified on {}", hon, requestTime);
+        return AutoMatchResponseDTO.baseBuilder("", requestTime).source(response).build();
+    }
 
-        switch (left.getNodeType()) {
-            case OBJECT:
-                diffObjects(left, right, path, changes);
-                break;
+    @Override
+    public List<SourceOrganizationDTO> getSourcesByHonIds(List<String> honIds) {
+        List<Source> sourceList = customSourceRepository.findByHonIn(honIds, Source.class, Helper.getCollectionName(honIds.get(0), SOURCE_COLLECTION_SUFFIX));
+        if (!ObjectUtils.isEmpty(sourceList)) {
+            return sourceMapper.toSourceDTOList(sourceList);
+        }
+        return Collections.emptyList();
+    }
 
-            case ARRAY:
-                diffArrays(left, right, path, changes);
-                break;
+    @Override
+    public SourceOrganizationDTO getSourceByHon(@NotNull String hon) {
+        Source source = mongoSourceService.findSourceByHon(hon);
+        if (source == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+        }
+        return sourceMapper.entitySourceToDTO(source);
+    }
 
-            default:
-                // Primitive values: direct compare
-                if (!Objects.equals(left.asText(), right.asText())) {
-                    recordChange(path, changes);
+    @Override
+    public ResponseObject assignApproveManagerToSource(ApprovalRequestDTO approvalRequestDTO) {
+        List<String> hons = new ArrayList<>();
+        List<String> Ids = new ArrayList<>();
+        Query query = new Query();
+        List<String> approvalStatuses = new ArrayList<>(){};
+        approvalStatuses.add(IN_PROGRESS.toString());
+        approvalStatuses.add(ONHOLD.toString());
+        if (!approvalRequestDTO.getSourceDetails().isEmpty()) {
+            for (AssignSourceDTO assignSourceDTO : approvalRequestDTO.getSourceDetails()) {
+                String collectionName = Helper.getCollectionName(assignSourceDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
+                Source source = mongoSourceService.findSourceById(new ObjectId(assignSourceDTO.getId()),collectionName);
+                if (source != null) {
+                    if (source.getApprovalStatus().equals(PENDING_APPROVAL) || source.getApprovalStatus().equals(SAVE_PENDING_APPROVAL) || source.getApprovalStatus().equals(ONHOLD)) {
+                        Source existingSource = mongoSourceService.findSourceByHonAndApprovalStatuses(assignSourceDTO.getHon(),approvalStatuses);
+                        if(existingSource == null){
+                            hons.add(assignSourceDTO.getHon());
+                            Ids.add(assignSourceDTO.getId());
+//                            query.addCriteria(Criteria.where(ID).is(assignSourceDTO.getId()));
+//                            query.addCriteria(Criteria.where(APPROVAL_STATUS).is(assignSourceDTO.getApprovalStatus()));
+                        }else{
+                            return ResponseObject.baseBuilder(FAILURE,ASSIGN_FAILURE_2,FAILURE_CODE).build();
+                        }
+                    }else{
+                        return ResponseObject.baseBuilder(FAILURE,ASSIGN_FAILURE,FAILURE_CODE).build();
+                    }
                 }
-        }
-    }
-
-    private static void diffObjects(JsonNode left, JsonNode right, String path, List<String> changes) {
-        Set<String> fieldNames = collectFieldNames(left, right);
-
-        for (String field : fieldNames) {
-            String childPath = buildChildPath(path, field);
-
-            if (shouldSkipField(field, childPath)) {
-                continue;
             }
-
-            JsonNode lChild = getChildNode(left, field);
-            JsonNode rChild = getChildNode(right, field);
-
-            if (shouldSkipEmptyArrayComparison(lChild, rChild)) {
-                continue;
+        }
+        if (!hons.isEmpty()) {
+            if(approvalRequestDTO.getAssignType().equalsIgnoreCase(ASSIGN_MYSELF)){
+                String collectionName = Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX);
+                Query query1 = new Query();
+                query1.addCriteria(Criteria.where(ID).is(approvalRequestDTO.getSourceDetails().getFirst().getId()));
+                Update update = new Update();
+                update.set(ASSIGNED_TO, approvalRequestDTO.getApproverName());
+                update.set(ASSIGNED_ID,approvalRequestDTO.getApproverEmail());
+                update.set(APPROVAL_STATUS,IN_PROGRESS.getStatus());
+                customSourceRepository.updateFieldsByQuery(query1, update, Source.class, collectionName);
+                Source source = mongoSourceService.findSourceById(new ObjectId(approvalRequestDTO.getSourceDetails().getFirst().getId()),collectionName);
+                reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, source.getVersion(), source.getTempVersion(),APPROVAL_FLOW);
+            }else{
+                query.addCriteria(Criteria.where(ID).in(Ids));
+                query.addCriteria(Criteria.where(APPROVAL_STATUS).is(approvalRequestDTO.getSourceDetails().getFirst().getApprovalStatus()));
+                customSourceRepository.assignApproverToSource(query, approvalRequestDTO.getApproverName(), approvalRequestDTO.getApproverEmail(), Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX));
             }
+            //reportDataUtils.createReportData(approvalRequestDTO, hons);
+            return ResponseObject.baseBuilder(SUCCESS,ASSIGN_SUCCESS,SUCCESS_CODE).build();
+        }
+        return ResponseObject.baseBuilder(FAILURE,ASSIGN_FAILURE,FAILURE2_CODE).build();
+    }
 
-            if (areBothMissing(lChild, rChild)) {
-                continue;
+    @Override
+    @Transactional
+    public boolean updateFlagForPriority(String hon, Double version) {
+        var entityFromDb = findSourceByHonAndVersion(hon, version);
+        if (entityFromDb == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+            return false;
+        }
+        Boolean flag = entityFromDb.getFlagPriority() == null ? Boolean.TRUE : !entityFromDb.getFlagPriority();
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        Update update = new Update().set(FLAG_PRIORITY, flag);
+        update.set(LAST_ACTION_DATE, Instant.now());
+        Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
+        updateByIdWithCustomFields(query, update, collectionName);
+        log.info("Organization with hon:{} flagged {} for priority", hon, entityFromDb.getFlagPriority());
+        return flag;
+    }
+
+    @Override
+    public ResponseObject deleteSource(String hon, DeleteRequestDTO deleteRequestDTO) {
+        try {
+            long count = mongoSourceService.hardDeleteSource(hon, deleteRequestDTO);
+            if(count == 0){
+                return ResponseObject.baseBuilder(FAILURE,DELETE_FAILURE,FAILURE2_CODE).build();
             }
+            return ResponseObject.baseBuilder(SUCCESS,DELETE_SUCCESS,SUCCESS_CODE).build();
+        }catch (Exception e) {
+            return ResponseObject.baseBuilder(FAILURE,INTERNAL_FAILURE,INTERNAL_ERROR_CODE).build();
+        }
+    }
 
-            if (isOneMissing(lChild, rChild)) {
-                recordChange(childPath, changes);
-                continue;
+    @Override
+    public ResponseObject lockSource(String hon, UIActionsDTO uiActionsDTO) {
+        Source source = mongoSourceService.findSourceByHon(hon);
+        if(source != null){
+            if(Boolean.FALSE.equals(source.getIsLockEnabled())){
+                String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+                Update update = new Update().set(IS_LOCK_ENABLED, true)
+                        .set(LAST_LOCKED_BY,uiActionsDTO.getUserName())
+                        .set(LAST_LOCKED_ID,uiActionsDTO.getUserEmail())
+                        .set(LAST_LOCKED_DATE,Instant.now())
+                        .set(LOG_FLAG,SearchConstants.LogFlagConstants.LOCKED);
+                Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
+                updateByIdWithCustomFields(query, update, collectionName);
+                Source sourceHistory = updateLockAndUnlockFields(source, uiActionsDTO);
+                mongoSourceService.insertSourceHistory(sourceHistory);
+                reportDataUtils.reportData(source, LOCK, SIDB_ORIGIN,0,null, source.getVersion(), source.getTempVersion(), LOCK);
+                return ResponseObject.baseBuilder(SUCCESS,LOCK_SUCCESS,SUCCESS_CODE).build();
+            }else{
+                return ResponseObject.baseBuilder(FAILURE,LOCK_FAILURE,FAILURE_CODE).build();
             }
+        }
+        return ResponseObject.baseBuilder(FAILURE,LOCK_FAILURE_2,FAILURE2_CODE).build();
+    }
 
-            compareNodes(lChild, rChild, childPath, changes);
+    @Override
+    public ResponseObject unlockSource(String hon, UIActionsDTO uiActionsDTO) {
+        Source source = mongoSourceService.findSourceByHon(hon);
+        if(source != null){
+            if(Boolean.TRUE.equals(source.getIsLockEnabled())){
+              String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+                Update update = new Update().set(IS_LOCK_ENABLED, false)
+                        .set(LAST_LOCKED_BY,uiActionsDTO.getUserName())
+                        .set(LAST_LOCKED_ID,uiActionsDTO.getUserEmail())
+                        .set(LAST_LOCKED_DATE,Instant.now())
+                        .set(LOG_FLAG,source.getAction().equalsIgnoreCase(ApplicationConstants.CREATE) ? SearchConstants.LogFlagConstants.NEW_RECORD : SearchConstants.LogFlagConstants.DETAILS_CHANGED);
+                Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
+                updateByIdWithCustomFields(query, update, collectionName);
+                Source sourceHistory = updateLockAndUnlockFields(source, uiActionsDTO);
+                mongoSourceService.insertSourceHistory(sourceHistory);
+                reportDataUtils.reportData(source, UNLOCK, SIDB_ORIGIN,0,null, source.getVersion(), source.getTempVersion(), UNLOCK);
+                return ResponseObject.baseBuilder(SUCCESS,UNLOCK_SUCCESS,SUCCESS_CODE).build();
+            }else{
+                return ResponseObject.baseBuilder(FAILURE,UNLOCK_FAILURE,FAILURE_CODE).build();
+            }
+        }
+        return ResponseObject.baseBuilder(FAILURE,UNLOCK_FAILURE2,FAILURE2_CODE).build();
+    }
+
+    @Override
+    public boolean updateUsedCount(String hon, boolean isAutoMatch) {
+        log.info("Update used count source request: {}", hon);
+        var entityFromDb = findSourceByHonAndStatusAndApprovalStatus(hon, SourceOrganizationStatus.ACTIVE.getStatus(), APPROVED.getStatus());
+        if (entityFromDb == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+        }
+        if (entityFromDb != null && entityFromDb.getPayload() == null) {
+            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
+        }
+        log.info("current system date: {}", Instant.now().toString());
+        Source source = customSourceRepository.UpdateDateOnIncrementByHon(hon, Instant.now().toString(), Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+        if (source != null) {
+            /* Report Data Starts */
+            int autoMatch = isAutoMatch ? 1 : 0;
+            assert entityFromDb != null;
+            reportDataUtils.reportData(entityFromDb, SearchConstants.ReportActions.USED_COUNT, ORIGIN, autoMatch, null, entityFromDb.getVersion(), entityFromDb.getTempVersion(), SearchConstants.ReportActions.USED_COUNT);
+            /* Report Data Ends */
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public SourceOrganizationDTO getSourceByHonAndApprovalStatus(@NotNull String hon, ApprovalStatus approvalStatus) {
+        Source source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+        if (source == null) {
+            log.info("getSourceByHonAndApprovalStatus: source not found: {}, {}", hon, approvalStatus);
+            //Temparory fix
+            if(!(approvalStatus.getStatus().equals(APPROVED.getStatus()) || approvalStatus.getStatus().equals(REJECTED.getStatus()))){
+                source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+                if (source == null) {
+                    return null;
+                }
+                if(source.getApprovalStatus().equals(approvalStatus)){
+                    return sourceMapper.entitySourceToDTO(source);
+                }
+            }
+            return null;
+        }
+        if(source.getApprovalStatus().getStatus().equals(approvalStatus.getStatus())){
+            return sourceMapper.entitySourceToDTO(source);
+        }else{
+            //Temparory fix
+            log.info("temp fix");
+            if(!(approvalStatus.getStatus().equals(APPROVED.getStatus()) || approvalStatus.getStatus().equals(REJECTED.getStatus()))){
+                source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+                if (source == null) {
+                    return null;
+                }
+                if(source.getApprovalStatus().equals(approvalStatus)){
+                    return sourceMapper.entitySourceToDTO(source);
+                }
+            }
+            return null;
         }
     }
 
-    private static Set<String> collectFieldNames(JsonNode left, JsonNode right) {
-        Set<String> fieldNames = new TreeSet<>();
-        left.fieldNames().forEachRemaining(fieldNames::add);
-        right.fieldNames().forEachRemaining(fieldNames::add);
-        return fieldNames;
-    }
-
-    private static String buildChildPath(String path, String field) {
-        return path.isEmpty() ? field : path + "." + field;
-    }
-
-    private static boolean shouldSkipField(String field, String childPath) {
-        return SKIP_FIELDS.contains(field) || SKIP_FIELDS.contains(childPath);
-    }
-
-    private static JsonNode getChildNode(JsonNode parent, String field) {
-        JsonNode child = parent.has(field) ? parent.get(field) : MissingNode.getInstance();
-        return child == null ? MissingNode.getInstance() : child;
-    }
-
-    private static boolean shouldSkipEmptyArrayComparison(JsonNode lChild, JsonNode rChild) {
-        boolean lEmptyArr = lChild.isArray() && lChild.isEmpty();
-        boolean rEmptyArr = rChild.isArray() && rChild.isEmpty();
-        boolean lMissing = lChild.isMissingNode() || lChild.isNull();
-        boolean rMissing = rChild.isMissingNode() || rChild.isNull();
-
-        return (lEmptyArr && rMissing) || (rEmptyArr && lMissing);
-    }
-
-    private static boolean areBothMissing(JsonNode lChild, JsonNode rChild) {
-        boolean lMissing = lChild.isMissingNode() || lChild.isNull();
-        boolean rMissing = rChild.isMissingNode() || rChild.isNull();
-        return lMissing && rMissing;
-    }
-
-    private static boolean isOneMissing(JsonNode lChild, JsonNode rChild) {
-        boolean lMissing = lChild.isMissingNode() || lChild.isNull();
-        boolean rMissing = rChild.isMissingNode() || rChild.isNull();
-        return lMissing ^ rMissing;
-    }
-
-    private static void compareNodes(JsonNode lChild, JsonNode rChild, String childPath, List<String> changes) {
-        if (lChild.getNodeType() != rChild.getNodeType()) {
-            recordChange(childPath, changes);
-            return;
+    @Override
+    public SourceOrganizationDTO getSourceByHonForOpTool(@NotNull String hon) {
+        Source source = mongoSourceService.findSourceByHonOrderByLastModifiedBy(hon);
+        if (source == null) {
+            return null;
+            //logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
         }
+        return sourceMapper.entitySourceToDTO(source);
+    }
 
-        if (lChild.isObject()) {
-            diffObjects(lChild, rChild, childPath, changes);
-        } else if (lChild.isArray()) {
-            diffArrays(lChild, rChild, childPath, changes);
-        } else if (!lChild.equals(rChild)) {
-            recordChange(childPath, changes);
+    @Override
+    public SourceOrganizationDTO getSourceForEditByHon(@NotNull String hon, String action) {
+        Source source = mongoSourceService.findSourceByHonOrderByLastModifiedBy(hon);
+        if (source == null && action.equalsIgnoreCase(action)) {
+            Source source2 = mongoSourceService.findSourceByHon(hon);
+            if (source2 == null) {
+                return null;
+            }
+            log.info("id: {}", source2.getId());
+            source2.setApprovalStatus(PENDING_APPROVAL);
+            source2.setAssignedTo(UNASSIGNED);
+            source2.setAssignedId(UNASSIGNED);
+            source2.setGeneralErrors(new ArrayList<>());
+            source2.setFieldErrors(new ArrayList<>());
+            source2.setComments("");
+            return sourceMapper.entitySourceToDTO(source2);
+        }
+        if (source != null) {
+            log.info("id: {}", source.getId());
+            return sourceMapper.entitySourceToDTO(source);
+        }
+        return null;
+    }
+
+
+    @Transactional
+    @Override
+    public boolean updateSourceStatus(String hon, String version, String tempVersion, ApprovalStatus approvalStatus) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where(HON).is(hon));
+        query.addCriteria(Criteria.where(APPROVAL_STATUS).in(IN_PROGRESS, ONHOLD));
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        var entityFromDb = findSourceByQuery(query, collectionName);
+        if (entityFromDb == null || (entityFromDb != null && entityFromDb.getVersion() == Double.parseDouble(version) && entityFromDb.getTempVersion() == Double.parseDouble(tempVersion))) {
+            Query query1 = new Query();
+            query1.addCriteria(Criteria.where(HON).is(hon));
+            query1.addCriteria(Criteria.where(SearchConstants.SearchFields.VERSION).is(Double.parseDouble(version)));
+            query1.addCriteria(Criteria.where(TEMP_VERSION).is(Double.parseDouble(tempVersion)));
+            query1.addCriteria(Criteria.where(APPROVAL_STATUS).in(PENDING_APPROVAL, SAVE_PENDING_APPROVAL, ONHOLD));
+            var currentSource = findSourceByQuery(query1, collectionName);
+            if (currentSource == null) {
+                logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+            }
+            assert currentSource != null;
+            currentSource.setApprovalStatus(approvalStatus);
+            currentSource.setApprovalStartDate(Instant.now());
+            Update update = new Update().set(APPROVAL_STATUS, approvalStatus).set("approvalStartDate",Instant.now());
+            Query query2 = new Query().addCriteria(Criteria.where("_id").is(currentSource.getId()));
+            var response = updateByIdWithCustomFields(query2, update, collectionName);
+            log.info("Organization with hon: {} approvedStatus: {}", hon, currentSource.getApprovalStatus());
+            reportDataUtils.reportData(currentSource, currentSource.getAction(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, currentSource.getVersion(), currentSource.getTempVersion(),APPROVAL_FLOW);
+            return response;
+        }else{
+            logAndThrowResourceNotFound(SOURCE_ALREADY_IN_PROGRESS, null, hon);
+        }
+        return false;
+    }
+
+    /**
+     * @param hon
+     * @param uiActionsDTO
+     * @return
+     */
+    @Override
+    public RamResponseDTO getSourceForRAM(String hon, SourceRequestDTO sourceRequestDTO) {
+        UIActionsDTO uiActionsDTO = sourceRequestDTO.getUiActionsDTO();
+        String id = sourceRequestDTO.getSourceOrganizationDTO().getId();
+        RamResponseDTO response = new RamResponseDTO();
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        Source source = mongoSourceService.findSourceById(new ObjectId(id),collectionName);
+        if(!(uiActionsDTO.getUserAction().equalsIgnoreCase(APPROVED.getStatus()) || uiActionsDTO.getUserAction().equalsIgnoreCase(REJECTED.getStatus()))){
+            fetchApprovedSource(hon, response);
+        }
+        if((uiActionsDTO.getUserAction().equals(PENDING_APPROVAL.getStatus()) || uiActionsDTO.getUserAction().equals(SAVE_PENDING_APPROVAL.getStatus()) || uiActionsDTO.getUserAction().equals(ONHOLD.getStatus())) && source.getAssignedTo() != null && source.getAssignedTo().equals(uiActionsDTO.getUserName())){
+            updateInProgressStatusById(hon, id, collectionName);
+            reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, source.getVersion(), source.getTempVersion(),APPROVAL_FLOW);
+        }
+        getCurrentSource(id, collectionName, response);
+        return response;
+    }
+
+    private void fetchApprovedSource(String hon, RamResponseDTO response){
+        var approvedSource = mongoSourceService.findSourceByHonAndApprovalStatus(hon, APPROVED);
+        if(approvedSource != null){
+            var approvedSourceDTO = sourceMapper.entitySourceToDTO(approvedSource);
+            response.setApprovedSource(approvedSourceDTO);
         }
     }
 
-    private static void diffArrays(JsonNode left, JsonNode right, String path, List<String> changes) {
+    private void updateInProgressStatusById(String hon, String id, String collectionName){
+        Update update = new Update().set(APPROVAL_STATUS, IN_PROGRESS.getStatus());
+        update.set("approvalStartDate",Instant.now());
+        update.set(LAST_ACTION_DATE, Instant.now());
+        Query query = new Query().addCriteria(Criteria.where(HON).is(hon).and("_id").is(new ObjectId(id)));
+        mongoSourceService.updateByIdWithCustomFields(query, update, collectionName);
+    }
 
-        // Defensive: treat empty array == missing/null
-        boolean leftIsEmptyArray = left != null && left.isArray() && left.size() == 0;
-        boolean rightIsEmptyArray = right != null && right.isArray() && right.size() == 0;
-        boolean leftIsMissing = left == null || left.isMissingNode() || left.isNull();
-        boolean rightIsMissing = right == null || right.isMissingNode() || right.isNull();
-
-        if ((leftIsEmptyArray && rightIsMissing) || (rightIsEmptyArray && leftIsMissing)) {
-            return; // no diff
-        }
-
-        int lSize = left.size();
-        int rSize = right.size();
-
-        if (lSize != rSize) {
-            // Size difference is a change at the array path
-            recordChange(path, changes);
-        }
-
-        // Compare overlapping indices
-        int min = Math.min(lSize, rSize);
-        for (int i = 0; i < min; i++) {
-            String idxPath = path + "[" + i + "]";
-            diffNodes(left.get(i), right.get(i), idxPath, changes);
+    private void getCurrentSource(String id, String collectionName, RamResponseDTO response){
+        Source currentSource = mongoSourceService.findSourceById(new ObjectId(id), collectionName);
+        if(currentSource != null){
+            var currentSourceDTO = sourceMapper.entitySourceToDTO(currentSource);
+            response.setCurrentSource(currentSourceDTO);
         }
     }
 
-    private static boolean isMissingOrNull(JsonNode node) {
-        return node == null || node.isMissingNode() || node.isNull();
+    private Source findSourceByHon(@NotNull String hon) {
+        try {
+            return customSourceRepository.findOneByHon(hon, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
     }
 
-    private static void recordChange(String path, List<String> changes) {
-        // Empty path means the root differs; represent it as "$"
-        changes.add(path == null || path.isEmpty() ? "$" : path);
+    private Source findSourceByHonAndStatusAndApprovalStatus(@NotNull String hon, String status, String approvalStatus) {
+        try {
+            List<Source> sources = customSourceRepository.findByHonAndStatusAndApprovalStatus(hon, status, approvalStatus, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+            if (!sources.isEmpty()) {
+                return sources.get(0);
+            }
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
     }
 
+    private Boolean updateByQuery(Query query, @NotNull Source entityToPersist, String collectionName) {
+        //entityToPersist.setId(null);
+        return customSourceRepository.updateByQuery(query, entityToPersist, Source.class, collectionName);
+    }
+
+
+    private Source findSourceByHonAndVersion(@NotNull String hon, Double version) {
+        try {
+            Query query = new Query();
+            query.addCriteria(Criteria.where(HON).is(hon));
+            query.addCriteria(Criteria.where(SearchConstants.SearchFields.VERSION).is(version));
+            //query.addCriteria(Criteria.where(APPROVAL_STATUS).in(PENDING_APPROVAL, SAVE_PENDING_APPROVAL,IN_PROGRESS));
+            List<Source> result = customSourceRepository.findByQuery(query, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+            log.info("FindByHonAndVersion: Result: {}", result);
+            if (!result.isEmpty()) {
+                return result.get(0);
+            }
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
+    }
+
+    private Source findSourceByQuery(Query query, String collectionName) {
+        try {
+            List<Source> result = customSourceRepository.findByQuery(query, Source.class, collectionName);
+            log.info("FindByHonAndVersion: Result: {}", result);
+            if (!result.isEmpty()) {
+                return result.get(0);
+            }
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
+    }
+
+    private Boolean update(String queryField, String queryValue, @NotNull Source entityToPersist, String collectionName) {
+        entityToPersist.setId(null);
+        return customSourceRepository.update(queryField, queryValue, entityToPersist, Source.class, collectionName);
+    }
+
+    private Boolean updateByIdWithCustomFields(Query query, Update update, String collectionName) {
+        return customSourceRepository.updateFieldsByQuery(query, update, Source.class, collectionName);
+    }
+
+    private Source updateLockAndUnlockFields(Source source, UIActionsDTO uiActionsDTO){
+        source.setLastActionDate(Instant.now());
+        if(uiActionsDTO.getUserAction().equalsIgnoreCase(LOCK)){
+            source.setIsLockEnabled(true);
+            source.setLastLockedBy(uiActionsDTO.getUserName());
+            source.setLastLockedId(uiActionsDTO.getUserEmail());
+            source.setLastLockedDate(Instant.now());
+            source.setLogFlag(SearchConstants.LogFlagConstants.LOCKED);
+        }else{
+            source.setIsLockEnabled(false);
+            source.setLastUnLockedBy(uiActionsDTO.getUserName());
+            source.setLastUnLockedId(uiActionsDTO.getUserEmail());
+            source.setLastUnLockedDate(Instant.now());
+            source.setLogFlag(source.getAction().equalsIgnoreCase(ApplicationConstants.CREATE) ? SearchConstants.LogFlagConstants.NEW_RECORD : SearchConstants.LogFlagConstants.DETAILS_CHANGED);
+        }
+        return source;
+    }
 
 }
