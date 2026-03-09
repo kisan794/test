@@ -1,395 +1,610 @@
-{
-    "Marshall Islands": {
-        "Majuro": "Mājro",
-        "Kwajalein": "Kuwajleen",
-        "Ebeye": "Ebeje",
-        "Jaluit": "Jālwōj",
-        "Wotje": "Wōjje",
-        "Mili": "Mili Atoll",
-        "Bikini": "Pikinni",
-        "Enewetak": "Enewetok"
-    },
-    "Australia": {
-        "Sydney": "Warrane",
-        "Melbourne": "Naarm",
-        "Brisbane": "Meanjin",
-        "Perth": "Boorloo",
-        "Adelaide": "Tarntanya",
-        "Canberra": "Canberry",
-        "Hobart": "Hobart Town",
-        "Darwin": "Palmerston",
-        "Geelong": "Djilang",
-        "Alice Springs": "Mparntwe",
-        "Fraser Island": "K'gari",
-        "Ayers Rock": "Uluru",
-        "Mount Olga": "Kata Tjuta"
-    },
-    "Mayotte": {
-        "Mamoudzou": "Mamoudzu",
-        "Dzaoudzi": "Dzawudzi",
-        "Koungou": "Kunguu",
-        "Bandraboua": "Bandrabwa",
-        "Acoua": "Akua"
-    },
-    "Cambodia": {
-        "Phnom Penh": "Phnum Pénh",
-        "Siem Reap": "Siĕmréab",
-        "Battambang": "Batdambang",
-        "Sihanoukville": "Krong Preah Sihanouk",
-        "Kampong Cham": "Kampong Cam",
-        "Kampong Thom": "Kampong Thum",
-        "Pursat": "Pouthisat",
-        "Kep": "Kaeb",
-        "Takeo": "Ta Kev",
-        "Kratie": "Kracheh",
-        "Koh Kong": "Kaoh Kong",
-        "Stung Treng": "Stueng Traeng"
-    },
-    "Cook Islands": {
-        "Avarua": "Avarua Town"
-    },
-    "Mongolia": {
-        "Ulaanbaatar": "Ulan Bator",
-        "Choibalsan": "Bayan Tümen",
-        "Altai": "Altay",
-        "Ulaangom": "Ulangom"
-    },
-    "Timor-Leste": {
-        "Dili": "Díli",
-        "Baucau": "Vila Salazar",
-        "Oecusse": "Oecussi",
-        "Pante Macassar": "Pante Makasar",
-        "Liquiçá": "Likuça"
-    },
-    "New Zealand": {
-        "Auckland": "Tāmaki Makaurau",
-        "Wellington": "Te Whanganui-a-Tara",
-        "Christchurch": "Ōtautahi",
-        "Dunedin": "Ōtepoti",
-        "Hamilton": "Kirikiriroa",
-        "New Plymouth": "Ngāmotu",
-        "Napier": "Ahuriri",
-        "Gisborne": "Tūranga"
-    },
-    "China": {
-        "Beijing": "Peking",
-        "Guangzhou": "Canton",
-        "Chongqing": "Chungking",
-        "Nanjing": "Nanking",
-        "Tianjin": "Tientsin",
-        "Qingdao": "Tsingtao",
-        "Xiamen": "Amoy",
-        "Shenyang": "Mukden",
-        "Harbin": "Haerbin",
-        "Ürümqi": "Urumchi"
-    },
-    "Philippines": {
-        "Manila": "Maynila",
-        "Cebu": "Sugbo",
-        "Davao": "Dabaw",
-        "Iloilo": "Iloílo",
-        "Zamboanga": "Samboangan",
-        "Cotabato": "Kutawato"
-    },
-    "British Indian Ocean Territory": {
-        "Diego Garcia": "Diégo Garcia"
-    },
-    "Tokelau": {
-        "Fakaofo": "Fakaofu"
-    },
-    "French Southern Territories": {},
-    "Guam": {
-        "Hagatna": "Agana",
-        "Mangilao": "Mangilao Village",
-        "Dededo": "Dedidu",
-        "Barrigada": "Barigada",
-        "Tamuning": "Tamuning-Tumon-Harmon"
-    },
-    "Kiribati": {
-        "Tarawa": "Taraua"
-    },
-    "Tuvalu": {
-        "Funafuti": "Fongafale"
-    },
-    "Niue": {},
-    "French Polynesia": {
-        "Papeete": "Papeʻete",
-        "Bora Bora": "Porapora",
-        "Moorea": "Moʻorea",
-        "Raiatea": "Raʻiātea"
-    },
-    "Thailand": {
-        "Bangkok": "Krung Thep Maha Nakhon",
-        "Ayutthaya": "Phra Nakhon Si Ayutthaya",
-        "Nakhon Si Thammarat": "Ligor",
-        "Songkhla": "Singgora",
-        "Pattani": "Patani"
-    },
-    "Antarctica": {},
-    "Singapore": {
-        "Singapore": "Singapura",
-        "Jurong": "Churong",
-        "Pulau Ujong": "Singapore Island"
-    },
-    "Vanuatu": {
-        "Port Vila": "Vila",
-        "Luganville": "Santo",
-        "Espiritu Santo": "Santo",
-        "Tanna": "Tana"
-    },
-    "Nauru": {},
-    "Tonga": {
-        "Tongatapu": "Tongataboo"
-    },
-    "Laos": {
-        "Vientiane": "Viangchan",
-        "Luang Prabang": "Louangphrabang",
-        "Savannakhet": "Savanakhet",
-        "Champasak": "Champassak",
-        "Xieng Khouang": "Xiangkhouang"
-    },
-    "Norfolk Island": {},
-    "Palau": {
-        "Ngerulmud": "Melekeok",
-        "Koror": "Oreor",
-        "Peleliu": "Beliliou",
-        "Angaur": "Ngeaur",
-        "Kayangel": "Kayangel Atoll"
-    },
-    "American Samoa": {
-        "Pago Pago": "Pango Pango",
-        "Tutuila": "Tootuila",
-        "Aunu'u": "Aunuu",
-        "Ta'u": "Tau",
-        "Ofu": "Ofu Island"
-    },
-    "Korea, South": {
-        "Seoul": "Sŏul",
-        "Busan": "Pusan",
-        "Daegu": "Taegu",
-        "Incheon": "Inch'on",
-        "Daejeon": "Taejon",
-        "Gwangju": "Kwangju",
-        "Jeju": "Cheju"
-    },
-    "Solomon Islands": {
-        "Honiara": "Honiara Town",
-        "Auki": "Alki",
-        "Gizo": "Ghizo",
-        "Tulagi": "Tulaghi",
-        "Choiseul": "Lauru"
-    },
-    "Brunei": {
-        "Bandar Seri Begawan": "Brunei Town",
-        "Muara": "Pekan Muara",
-        "Seria": "Kuala Belait Oilfield",
-        "Kuala Belait": "Belait",
-        "Tutong": "Pekan Tutong"
-    },
-    "Turkmenistan": {
-        "Ashgabat": "Ashkhabad",
-        "Türkmenabat": "Chardzhou",
-        "Turkmenbashi": "Krasnovodsk",
-        "Dashoguz": "Tashauz",
-        "Mary": "Merv"
-    },
-    "Wallis and Futuna": {
-        "Mata-Utu": "Mata Utu",
-        "Uvea": "Wallis Island",
-        "Sigave": "Sigavé"
-    },
-    "Indonesia": {
-        "Jakarta": "Batavia",
-        "Yogyakarta": "Jogjakarta",
-        "Makassar": "Ujung Pandang",
-        "Semarang": "Samarang",
-        "Surabaya": "Soerabaja",
-        "Bandung": "Bandoeng",
-        "Bogor": "Buitenzorg",
-        "Malang": "Malangh"
-    },
-    "Macau SAR, PRC": {
-        "Macau": "Macao"
-    },
-    "Pakistan": {
-        "Lahore": "Lahor",
-        "Peshawar": "Peshawur",
-        "Quetta": "Shalkot",
-        "Multan": "Mooltan",
-        "Hyderabad": "Haidarabad",
-        "Sialkot": "Sealkote",
-        "Faisalabad": "Lyallpur",
-        "Islamabad": "Islamabad Capital Territory"
-    },
-    "Maldives": {
-        "Malé": "Male",
-        "Hulhumalé": "Hulhumale",
-        "Fuvahmulah": "Fua Mulaku",
-        "Addu City": "Seenu Atoll",
-        "Kulhudhuffushi": "Kulhudhufushi",
-        "Thinadhoo": "Tinadhoo"
-    },
-    "Reunion": {
-        "Le Tampon": "Tampon"
-    },
-    "Papua New Guinea": {
-        "Port Moresby": "Moresby",
-        "Mount Hagen": "Mt Hagen",
-        "Madang": "Friedrich-Wilhelmshafen",
-        "Kokopo": "Rabaul East",
-        "Arawa": "Arawa Town",
-        "Kimbe": "Kimbe Bay"
-    },
-    "Vietnam": {
-        "Ho Chi Minh City": "Saigon",
-        "Hà Nội": "Hanoi",
-        "Hải Phòng": "Haiphong",
-        "Đà Nẵng": "Danang",
-        "Cần Thơ": "Can Tho",
-        "Nha Trang": "Nhatrang",
-        "Huế": "Hue",
-        "Phan Thiết": "Phanthiet",
-        "Biên Hòa": "Bien Hoa",
-        "Vũng Tàu": "Vung Tau"
-    },
-    "Christmas Island": {
-        "Flying Fish Cove": "The Settlement",
-        "Ethel Beach": "Ethel Bay",
-        "South Point": "South Cape"
-    },
-    "Burma": {
-        "Yangon": "Rangoon",
-        "Mandalay": "Mandalay City",
-        "Naypyidaw": "Nay Pyi Taw",
-        "Bago": "Pegu",
-        "Pathein": "Bassein",
-        "Taunggyi": "Taungyi",
-        "Mawlamyine": "Moulmein",
-        "Myitkyina": "Myitkyina Town"
-    },
-    "Pitcairn Islands": {
-        "Adamstown": "Pitcairn Settlement"
-    },
-    "Korea, North": {
-        "Pyongyang": "P'yŏngyang",
-        "Hamhung": "Hamheung",
-        "Chongjin": "Chongjin-si",
-        "Nampo": "Namp’o",
-        "Wonsan": "Mansudae",
-        "Kaesong": "Kaesŏng"
-    },
-    "Bhutan": {
-        "Thimphu": "Timphu",
-        "Paro": "Para",
-        "Phuntsholing": "Phuentsholing",
-        "Punakha": "Pungakha",
-        "Wangdue Phodrang": "Wangdi Phodrang",
-        "Trongsa": "Tongsa",
-        "Bumthang": "Bumthhang"
-    },
-    "Micronesia, Federated States of": {
-        "Palikir": "Pohnpei Village",
-        "Kolonia": "Kolonya",
-        "Weno": "Moen",
-        "Lukop": "Lukop Village",
-        "Sapwuahfik": "Ngatik"
-    },
-    "Cocos (Keeling) Islands": {},
-    "Nepal": {
-        "Kathmandu": "Katmandu",
-        "Biratnagar": "Biratnuggur",
-        "Bhaktapur": "Bhadgaon",
-        "Lalitpur": "Patan",
-        "Janakpur": "Janakpurdham"
-    },
-    "Western Samoa": {
-        "Apia": "Apii",
-        "Savai'i": "Savaii"
-    },
-    "Samoa": {
-        "Apia": "Apii",
-        "Savai'i": "Savaii"
-    },
-    "Heard Island and McDonald Islands": {
-        "Mawson Peak": "Big Ben"
-    },
-    "New Caledonia": {
-        "Nouméa": "Noumea",
-        "Koné": "Kone",
-        "Lifou": "Île Lifou",
-        "Île des Pins": "Isle of Pines",
-        "Bourail": "Bouraïl"
-    },
-    "Uzbekistan": {
-        "Tashkent": "Toshkent",
-        "Samarkand": "Samarqand",
-        "Bukhara": "Buxoro",
-        "Khiva": "Xiva",
-        "Nukus": "No’kis",
-        "Andijan": "Andijon",
-        "Fergana": "Farg‘ona"
-    },
-    "Tajikistan": {
-        "Dushanbe": "Dyushambe",
-        "Khujand": "Leninabad",
-        "Kulob": "Kulyab",
-        "Bokhtar": "Qurghonteppa",
-        "Istaravshan": "Ura-Tyube",
-        "Khorugh": "Khorog"
-    },
-    "Taiwan, China": {
-        "Taipei": "Taihoku",
-        "Kaohsiung": "Takao",
-        "Taichung": "Taichū",
-        "Hsinchu": "Shinchiku",
-        "Keelung": "Kelung",
-        "Yilan": "Giran",
-        "Chiayi": "Kagi"
-    },
-    "Hong Kong SAR, PRC": {
-        "Hong Kong": "Heung Kong",
-        "Victoria Harbour": "Victoria Habor",
-        "Kowloon": "Gowloon",
-        "Lantau Island": "Tai Yu Shan",
-        "New Territories": "San Tin",
-        "Cheung Chau": "Cheung Chaw"
-    },
-    "Northern Mariana Islands": {
-        "Saipan": "Saipahn",
-        "Tinian": "Tinihan",
-        "Rota": "Luta",
-        "Garapan": "Kampan",
-        "San Roque": "San Roqui"
-    },
-    "Malaysia": {
-        "Kuala Lumpur": "Kwala Lumpur",
-        "George Town": "Tanjong Penaga",
-        "Malacca": "Melaka",
-        "Johor Bahru": "Johore Bahru",
-        "Kota Kinabalu": "Jesselton",
-        "Kuching": "Antanan"
-    },
-    "Fiji": {
-        "Suva": "Sova",
-        "Lautoka": "Lautoca",
-        "Nadi": "Nandi",
-        "Levuka": "Levuca",
-        "Savusavu": "Sauvasa",
-        "Ba": "Baa"
-    },
-    "Myanmar": {
-        "Yangon": "Rangoon",
-        "Naypyidaw": "Nay Pyi Taw",
-        "Bago": "Pegu",
-        "Pathein": "Bassein",
-        "Mawlamyine": "Moulmein"
-    },
-    "Japan": {
-        "Tokyo": "Edo",
-        "Osaka": "Ōsaka",
-        "Kyoto": "Kyouto",
-        "Kobe": "Kōbe",
-        "Nagoya": "Nagoia",
-        "Hiroshima": "Hiroshoma"
+package com.hireright.sourceintelligence.service.impl;
+
+import static com.hireright.sourceintelligence.api.ApiConstants.FAILURE;
+import static com.hireright.sourceintelligence.api.ApiConstants.SUCCESS;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.*;
+import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.*;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.APPROVED;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.IN_PROGRESS;
+import static com.hireright.sourceintelligence.domain.enums.ApprovalStatus.REJECTED;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.ErrorMessages.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.ReportActions.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.SearchFields.*;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.StatusCode.*;
+import static com.hireright.sourceintelligence.util.LoggingThrowable.*;
+
+import com.hireright.sourceintelligence.api.dto.*;
+import com.hireright.sourceintelligence.api.dto.optool.AutoMatchResponseDTO;
+import com.hireright.sourceintelligence.api.dto.optool.AutoMatchSourceDTO;
+import com.hireright.sourceintelligence.constants.ApplicationConstants;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.enums.ApprovalStatus;
+import com.hireright.sourceintelligence.domain.enums.SourceOrganizationStatus;
+import com.hireright.sourceintelligence.domain.mapper.AutoMatchMapper;
+import com.hireright.sourceintelligence.domain.mapper.SourceMapper;
+import com.hireright.sourceintelligence.domain.repository.*;
+import com.hireright.sourceintelligence.service.*;
+import com.hireright.sourceintelligence.service.impl.helperservices.CreateSourceService;
+import com.hireright.sourceintelligence.service.impl.helperservices.ArchiveSourceService;
+import com.hireright.sourceintelligence.service.impl.helperservices.ReportDataUtils;
+import com.hireright.sourceintelligence.service.impl.helperservices.UpdateSourceService;
+import com.hireright.sourceintelligence.util.Helper;
+
+import java.time.Instant;
+import java.util.*;
+
+import com.mongodb.client.MongoClient;
+import jakarta.validation.constraints.NotNull;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.types.ObjectId;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.ObjectUtils;
+
+
+@Primary
+@Slf4j
+@RequiredArgsConstructor
+@Transactional
+@Service
+public class SourceServiceImpl implements SourceService {
+
+    private static final String SOURCE_ORGANIZATION_WITH_HON = "SourceOrganization with HON: ";
+
+    private final CustomSourceRepository<Source> customSourceRepository;
+    private final SourceMapper sourceMapper;
+    private final ReportDataUtils reportDataUtils;
+    private final AutoMatchMapper autoMatchMapper;
+
+    private final CreateSourceService createSourceService;
+    private final UpdateSourceService updateSourceService;
+    private final ArchiveSourceService archiveSourceService;
+    private final MongoSourceService mongoSourceService;
+
+    @Transactional
+    @Override
+    public SourceOrganizationDTO createSource(@NotNull SourceOrganizationDTO sourceOrganizationDTO, UIActionsDTO uiActionsDTO) {
+        try {
+            return createSourceService.createSource(sourceOrganizationDTO, uiActionsDTO);
+        } catch (Exception e) {
+            logAndThrowServiceException(CREATE_SOURCE_ERROR, e, sourceOrganizationDTO.getOrganizationName(), e.getMessage());
+        }
+        return null;
     }
+
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    @Override
+    public SourceOrganizationDTO updateSource(SourceOrganizationDTO sourceDTO, UIActionsDTO uiActionsDTO) {
+        try {
+            return updateSourceService.updateSource(sourceDTO, uiActionsDTO);
+        } catch (Exception e) {
+            logAndThrowServiceException(UPDATE_SOURCE_ERROR, e, sourceDTO.getHon(), e.getMessage());
+        }
+        return null;
+    }
+
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRED)
+    @Override
+    public ResponseObject archiveSource(String hon, UIActionsDTO uiActionsDTO) {
+        ResponseObject responseObject = null;
+        try {
+            boolean response = archiveSourceService.archiveSource(hon, uiActionsDTO);
+            if(response){
+                responseObject = ResponseObject.baseBuilder(SUCCESS,ARCHIVE_SUCCESS,SUCCESS_CODE).build();
+            }else{
+                responseObject = ResponseObject.baseBuilder(FAILURE,ARCHIVE_FAILURE,FAILURE_CODE).build();
+            }
+        } catch (Exception e) {
+            logAndThrowServiceException(DELETE_SOURCE_ERROR, e, hon, e.getMessage());
+        }
+        return responseObject;
+    }
+
+    @Override
+    @Transactional
+    public AutoMatchResponseDTO incrementUsedCount(String hon, ApprovalStatus approvalStatus) {
+        log.info("Manual select source request: {}", hon);
+        Instant requestTime = Instant.now();
+        var entityFromDb = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+        if (entityFromDb == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+        }
+        if (entityFromDb != null && entityFromDb.getPayload() == null) {
+            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
+        }
+        log.info("current system date: {}", requestTime);
+        AutoMatchSourceDTO response = autoMatchMapper.toAutoMatchDTO(entityFromDb);
+        assert entityFromDb != null;
+        log.info("Manual select source response: {}", response);
+        log.info("Source organization with hon: {} was last verified on {}", hon, requestTime);
+        return AutoMatchResponseDTO.baseBuilder("", requestTime).source(response).build();
+    }
+
+    @Override
+    public List<SourceOrganizationDTO> getSourcesByHonIds(List<String> honIds) {
+        List<Source> sourceList = customSourceRepository.findByHonIn(honIds, Source.class, Helper.getCollectionName(honIds.get(0), SOURCE_COLLECTION_SUFFIX));
+        if (!ObjectUtils.isEmpty(sourceList)) {
+            return sourceMapper.toSourceDTOList(sourceList);
+        }
+        return Collections.emptyList();
+    }
+
+    @Override
+    public SourceOrganizationDTO getSourceByHon(@NotNull String hon) {
+        Source source = mongoSourceService.findSourceByHon(hon);
+        if (source == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+        }
+        return sourceMapper.entitySourceToDTO(source);
+    }
+
+    @Override
+    public ResponseObject assignApproveManagerToSource(ApprovalRequestDTO approvalRequestDTO) {
+        List<String> hons = new ArrayList<>();
+        Query query = new Query();
+        List<String> approvalStatuses = createApprovalStatusesList();
+
+        ResponseObject validationResult = validateAndProcessSourceDetails(approvalRequestDTO, hons, query, approvalStatuses);
+        if (validationResult != null) {
+            return validationResult;
+        }
+
+        if (!hons.isEmpty()) {
+            return processAssignment(approvalRequestDTO, query);
+        }
+
+        return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE, FAILURE2_CODE).build();
+    }
+
+    private List<String> createApprovalStatusesList() {
+        List<String> approvalStatuses = new ArrayList<>();
+        approvalStatuses.add(IN_PROGRESS.toString());
+        approvalStatuses.add(ONHOLD.toString());
+        return approvalStatuses;
+    }
+
+    private ResponseObject validateAndProcessSourceDetails(ApprovalRequestDTO approvalRequestDTO,
+                                                           List<String> hons, Query query,
+                                                           List<String> approvalStatuses) {
+        if (approvalRequestDTO.getSourceDetails().isEmpty()) {
+            return null;
+        }
+
+        for (AssignSourceDTO assignSourceDTO : approvalRequestDTO.getSourceDetails()) {
+            ResponseObject result = processSourceDetail(assignSourceDTO, hons, query, approvalStatuses);
+            if (result != null) {
+                return result;
+            }
+        }
+        return null;
+    }
+
+    private ResponseObject processSourceDetail(AssignSourceDTO assignSourceDTO, List<String> hons,
+                                               Query query, List<String> approvalStatuses) {
+        String collectionName = Helper.getCollectionName(assignSourceDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
+        Source source = mongoSourceService.findSourceById(new ObjectId(assignSourceDTO.getId()), collectionName);
+
+        if (source == null) {
+            return null;
+        }
+
+        if (!isValidApprovalStatus(source.getApprovalStatus())) {
+            return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE, FAILURE_CODE).build();
+        }
+
+        Source existingSource = mongoSourceService.findSourceByHonAndApprovalStatuses(
+            assignSourceDTO.getHon(), approvalStatuses);
+
+        if (existingSource != null) {
+            return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE_2, FAILURE_CODE).build();
+        }
+
+        hons.add(assignSourceDTO.getHon());
+        query.addCriteria(Criteria.where(HON).is(assignSourceDTO.getHon()));
+        query.addCriteria(Criteria.where(APPROVAL_STATUS).is(assignSourceDTO.getApprovalStatus()));
+        return null;
+    }
+
+    private boolean isValidApprovalStatus(ApprovalStatus status) {
+        return status.equals(PENDING_APPROVAL) ||
+               status.equals(SAVE_PENDING_APPROVAL) ||
+               status.equals(ONHOLD);
+    }
+
+    private ResponseObject processAssignment(ApprovalRequestDTO approvalRequestDTO, Query query) {
+        if (approvalRequestDTO.getAssignType().equalsIgnoreCase(ASSIGN_MYSELF)) {
+            assignToMyself(approvalRequestDTO, query);
+        } else {
+            assignToOther(approvalRequestDTO, query);
+        }
+        return ResponseObject.baseBuilder(SUCCESS, ASSIGN_SUCCESS, SUCCESS_CODE).build();
+    }
+
+    private void assignToMyself(ApprovalRequestDTO approvalRequestDTO, Query query) {
+        String collectionName = Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX);
+        Query query1 = new Query();
+        query1.addCriteria(Criteria.where(ID).is(approvalRequestDTO.getSourceDetails().getFirst().getId()));
+
+        Update update = new Update();
+        update.set(ASSIGNED_TO, approvalRequestDTO.getApproverName());
+        update.set(ASSIGNED_ID, approvalRequestDTO.getApproverEmail());
+        update.set(APPROVAL_STATUS, IN_PROGRESS.getStatus());
+
+        customSourceRepository.updateFieldsByQuery(query, update, Source.class, collectionName);
+        Source source = mongoSourceService.findSourceById(
+            new ObjectId(approvalRequestDTO.getSourceDetails().getFirst().getId()), collectionName);
+        reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0,
+                                   MANUAL_PROCESS, source.getVersion(), source.getTempVersion(), APPROVAL_FLOW);
+    }
+
+    private void assignToOther(ApprovalRequestDTO approvalRequestDTO, Query query) {
+        customSourceRepository.assignApproverToSource(query, approvalRequestDTO.getApproverName(),
+                                                     approvalRequestDTO.getApproverEmail(),
+                                                     Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX));
+    }
+
+    @Override
+    @Transactional
+    public boolean updateFlagForPriority(String hon, Double version) {
+        var entityFromDb = findSourceByHonAndVersion(hon, version);
+        if (entityFromDb == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+            return false;
+        }
+        Boolean flag = entityFromDb.getFlagPriority() == null ? Boolean.TRUE : !entityFromDb.getFlagPriority();
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        Update update = new Update().set(FLAG_PRIORITY, flag);
+        update.set(LAST_ACTION_DATE, Instant.now());
+        Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
+        updateByIdWithCustomFields(query, update, collectionName);
+        log.info("Organization with hon:{} flagged {} for priority", hon, entityFromDb.getFlagPriority());
+        return flag;
+    }
+
+    @Override
+    public ResponseObject deleteSource(String hon, DeleteRequestDTO deleteRequestDTO) {
+        try {
+            long count = mongoSourceService.hardDeleteSource(hon, deleteRequestDTO);
+            if(count == 0){
+                return ResponseObject.baseBuilder(FAILURE,DELETE_FAILURE,FAILURE2_CODE).build();
+            }
+            return ResponseObject.baseBuilder(SUCCESS,DELETE_SUCCESS,SUCCESS_CODE).build();
+        }catch (Exception e) {
+            return ResponseObject.baseBuilder(FAILURE,INTERNAL_FAILURE,INTERNAL_ERROR_CODE).build();
+        }
+    }
+
+    @Override
+    public ResponseObject lockSource(String hon, UIActionsDTO uiActionsDTO) {
+        Source source = mongoSourceService.findSourceByHon(hon);
+        if(source != null){
+            if(Boolean.FALSE.equals(source.getIsLockEnabled())){
+                String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+                Update update = new Update().set(IS_LOCK_ENABLED, true)
+                        .set(LAST_LOCKED_BY,uiActionsDTO.getUserName())
+                        .set(LAST_LOCKED_ID,uiActionsDTO.getUserEmail())
+                        .set(LAST_LOCKED_DATE,Instant.now())
+                        .set(LOG_FLAG,SearchConstants.LogFlagConstants.LOCKED);
+                Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
+                updateByIdWithCustomFields(query, update, collectionName);
+                Source sourceHistory = updateLockAndUnlockFields(source, uiActionsDTO);
+                mongoSourceService.insertSourceHistory(sourceHistory);
+                reportDataUtils.reportData(source, LOCK, SIDB_ORIGIN,0,null, source.getVersion(), source.getTempVersion(), LOCK);
+                return ResponseObject.baseBuilder(SUCCESS,LOCK_SUCCESS,SUCCESS_CODE).build();
+            }else{
+                return ResponseObject.baseBuilder(FAILURE,LOCK_FAILURE,FAILURE_CODE).build();
+            }
+        }
+        return ResponseObject.baseBuilder(FAILURE,LOCK_FAILURE_2,FAILURE2_CODE).build();
+    }
+
+    @Override
+    public ResponseObject unlockSource(String hon, UIActionsDTO uiActionsDTO) {
+        Source source = mongoSourceService.findSourceByHon(hon);
+        if(source != null){
+            if(Boolean.TRUE.equals(source.getIsLockEnabled())){
+              String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+                Update update = new Update().set(IS_LOCK_ENABLED, false)
+                        .set(LAST_LOCKED_BY,uiActionsDTO.getUserName())
+                        .set(LAST_LOCKED_ID,uiActionsDTO.getUserEmail())
+                        .set(LAST_LOCKED_DATE,Instant.now())
+                        .set(LOG_FLAG,source.getAction().equalsIgnoreCase(ApplicationConstants.CREATE) ? SearchConstants.LogFlagConstants.NEW_RECORD : SearchConstants.LogFlagConstants.DETAILS_CHANGED);
+                Query query = new Query().addCriteria(Criteria.where(HON).is(hon));
+                updateByIdWithCustomFields(query, update, collectionName);
+                Source sourceHistory = updateLockAndUnlockFields(source, uiActionsDTO);
+                mongoSourceService.insertSourceHistory(sourceHistory);
+                reportDataUtils.reportData(source, UNLOCK, SIDB_ORIGIN,0,null, source.getVersion(), source.getTempVersion(), UNLOCK);
+                return ResponseObject.baseBuilder(SUCCESS,UNLOCK_SUCCESS,SUCCESS_CODE).build();
+            }else{
+                return ResponseObject.baseBuilder(FAILURE,UNLOCK_FAILURE,FAILURE_CODE).build();
+            }
+        }
+        return ResponseObject.baseBuilder(FAILURE,UNLOCK_FAILURE2,FAILURE2_CODE).build();
+    }
+
+    @Override
+    public boolean updateUsedCount(String hon, boolean isAutoMatch) {
+        log.info("Update used count source request: {}", hon);
+        var entityFromDb = findSourceByHonAndStatusAndApprovalStatus(hon, SourceOrganizationStatus.ACTIVE.getStatus(), APPROVED.getStatus());
+        if (entityFromDb == null) {
+            logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+        }
+        if (entityFromDb != null && entityFromDb.getPayload() == null) {
+            logAndThrowInvalidRequest(SEARCH_TEXT_MISSING, null);
+        }
+        log.info("current system date: {}", Instant.now().toString());
+        Source source = customSourceRepository.UpdateDateOnIncrementByHon(hon, Instant.now().toString(), Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+        if (source != null) {
+            /* Report Data Starts */
+            int autoMatch = isAutoMatch ? 1 : 0;
+            assert entityFromDb != null;
+            reportDataUtils.reportData(entityFromDb, SearchConstants.ReportActions.USED_COUNT, ORIGIN, autoMatch, null, entityFromDb.getVersion(), entityFromDb.getTempVersion(), SearchConstants.ReportActions.USED_COUNT);
+            /* Report Data Ends */
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public SourceOrganizationDTO getSourceByHonAndApprovalStatus(@NotNull String hon, ApprovalStatus approvalStatus) {
+        Source source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+
+        if (source == null) {
+            return handleSourceNotFound(hon, approvalStatus);
+        }
+
+        if (source.getApprovalStatus().getStatus().equals(approvalStatus.getStatus())) {
+            return sourceMapper.entitySourceToDTO(source);
+        }
+
+        return handleStatusMismatch(hon, approvalStatus);
+    }
+
+    private SourceOrganizationDTO handleSourceNotFound(String hon, ApprovalStatus approvalStatus) {
+        log.info("getSourceByHonAndApprovalStatus: source not found: {}, {}", hon, approvalStatus);
+
+        if (isApprovedOrRejectedStatus(approvalStatus)) {
+            return null;
+        }
+
+        return retryFindSource(hon, approvalStatus);
+    }
+
+    private SourceOrganizationDTO handleStatusMismatch(String hon, ApprovalStatus approvalStatus) {
+        log.info("temp fix");
+
+        if (isApprovedOrRejectedStatus(approvalStatus)) {
+            return null;
+        }
+
+        return retryFindSource(hon, approvalStatus);
+    }
+
+    private boolean isApprovedOrRejectedStatus(ApprovalStatus approvalStatus) {
+        return approvalStatus.getStatus().equals(APPROVED.getStatus()) ||
+               approvalStatus.getStatus().equals(REJECTED.getStatus());
+    }
+
+    private SourceOrganizationDTO retryFindSource(String hon, ApprovalStatus approvalStatus) {
+        Source source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+
+        if (source == null) {
+            return null;
+        }
+
+        if (source.getApprovalStatus().equals(approvalStatus)) {
+            return sourceMapper.entitySourceToDTO(source);
+        }
+
+        return null;
+    }
+
+    @Override
+    public SourceOrganizationDTO getSourceByHonForOpTool(@NotNull String hon) {
+        Source source = mongoSourceService.findSourceByHonOrderByLastModifiedBy(hon);
+        if (source == null) {
+            return null;
+            //logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+        }
+        return sourceMapper.entitySourceToDTO(source);
+    }
+
+    @Override
+    public SourceOrganizationDTO getSourceForEditByHon(@NotNull String hon, String action) {
+        Source source = mongoSourceService.findSourceByHonOrderByLastModifiedBy(hon);
+        if (source == null && action.equalsIgnoreCase(action)) {
+            Source source2 = mongoSourceService.findSourceByHon(hon);
+            if (source2 == null) {
+                return null;
+            }
+            log.info("id: {}", source2.getId());
+            source2.setApprovalStatus(PENDING_APPROVAL);
+            source2.setAssignedTo(UNASSIGNED);
+            source2.setAssignedId(UNASSIGNED);
+            source2.setGeneralErrors(new ArrayList<>());
+            source2.setFieldErrors(new ArrayList<>());
+            source2.setComments("");
+            return sourceMapper.entitySourceToDTO(source2);
+        }
+        if (source != null) {
+            log.info("id: {}", source.getId());
+            return sourceMapper.entitySourceToDTO(source);
+        }
+        return null;
+    }
+
+
+    @Transactional
+    @Override
+    public boolean updateSourceStatus(String hon, String version, String tempVersion, ApprovalStatus approvalStatus) {
+        Query query = new Query();
+        query.addCriteria(Criteria.where(HON).is(hon));
+        query.addCriteria(Criteria.where(APPROVAL_STATUS).in(IN_PROGRESS, ONHOLD));
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        var entityFromDb = findSourceByQuery(query, collectionName);
+        if (entityFromDb == null || (entityFromDb != null && entityFromDb.getVersion() == Double.parseDouble(version) && entityFromDb.getTempVersion() == Double.parseDouble(tempVersion))) {
+            Query query1 = new Query();
+            query1.addCriteria(Criteria.where(HON).is(hon));
+            query1.addCriteria(Criteria.where(SearchConstants.SearchFields.VERSION).is(Double.parseDouble(version)));
+            query1.addCriteria(Criteria.where(TEMP_VERSION).is(Double.parseDouble(tempVersion)));
+            query1.addCriteria(Criteria.where(APPROVAL_STATUS).in(PENDING_APPROVAL, SAVE_PENDING_APPROVAL, ONHOLD));
+            var currentSource = findSourceByQuery(query1, collectionName);
+            if (currentSource == null) {
+                logAndThrowResourceNotFound(SOURCE_NOT_FOUND, null, hon);
+            }
+            assert currentSource != null;
+            currentSource.setApprovalStatus(approvalStatus);
+            currentSource.setApprovalStartDate(Instant.now());
+            Update update = new Update().set(APPROVAL_STATUS, approvalStatus).set("approvalStartDate",Instant.now());
+            Query query2 = new Query().addCriteria(Criteria.where("_id").is(currentSource.getId()));
+            var response = updateByIdWithCustomFields(query2, update, collectionName);
+            log.info("Organization with hon: {} approvedStatus: {}", hon, currentSource.getApprovalStatus());
+            reportDataUtils.reportData(currentSource, currentSource.getAction(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, currentSource.getVersion(), currentSource.getTempVersion(),APPROVAL_FLOW);
+            return response;
+        }else{
+            logAndThrowResourceNotFound(SOURCE_ALREADY_IN_PROGRESS, null, hon);
+        }
+        return false;
+    }
+
+    /**
+     * @param hon
+     * @param uiActionsDTO
+     * @return
+     */
+    @Override
+    public RamResponseDTO getSourceForRAM(String hon, SourceRequestDTO sourceRequestDTO) {
+        UIActionsDTO uiActionsDTO = sourceRequestDTO.getUiActionsDTO();
+        String id = sourceRequestDTO.getSourceOrganizationDTO().getId();
+        RamResponseDTO response = new RamResponseDTO();
+        String collectionName = Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX);
+        Source source = mongoSourceService.findSourceById(new ObjectId(id),collectionName);
+        if(!(uiActionsDTO.getUserAction().equalsIgnoreCase(APPROVED.getStatus()) || uiActionsDTO.getUserAction().equalsIgnoreCase(REJECTED.getStatus()))){
+            fetchApprovedSource(hon, response);
+        }
+        if((uiActionsDTO.getUserAction().equals(PENDING_APPROVAL.getStatus()) || uiActionsDTO.getUserAction().equals(SAVE_PENDING_APPROVAL.getStatus()) || uiActionsDTO.getUserAction().equals(ONHOLD.getStatus())) && source.getAssignedTo() != null && source.getAssignedTo().equals(uiActionsDTO.getUserName())){
+            updateInProgressStatusById(hon, id, collectionName);
+            reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, source.getVersion(), source.getTempVersion(),APPROVAL_FLOW);
+        }
+        getCurrentSource(id, collectionName, response);
+        return response;
+    }
+
+    private void fetchApprovedSource(String hon, RamResponseDTO response){
+        var approvedSource = mongoSourceService.findSourceByHonAndApprovalStatus(hon, APPROVED);
+        if(approvedSource != null){
+            var approvedSourceDTO = sourceMapper.entitySourceToDTO(approvedSource);
+            response.setApprovedSource(approvedSourceDTO);
+        }
+    }
+
+    private void updateInProgressStatusById(String hon, String id, String collectionName){
+        Update update = new Update().set(APPROVAL_STATUS, IN_PROGRESS.getStatus());
+        update.set("approvalStartDate",Instant.now());
+        update.set(LAST_ACTION_DATE, Instant.now());
+        Query query = new Query().addCriteria(Criteria.where(HON).is(hon).and("_id").is(new ObjectId(id)));
+        mongoSourceService.updateByIdWithCustomFields(query, update, collectionName);
+    }
+
+    private void getCurrentSource(String id, String collectionName, RamResponseDTO response){
+        Source currentSource = mongoSourceService.findSourceById(new ObjectId(id), collectionName);
+        if(currentSource != null){
+            var currentSourceDTO = sourceMapper.entitySourceToDTO(currentSource);
+            response.setCurrentSource(currentSourceDTO);
+        }
+    }
+
+    private Source findSourceByHon(@NotNull String hon) {
+        try {
+            return customSourceRepository.findOneByHon(hon, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
+    }
+
+    private Source findSourceByHonAndStatusAndApprovalStatus(@NotNull String hon, String status, String approvalStatus) {
+        try {
+            List<Source> sources = customSourceRepository.findByHonAndStatusAndApprovalStatus(hon, status, approvalStatus, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+            if (!sources.isEmpty()) {
+                return sources.get(0);
+            }
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
+    }
+
+    private Boolean updateByQuery(Query query, @NotNull Source entityToPersist, String collectionName) {
+        //entityToPersist.setId(null);
+        return customSourceRepository.updateByQuery(query, entityToPersist, Source.class, collectionName);
+    }
+
+
+    private Source findSourceByHonAndVersion(@NotNull String hon, Double version) {
+        try {
+            Query query = new Query();
+            query.addCriteria(Criteria.where(HON).is(hon));
+            query.addCriteria(Criteria.where(SearchConstants.SearchFields.VERSION).is(version));
+            //query.addCriteria(Criteria.where(APPROVAL_STATUS).in(PENDING_APPROVAL, SAVE_PENDING_APPROVAL,IN_PROGRESS));
+            List<Source> result = customSourceRepository.findByQuery(query, Source.class, Helper.getCollectionName(hon, SOURCE_COLLECTION_SUFFIX));
+            log.info("FindByHonAndVersion: Result: {}", result);
+            if (!result.isEmpty()) {
+                return result.get(0);
+            }
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
+    }
+
+    private Source findSourceByQuery(Query query, String collectionName) {
+        try {
+            List<Source> result = customSourceRepository.findByQuery(query, Source.class, collectionName);
+            log.info("FindByHonAndVersion: Result: {}", result);
+            if (!result.isEmpty()) {
+                return result.get(0);
+            }
+        } catch (Exception ex) {
+            logAndThrowInternalServiceException(NO_SEARCH_RESULT_FOUND, ex);
+        }
+        return null;
+    }
+
+    private Boolean update(String queryField, String queryValue, @NotNull Source entityToPersist, String collectionName) {
+        entityToPersist.setId(null);
+        return customSourceRepository.update(queryField, queryValue, entityToPersist, Source.class, collectionName);
+    }
+
+    private Boolean updateByIdWithCustomFields(Query query, Update update, String collectionName) {
+        return customSourceRepository.updateFieldsByQuery(query, update, Source.class, collectionName);
+    }
+
+    private Source updateLockAndUnlockFields(Source source, UIActionsDTO uiActionsDTO){
+        source.setLastActionDate(Instant.now());
+        if(uiActionsDTO.getUserAction().equalsIgnoreCase(LOCK)){
+            source.setIsLockEnabled(true);
+            source.setLastLockedBy(uiActionsDTO.getUserName());
+            source.setLastLockedId(uiActionsDTO.getUserEmail());
+            source.setLastLockedDate(Instant.now());
+            source.setLogFlag(SearchConstants.LogFlagConstants.LOCKED);
+        }else{
+            source.setIsLockEnabled(false);
+            source.setLastUnLockedBy(uiActionsDTO.getUserName());
+            source.setLastUnLockedId(uiActionsDTO.getUserEmail());
+            source.setLastUnLockedDate(Instant.now());
+            source.setLogFlag(source.getAction().equalsIgnoreCase(ApplicationConstants.CREATE) ? SearchConstants.LogFlagConstants.NEW_RECORD : SearchConstants.LogFlagConstants.DETAILS_CHANGED);
+        }
+        return source;
+    }
+
 }
