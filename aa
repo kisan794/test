@@ -1,2 +1,85 @@
-src/.../service/impl/CountryServiceImpl.java
-Define a constant instead of duplicating this literal "&batchSize=" 3 times.
+ApprovalTATServiceImpl
+Cognitive Complexity from 66 to the 15 allowed. : private List<ResponseReport> timeCalculations(List<TATReport> tatReportList)
+
+
+SourceInformationServiceImpl.java
+
+Define a constant instead of duplicating this literal "total" 9 times.
+
+12 days ago
+L59
+
+Code Smell
+
+Critical
+
+Open
+
+Not assigned
+20min effort
+
+Comment
+
+design
+Define a constant instead of duplicating this literal "count" 4 times.
+
+12 days ago
+L59
+
+Code Smell
+
+Critical
+
+Open
+
+Not assigned
+10min effort
+
+Comment
+
+design
+Refactor this method to reduce its Cognitive Complexity from 28 to the 15 allowed.
+
+
+SearchServiceImpl.java
+src/.../service/impl/SearchServiceImpl.java
+Refactor this method to reduce its Cognitive Complexity from 17 to the 15 allowed.
+
+
+SourceHistoryServiceImpl.java
+src/.../service/impl/SourceHistoryServiceImpl.java
+Refactor this method to reduce its Cognitive Complexity from 17 to the 15 allowed.
+
+
+SourceServiceImpl.java
+src/.../service/impl/SourceServiceImpl.java
+Refactor this method to reduce its Cognitive Complexity from 22 to the 15 allowed.
+
+1 month ago
+L151
+
+Code Smell
+
+Critical
+
+Open
+
+Not assigned
+12min effort
+
+Comment
+
+brain-overload
+Refactor this method to reduce its Cognitive Complexity from 21 to the 15 allowed.
+
+
+UpdateSourceService.java
+src/.../service/impl/helperservices/UpdateSourceService.java
+Refactor this method to reduce its Cognitive Complexity from 20 to the 15 allowed.
+
+
+
+DeepDiffUtil.java
+src/.../sourceintelligence/util/DeepDiffUtil.java
+Refactor this method to reduce its Cognitive Complexity from 40 to the 15 allowed.
+
