@@ -150,53 +150,108 @@ public class SourceServiceImpl implements SourceService {
     @Override
     public ResponseObject assignApproveManagerToSource(ApprovalRequestDTO approvalRequestDTO) {
         List<String> hons = new ArrayList<>();
-        List<String> Ids = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
         Query query = new Query();
-        List<String> approvalStatuses = new ArrayList<>(){};
+        List<String> approvalStatuses = createApprovalStatusesList();
+
+        ResponseObject validationResult = validateAndProcessSourceDetails(approvalRequestDTO, hons, ids, approvalStatuses);
+        if (validationResult != null) {
+            return validationResult;
+        }
+
+        if (!hons.isEmpty()) {
+            return processAssignment(approvalRequestDTO, query, ids);
+        }
+
+        return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE, FAILURE2_CODE).build();
+    }
+
+    private List<String> createApprovalStatusesList() {
+        List<String> approvalStatuses = new ArrayList<>();
         approvalStatuses.add(IN_PROGRESS.toString());
         approvalStatuses.add(ONHOLD.toString());
-        if (!approvalRequestDTO.getSourceDetails().isEmpty()) {
-            for (AssignSourceDTO assignSourceDTO : approvalRequestDTO.getSourceDetails()) {
-                String collectionName = Helper.getCollectionName(assignSourceDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
-                Source source = mongoSourceService.findSourceById(new ObjectId(assignSourceDTO.getId()),collectionName);
-                if (source != null) {
-                    if (source.getApprovalStatus().equals(PENDING_APPROVAL) || source.getApprovalStatus().equals(SAVE_PENDING_APPROVAL) || source.getApprovalStatus().equals(ONHOLD)) {
-                        Source existingSource = mongoSourceService.findSourceByHonAndApprovalStatuses(assignSourceDTO.getHon(),approvalStatuses);
-                        if(existingSource == null){
-                            hons.add(assignSourceDTO.getHon());
-                            Ids.add(assignSourceDTO.getId());
-//                            query.addCriteria(Criteria.where(ID).is(assignSourceDTO.getId()));
-//                            query.addCriteria(Criteria.where(APPROVAL_STATUS).is(assignSourceDTO.getApprovalStatus()));
-                        }else{
-                            return ResponseObject.baseBuilder(FAILURE,ASSIGN_FAILURE_2,FAILURE_CODE).build();
-                        }
-                    }else{
-                        return ResponseObject.baseBuilder(FAILURE,ASSIGN_FAILURE,FAILURE_CODE).build();
-                    }
-                }
+        return approvalStatuses;
+    }
+
+    private ResponseObject validateAndProcessSourceDetails(ApprovalRequestDTO approvalRequestDTO,
+                                                           List<String> hons, List<String> ids,
+                                                           List<String> approvalStatuses) {
+        if (approvalRequestDTO.getSourceDetails().isEmpty()) {
+            return null;
+        }
+
+        for (AssignSourceDTO assignSourceDTO : approvalRequestDTO.getSourceDetails()) {
+            ResponseObject result = processSourceDetail(assignSourceDTO, hons, ids, approvalStatuses);
+            if (result != null) {
+                return result;
             }
         }
-        if (!hons.isEmpty()) {
-            if(approvalRequestDTO.getAssignType().equalsIgnoreCase(ASSIGN_MYSELF)){
-                String collectionName = Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX);
-                Query query1 = new Query();
-                query1.addCriteria(Criteria.where(ID).is(approvalRequestDTO.getSourceDetails().getFirst().getId()));
-                Update update = new Update();
-                update.set(ASSIGNED_TO, approvalRequestDTO.getApproverName());
-                update.set(ASSIGNED_ID,approvalRequestDTO.getApproverEmail());
-                update.set(APPROVAL_STATUS,IN_PROGRESS.getStatus());
-                customSourceRepository.updateFieldsByQuery(query1, update, Source.class, collectionName);
-                Source source = mongoSourceService.findSourceById(new ObjectId(approvalRequestDTO.getSourceDetails().getFirst().getId()),collectionName);
-                reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0, MANUAL_PROCESS, source.getVersion(), source.getTempVersion(),APPROVAL_FLOW);
-            }else{
-                query.addCriteria(Criteria.where(ID).in(Ids));
-                query.addCriteria(Criteria.where(APPROVAL_STATUS).is(approvalRequestDTO.getSourceDetails().getFirst().getApprovalStatus()));
-                customSourceRepository.assignApproverToSource(query, approvalRequestDTO.getApproverName(), approvalRequestDTO.getApproverEmail(), Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX));
-            }
-            //reportDataUtils.createReportData(approvalRequestDTO, hons);
-            return ResponseObject.baseBuilder(SUCCESS,ASSIGN_SUCCESS,SUCCESS_CODE).build();
+        return null;
+    }
+
+    private ResponseObject processSourceDetail(AssignSourceDTO assignSourceDTO, List<String> hons,
+                                               List<String> ids, List<String> approvalStatuses) {
+        String collectionName = Helper.getCollectionName(assignSourceDTO.getHon(), SOURCE_COLLECTION_SUFFIX);
+        Source source = mongoSourceService.findSourceById(new ObjectId(assignSourceDTO.getId()), collectionName);
+
+        if (source == null) {
+            return null;
         }
-        return ResponseObject.baseBuilder(FAILURE,ASSIGN_FAILURE,FAILURE2_CODE).build();
+
+        if (!isValidApprovalStatus(source.getApprovalStatus())) {
+            return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE, FAILURE_CODE).build();
+        }
+
+        Source existingSource = mongoSourceService.findSourceByHonAndApprovalStatuses(
+            assignSourceDTO.getHon(), approvalStatuses);
+
+        if (existingSource != null) {
+            return ResponseObject.baseBuilder(FAILURE, ASSIGN_FAILURE_2, FAILURE_CODE).build();
+        }
+
+        hons.add(assignSourceDTO.getHon());
+        ids.add(assignSourceDTO.getId());
+        return null;
+    }
+
+    private boolean isValidApprovalStatus(ApprovalStatus status) {
+        return status.equals(PENDING_APPROVAL) ||
+               status.equals(SAVE_PENDING_APPROVAL) ||
+               status.equals(ONHOLD);
+    }
+
+    private ResponseObject processAssignment(ApprovalRequestDTO approvalRequestDTO, Query query, List<String> ids) {
+        if (approvalRequestDTO.getAssignType().equalsIgnoreCase(ASSIGN_MYSELF)) {
+            assignToMyself(approvalRequestDTO);
+        } else {
+            assignToOther(approvalRequestDTO, query, ids);
+        }
+        return ResponseObject.baseBuilder(SUCCESS, ASSIGN_SUCCESS, SUCCESS_CODE).build();
+    }
+
+    private void assignToMyself(ApprovalRequestDTO approvalRequestDTO) {
+        String collectionName = Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX);
+        Query query = new Query();
+        query.addCriteria(Criteria.where(ID).is(approvalRequestDTO.getSourceDetails().getFirst().getId()));
+
+        Update update = new Update();
+        update.set(ASSIGNED_TO, approvalRequestDTO.getApproverName());
+        update.set(ASSIGNED_ID, approvalRequestDTO.getApproverEmail());
+        update.set(APPROVAL_STATUS, IN_PROGRESS.getStatus());
+
+        customSourceRepository.updateFieldsByQuery(query, update, Source.class, collectionName);
+        Source source = mongoSourceService.findSourceById(
+            new ObjectId(approvalRequestDTO.getSourceDetails().getFirst().getId()), collectionName);
+        reportDataUtils.reportData(source, IN_PROGRESS.getStatus(), SIDB_APPROVAL_FLOW, 0,
+                                   MANUAL_PROCESS, source.getVersion(), source.getTempVersion(), APPROVAL_FLOW);
+    }
+
+    private void assignToOther(ApprovalRequestDTO approvalRequestDTO, Query query, List<String> ids) {
+        query.addCriteria(Criteria.where(ID).in(ids));
+        query.addCriteria(Criteria.where(APPROVAL_STATUS).is(approvalRequestDTO.getSourceDetails().getFirst().getApprovalStatus()));
+        customSourceRepository.assignApproverToSource(query, approvalRequestDTO.getApproverName(),
+                                                     approvalRequestDTO.getApproverEmail(),
+                                                     Helper.getCollectionName(approvalRequestDTO.getOrgnaizationType(), SOURCE_COLLECTION_SUFFIX));
     }
 
     @Override
@@ -304,36 +359,55 @@ public class SourceServiceImpl implements SourceService {
     @Override
     public SourceOrganizationDTO getSourceByHonAndApprovalStatus(@NotNull String hon, ApprovalStatus approvalStatus) {
         Source source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+
         if (source == null) {
-            log.info("getSourceByHonAndApprovalStatus: source not found: {}, {}", hon, approvalStatus);
-            //Temparory fix
-            if(!(approvalStatus.getStatus().equals(APPROVED.getStatus()) || approvalStatus.getStatus().equals(REJECTED.getStatus()))){
-                source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
-                if (source == null) {
-                    return null;
-                }
-                if(source.getApprovalStatus().equals(approvalStatus)){
-                    return sourceMapper.entitySourceToDTO(source);
-                }
-            }
-            return null;
+            return handleSourceNotFound(hon, approvalStatus);
         }
-        if(source.getApprovalStatus().getStatus().equals(approvalStatus.getStatus())){
+
+        if (source.getApprovalStatus().getStatus().equals(approvalStatus.getStatus())) {
             return sourceMapper.entitySourceToDTO(source);
-        }else{
-            //Temparory fix
-            log.info("temp fix");
-            if(!(approvalStatus.getStatus().equals(APPROVED.getStatus()) || approvalStatus.getStatus().equals(REJECTED.getStatus()))){
-                source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
-                if (source == null) {
-                    return null;
-                }
-                if(source.getApprovalStatus().equals(approvalStatus)){
-                    return sourceMapper.entitySourceToDTO(source);
-                }
-            }
+        }
+
+        return handleStatusMismatch(hon, approvalStatus);
+    }
+
+    private SourceOrganizationDTO handleSourceNotFound(String hon, ApprovalStatus approvalStatus) {
+        log.info("getSourceByHonAndApprovalStatus: source not found: {}, {}", hon, approvalStatus);
+
+        if (isApprovedOrRejectedStatus(approvalStatus)) {
             return null;
         }
+
+        return retryFindSource(hon, approvalStatus);
+    }
+
+    private SourceOrganizationDTO handleStatusMismatch(String hon, ApprovalStatus approvalStatus) {
+        log.info("temp fix");
+
+        if (isApprovedOrRejectedStatus(approvalStatus)) {
+            return null;
+        }
+
+        return retryFindSource(hon, approvalStatus);
+    }
+
+    private boolean isApprovedOrRejectedStatus(ApprovalStatus approvalStatus) {
+        return approvalStatus.getStatus().equals(APPROVED.getStatus()) ||
+               approvalStatus.getStatus().equals(REJECTED.getStatus());
+    }
+
+    private SourceOrganizationDTO retryFindSource(String hon, ApprovalStatus approvalStatus) {
+        Source source = mongoSourceService.findSourceByHonAndApprovalStatus(hon, approvalStatus);
+
+        if (source == null) {
+            return null;
+        }
+
+        if (source.getApprovalStatus().equals(approvalStatus)) {
+            return sourceMapper.entitySourceToDTO(source);
+        }
+
+        return null;
     }
 
     @Override
