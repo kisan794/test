@@ -1,100 +1,35 @@
-| State / Territory        | Abbreviation |
-| ------------------------ | ------------ |
-| Alabama                  | AL           |
-| Alaska                   | AK           |
-| American Samoa           | AS           |
-| Arizona                  | AZ           |
-| Arkansas                 | AR           |
-| California               | CA           |
-| Colorado                 | CO           |
-| Connecticut              | CT           |
-| Delaware                 | DE           |
-| District of Columbia     | DC           |
-| Florida                  | FL           |
-| Georgia                  | GA           |
-| Guam                     | GU           |
-| Hawaii                   | HI           |
-| Idaho                    | ID           |
-| Illinois                 | IL           |
-| Indiana                  | IN           |
-| Iowa                     | IA           |
-| Kansas                   | KS           |
-| Kentucky                 | KY           |
-| Louisiana                | LA           |
-| Maine                    | ME           |
-| Maryland                 | MD           |
-| Massachusetts            | MA           |
-| Michigan                 | MI           |
-| Minnesota                | MN           |
-| Mississippi              | MS           |
-| Missouri                 | MO           |
-| Montana                  | MT           |
-| Nebraska                 | NE           |
-| Nevada                   | NV           |
-| New Hampshire            | NH           |
-| New Jersey               | NJ           |
-| New Mexico               | NM           |
-| New York                 | NY           |
-| North Carolina           | NC           |
-| North Dakota             | ND           |
-| Northern Mariana Islands | MP           |
-| Ohio                     | OH           |
-| Oklahoma                 | OK           |
-| Oregon                   | OR           |
-| Pennsylvania             | PA           |
-| Puerto Rico              | PR           |
-| Rhode Island             | RI           |
-| South Carolina           | SC           |
-| South Dakota             | SD           |
-| Tennessee                | TN           |
-| Texas                    | TX           |
-| Trust Territories        | TT           |
-| Utah                     | UT           |
-| Vermont                  | VT           |
-| Virginia                 | VA           |
-| Virgin Islands           | VI           |
-| Washington               | WA           |
-| West Virginia            | WV           |
-| Wisconsin                | WI           |
-| Wyoming                  | WY           |
-
-
-
+(FLETC) Federal Law enforcement training center	USA	Artesia	NM	Parchment Exchange					
 {
   "_id": {
-    "$oid": "69a81b25458cd41c32305b3b"
+    "$oid": "69a81fba458cd41c3230e3f6"
   },
-  "hon": "OUEDU-111325-8H2RN",
-  "organizationName": "\"Antoine de Saint-Exupery\" French High school",
+  "hon": "OUEDU-122225-8R688",
+  "organizationName": "(FLETC) Federal Law enforcement training center",
   "status": "ACTIVE",
   "version": 1,
   "organizationType": "EDUCATION",
-  "city": "Plovdiv",
-  "country": "Bulgaria",
-  "state": "",
-  "organizationAlias": [
-    {
-      "name": "FEG \"Antoine de Saint - Exupéry\""
-    }
-  ],
+  "city": "Artesia",
+  "country": "USA",
+  "state": "New Mexico",
+  "organizationAlias": [],
   "payload": {
     "departmentName": "",
     "website": "",
     "address": [
       {
         "availablePeriod": {
-          "start": "12:00 AM",
-          "end": "11:59 PM"
+          "start": "",
+          "end": ""
         },
-        "city": "Plovdiv",
+        "city": "Artesia",
         "countrySubDivisions": [
           {
             "type": "Country",
-            "value": "Bulgaria"
+            "value": "USA"
           },
           {
             "type": "Region",
-            "value": ""
+            "value": "New Mexico"
           }
         ],
         "line": "",
@@ -102,7 +37,7 @@
         "noPhysicalAddress": "false"
       }
     ],
-    "notes": " <p>Verification channel: Email</p> <p>Verbal references: NO</p> <p>Verifies current enrollment:</p> <p>Additional information required: N/A</p> <p>Follow-up: Email</p>",
+    "notes": "",
     "contactPersonTitle": "",
     "infoRequestIDs": [],
     "addionalInfo": [
@@ -112,7 +47,7 @@
         "contactTimeZone": "",
         "releaseType": "none",
         "hasChildren": "false",
-        "verificationValidationProcess": "11/13/2025",
+        "verificationValidationProcess": "12/22/2025",
         "contactPersonTitle": "",
         "doNotContact": "",
         "contactTimeTo": "",
@@ -125,7 +60,7 @@
     "lastValidatedDateTime": "",
     "documentationRequired": true,
     "unAccreditedSource": true,
-    "lastUsedDateTime": "2025-11-18T03:05:11Z",
+    "lastUsedDateTime": "2026-02-26T11:13:39Z",
     "contacts": [
       {
         "purpose": "",
@@ -137,43 +72,12 @@
         ],
         "contactDetails": [
           {
-            "followUpAllowed": "false",
-            "name": "",
-            "recipient": "",
-            "turnAroundTimeUnit": "days",
-            "type": "contactWebsites",
-            "priority": 2,
-            "communication": [
-              {
-                "communicationInfo": [
-                  {
-                    "type": "addresses",
-                    "value": "http://schools.guide-bulgaria.com/a/5101/antoine_de_saint-exupery_french_high_school.htm"
-                  }
-                ]
-              }
-            ],
-            "turnAroundTime": "",
-            "followUpAllowedAfter": ""
-          },
-          {
+            "validatedFlag": "",
             "followUpAllowed": "false",
             "name": "",
             "turnAroundTimeUnit": "days",
-            "type": "contactEmails",
+            "type": "contactPhones",
             "priority": 1,
-            "communication": [
-              {
-                "communicationInfo": [
-                  {
-                    "type": "address",
-                    "value": "lycee@feg-exupery.com"
-                  }
-                ],
-                "isPrimary": "",
-                "recipient": ""
-              }
-            ],
             "version": "",
             "turnAroundTime": "",
             "followUpAllowedAfter": ""
@@ -185,145 +89,27 @@
   },
   "approvalStatus": "APPROVED",
   "postalCode": "",
-  "searchOrg": "\"antoine de saint-exupery\" french high school",
+  "searchOrg": "(fletc) federal law enforcement training center",
   "action": "Create",
   "created_date": {
-    "$date": "2025-11-13T02:27:31.000Z"
+    "$date": "2025-12-22T10:43:25.000Z"
   },
-  "lastModifiedBy": "Aleksandra Koziolek",
+  "lastModifiedBy": "Nikita Chanchal",
   "lastModifierId": "",
   "last_modified_date": {
-    "$date": "2025-11-13T02:27:31.000Z"
+    "$date": "2025-12-22T10:43:25.000Z"
   },
-  "approvedBy": "Aleksandra Koziolek",
+  "approvedBy": "Nikita Chanchal",
   "approverId": "",
-  "assignedTo": "Aleksandra Koziolek",
+  "assignedTo": "Nikita Chanchal",
   "assignedId": "",
   "last_approved_date": {
-    "$date": "2025-11-13T02:27:31.000Z"
+    "$date": "2025-12-22T10:43:25.000Z"
   },
   "_class": "com.hireright.migrationservice.domain.entity.Source",
   "logFlag": "New Record",
   "last_action_date": {
-    "$date": "2025-11-13T02:27:31.000Z"
+    "$date": "2025-12-22T10:43:25.000Z"
   },
   "flagPriority": false
 }
-
-
-
-
-
-
-
-
-
-
-
-
-{
-                            "followUpAllowed": "",
-                            "type": "contactAutomatedServices",
-                            "priority": 1,
-                            "version": "",
-                            "turnAroundTime": "",
-                            "surChargeAmount": "",
-                            "name": "",
-                            "paymentMethod": "",
-                            "turnAroundTimeUnit": "days",
-                            "surChargeCurrency": "",
-                            "communication": [
-                                {
-                                    "name": "Parchment Exchange",
-                                    "communicationInfo": [
-                                        {
-                                            "type": "companyNames",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "codes",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "branch",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "uri",
-                                            "value": "https://exchange.parchment.com/u/auth/login"
-                                        },
-                                        {
-                                            "type": "sourceType",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "surChargeAmount",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "surChargeCurrency",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "paymentMethod",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "followUpAllowed",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "followUpAllowedAfter",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "followUpAllowedAfterTimeUnit",
-                                            "value": "days"
-                                        },
-                                        {
-                                            "type": "turnAroundTime",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "turnAroundTimeUnit",
-                                            "value": "days"
-                                        },
-                                        {
-                                            "type": "fromYear",
-                                            "value": ""
-                                        },
-                                        {
-                                            "type": "toYear",
-                                            "value": ""
-                                        }
-                                    ],
-                                    "providerID": "52"
-                                }
-                            ],
-                            "fromYear": "",
-                            "toYear": ""
-                        }
-
-
-
-
-{
-  "_id": {
-    "$oid": "686d40e3f5d3455d82d45464"
-  },
-  "providerId": 52,
-  "vendor": "Parchment Exchange",
-  "website": "https://exchange.parchment.com/u/auth/login",
-  "cevApproved": false,
-  "isBranchCodeEligible": false,
-  "location": "US",
-  "organizationType": "EDUCATION"
-}
-
-
-
-Institution Name	Country	City	State / County / Region	Service / Provider (Automated services/Online Providers)	Surcharge Amount	Payment Method	Code	Turnaround Time	Follow-up Allowed
-(George & Evelyn) Stein High School	USA	Tracy	CA	Parchment Exchange					
-21st Century Charter School	USA	Gary	IN	Parchment Exchange					
-21st Century STEM Academy	USA	Sacramento	CA	Parchment Exchange					
-3D Academy	USA	Donna	TX	Parchment Exchange					
