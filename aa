@@ -161,329 +161,543 @@ public interface SourceDTOMapper {
     }
 
     default List<ContactDetailsDTO> mapContactDetails(Source source) {
-        List<ContactDetailsDTO> contactDetailsDTOS = new ArrayList<>();
-        ContactDetailsDTO[] contactList = null;
-        ContactDetailsDTO phoneDetailsDTO = null;
-        List<String> phoneNumbers = new ArrayList<>();
-        Integer phonePriority = null;
-        ContactDetailsDTO emailDetailsDTO = null;
-        List<String> emailList = new ArrayList<>();
-        Integer emailPriority = null;
-        ContactDetailsDTO faxDetailsDTO = null;
-        List<String> faxNumbers = new ArrayList<>();
-        Integer faxPriority = null;
-        ContactDetailsDTO mailDetailsDTO = null;
-        List<String> mailAddresses = new ArrayList<>();
-        Integer mailPriority = null;
-        ContactDetailsDTO websiteDetailsDTO = null;
-        List<String> websiteList = new ArrayList<>();
-        Integer websitePriority = null;
-        if (source.getPayload() != null) {
-            JSONObject payload = mapToJSONObject(source.getPayload());
-            if (payload.has(CONTACTS) && payload.get(CONTACTS) != null) {
-                var contacts = (JSONArray) payload.get(CONTACTS);
-                if (!contacts.isEmpty()) {
-                    var contactDetails = ((JSONObject) contacts.get(0)).has(CONTACT_DETAILS)
-                            ? (JSONArray) ((JSONObject) contacts.get(0)).get(CONTACT_DETAILS)
-                            : new JSONArray();
-                    if (contactDetails != null && !contactDetails.isEmpty()) {
-                        contactList = new ContactDetailsDTO[contactDetails.length()];
-                        JSONArray additionalInfoList = payload.getJSONArray(ADDITIONAL_INFO);
-                        JSONObject additionalInfoJSONObject = additionalInfoList.getJSONObject(0);
-                        String doNotContact = additionalInfoJSONObject.has(DO_NOT_CONTACT)
-                                ? additionalInfoJSONObject.getString(DO_NOT_CONTACT) : "";
+        if (source.getPayload() == null) {
+            return new ArrayList<>();
+        }
 
-                        boolean isDoNotContact = !doNotContact.isEmpty() && !doNotContact.equalsIgnoreCase("false");
-                        for (Object contactDetail : contactDetails) {
-                            int priority = 0;
-                            JSONObject contactDetailJson = (JSONObject) contactDetail;
-                            if (contactDetailJson.has(TYPE) && !contactDetailJson.isNull(TYPE)) {
-                                String key = (String) contactDetailJson.get(TYPE);
-                                if (contactDetailJson.has(PRIORITY)) {
-                                    if (contactDetailJson.get(PRIORITY) instanceof String) {
-                                        priority = Integer.parseInt(contactDetailJson.getString(PRIORITY));
-                                    } else {
-                                        priority = contactDetailJson.getInt(PRIORITY);
-                                    }
-                                }
-                                ContactDetailsDTO contactDetailsDTO = null;
-                                if (contactDetailJson.has(COMMUNICATION) && contactDetailJson.get(COMMUNICATION) != null) {
-                                    Object communObj = contactDetailJson.get(COMMUNICATION);
-                                    if (communObj instanceof JSONArray) {
-                                        var communication = (JSONArray) contactDetailJson.get(COMMUNICATION);
-                                        if (!communication.isEmpty()) {
-                                            if (isDoNotContact && CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)) {
-                                                contactDetailsDTO = new ContactDetailsDTO();
-                                            } else if (!isDoNotContact && (
-                                                    CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key) ||
-                                                            CONTACT_WEBSITES.equalsIgnoreCase(key) ||
-                                                            CONTACT_EMAILS.equalsIgnoreCase(key) ||
-                                                            CONTACT_FAXES.equalsIgnoreCase(key) ||
-                                                            CONTACT_PHONES.equalsIgnoreCase(key) ||
-                                                            CONTACT_MAILS.equalsIgnoreCase(key))) {
+        JSONObject payload = mapToJSONObject(source.getPayload());
+        JSONArray contactDetails = extractContactDetails(payload);
 
-                                                contactDetailsDTO = new ContactDetailsDTO();
-                                                mapContactBaseDTO(contactDetailJson, contactDetailsDTO);
-                                            }
-                                            for (Object commObj : communication) {
-                                                JSONObject communicationObj = (JSONObject) commObj;
-                                                if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)) {
-                                                    contactDetailsDTO = new ContactDetailsDTO();
-                                                    mapContactBaseDTO(contactDetailJson, contactDetailsDTO);
-                                                }
+        if (contactDetails == null || contactDetails.isEmpty()) {
+            return new ArrayList<>();
+        }
 
-                                                if (communicationObj.has(COMMUNICATION_INFO) &&
-                                                        communicationObj.get(COMMUNICATION_INFO) != null) {
-                                                    JSONArray communicationInfoDetails =
-                                                            (JSONArray) communicationObj.get(COMMUNICATION_INFO);
-                                                    if (communicationInfoDetails.isEmpty()) continue;
-                                                    String number = "";
-                                                    String extension = "";
-                                                    String countryCode = "";
-                                                    String areaCode = "";
-                                                    boolean isFollowUpAllowed = false;
-                                                    for (Object info : communicationInfoDetails) {
-                                                        if (info instanceof JSONObject infoJson) {
-                                                            if (infoJson.has(TYPE)) {
-                                                                String type = (String) infoJson.get(TYPE);
-                                                                var value = !infoJson.isNull(VALUE) ? infoJson.get(VALUE) : "";
-                                                                if (!isDoNotContact &&
-                                                                        (CONTACT_PHONES.equals(key) || CONTACT_FAXES.equals(key))) {
-                                                                    if (PHONE_NUMBER.equals(type))
-                                                                        number = (String) value;
-                                                                    if (EXTENSION.equals(type))
-                                                                        extension = (String) value;
-                                                                    if (PHONE_COUNTRY_CODE.equals(type)) {
-                                                                        countryCode = (String) value;
-                                                                        if (!StringUtils.isEmpty(countryCode) && !countryCode.contains("+"))
-                                                                            countryCode = "+" + countryCode;
-                                                                    }
+        boolean isDoNotContact = isDoNotContact(payload);
+        ContactAccumulator accumulator = new ContactAccumulator(contactDetails.length());
 
-                                                                    if (AREA_CODE.equals(type))
-                                                                        areaCode = (String) value;
-                                                                }
+        for (Object contactDetail : contactDetails) {
+            processContactDetail((JSONObject) contactDetail, isDoNotContact, accumulator);
+        }
 
-                                                                if (!isDoNotContact &&
-                                                                        CONTACT_EMAILS.equals(key) &&
-                                                                        ADDRESS.equals(type)) {
+        return accumulator.buildFinalContactList();
+    }
 
-                                                                    String email = (String) value;
-                                                                    if (email != null && !email.isBlank()) {
-                                                                        emailList.add(email);
-                                                                        contactDetailsDTO.setEmail(email);
-                                                                    }
-                                                                }
+    private JSONArray extractContactDetails(JSONObject payload) {
+        if (!payload.has(CONTACTS) || payload.get(CONTACTS) == null) {
+            return null;
+        }
 
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && communicationObj.has(NAME)) {
-                                                                    contactDetailsDTO.setProvider((String) communicationObj.get(NAME));
-                                                                }
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && CODES.equals(type)) {
-                                                                    contactDetailsDTO.setCode((String) value);
-                                                                }
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && BRANCH.equals(type)) {
-                                                                    contactDetailsDTO.setBranch((String) value);
-                                                                }
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && SUR_CHARGE_AMOUNT.equals(type) && !StringUtils.isBlank((String) value)) {
-                                                                    contactDetailsDTO.setSurcharge((String) value);
-                                                                }
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && SUR_CHARGE_CURRENCY.equals(type)) {
-                                                                    if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
-                                                                        contactDetailsDTO.setSurcharge(contactDetailsDTO.getSurcharge() + " " + value);
-                                                                    }
-                                                                }
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && SUR_CHARGE_PAYMENT.equals(type)) {
-                                                                    if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
-                                                                        contactDetailsDTO.setPaymentMethod((String) value);
-                                                                    }
-                                                                }
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && TURN_AROUND_TIME.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
-                                                                    contactDetailsDTO.setTurnAroundTime(value + " days");
-                                                                }
-                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && FOLLOW_UP_ALLOWED.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
-                                                                    isFollowUpAllowed = ((String) value).equalsIgnoreCase("true") ? true : false;
-                                                                }
-                                                                if (isFollowUpAllowed && CONTACT_AUTOMATED_SERVICES.equals(key) && FOLLOW_UP_ALLOWED_AFTER.equals(type) && value != null) {
-                                                                    if (StringUtils.isBlank((String) value)) {
-                                                                        value = "0";
-                                                                    }
-                                                                    contactDetailsDTO.setFollowUpAllowedAfter(value + " days");
-                                                                }
-                                                                if (!isDoNotContact && (CONTACT_MAILS.equals(key) && ADDRESS.equals(type))) {
-                                                                    String address = (String) value;
-                                                                    if (address != null && !address.isBlank() && !address.equalsIgnoreCase("n/a")) {
-                                                                        mailAddresses.add(address);
-                                                                        contactDetailsDTO.setMailAddresses(mailAddresses);
-                                                                    }
-                                                                }
-                                                                if (!isDoNotContact && CONTACT_WEBSITES.equals(key) && ADDRESSES.equals(type)) {
-                                                                    String link = (String) value;
-                                                                    if (link != null && !link.isBlank()) {
-                                                                        websiteList.add(link);
-                                                                        contactDetailsDTO.setWebsite(link);
-                                                                    }
-                                                                }
+        JSONArray contacts = (JSONArray) payload.get(CONTACTS);
+        if (contacts.isEmpty()) {
+            return null;
+        }
 
-                                                            }
-                                                        }
-                                                    }
+        JSONObject firstContact = (JSONObject) contacts.get(0);
+        return firstContact.has(CONTACT_DETAILS)
+                ? (JSONArray) firstContact.get(CONTACT_DETAILS)
+                : new JSONArray();
+    }
 
-                                                    if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)
-                                                            && contactDetailsDTO != null
-                                                            && !contactDetailsDTO.isEmpty()) {
+    private boolean isDoNotContact(JSONObject payload) {
+        if (!payload.has(ADDITIONAL_INFO)) {
+            return false;
+        }
 
-                                                        contactDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_AUTOMATED_SERVICES);
-                                                        contactDetailsDTOS.add(contactDetailsDTO);
-                                                        continue;
-                                                    }
+        JSONArray additionalInfoList = payload.getJSONArray(ADDITIONAL_INFO);
+        if (additionalInfoList.isEmpty()) {
+            return false;
+        }
 
-                                                    if (!StringUtils.isEmpty(number)) {
-                                                        StringJoiner joiner = new StringJoiner("");
-                                                        if (!number.contains("+")) {
-                                                            if (!StringUtils.isEmpty(countryCode))
-                                                                joiner.add(countryCode);
-                                                            if (!StringUtils.isEmpty(areaCode)) joiner.add(areaCode);
-                                                        }
-                                                        joiner.add(number);//'number' is guaranteed to be non-empty due to first check
-                                                        if (!StringUtils.isEmpty(extension)) joiner.add(":"+extension);
+        JSONObject additionalInfoJSONObject = additionalInfoList.getJSONObject(0);
+        String doNotContact = additionalInfoJSONObject.has(DO_NOT_CONTACT)
+                ? additionalInfoJSONObject.getString(DO_NOT_CONTACT) : "";
 
-                                                        if (CONTACT_PHONES.equalsIgnoreCase(key)) {
-                                                            if(!joiner.toString().isEmpty()){
-                                                                phoneNumbers.add(joiner.toString());
-                                                            }
-                                                        } else if (CONTACT_FAXES.equalsIgnoreCase(key)) {
-                                                            if(!joiner.toString().isEmpty()){
-                                                                faxNumbers.add(joiner.toString());
-                                                            }
-                                                        }
-                                                        contactDetailsDTO.setNumber(joiner.toString());
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+        return !doNotContact.isEmpty() && !doNotContact.equalsIgnoreCase("false");
+    }
 
-                                if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)) {
-                                    continue;
-                                }
-                                // Store phones grouped
-                                if (contactDetailsDTO != null && !contactDetailsDTO.isEmpty()) {
-                                    contactDetailsDTO.setType(key.replace("contact", ""));
+    private void processContactDetail(JSONObject contactDetailJson, boolean isDoNotContact,
+                                      ContactAccumulator accumulator) {
+        if (!contactDetailJson.has(TYPE) || contactDetailJson.isNull(TYPE)) {
+            return;
+        }
 
-                                    if (CONTACT_PHONES.equalsIgnoreCase(key)) {
-                                        if (phoneDetailsDTO == null) {
-                                            phoneDetailsDTO = contactDetailsDTO;
-                                            if (priority > 0) phonePriority = priority;
-                                        }
+        String contactType = contactDetailJson.getString(TYPE);
+        int priority = extractPriority(contactDetailJson);
 
-                                    }
-                                    //Store Emails grouped
-                                    else if (CONTACT_EMAILS.equalsIgnoreCase(key)) {
-                                        if (emailDetailsDTO == null) {
-                                            emailDetailsDTO = contactDetailsDTO;
-                                            if (priority > 0) emailPriority = priority;
-                                        }
-                                    }
-                                    else if (CONTACT_FAXES.equalsIgnoreCase(key)) {
-                                        if (faxDetailsDTO == null) {
-                                            faxDetailsDTO = contactDetailsDTO;
-                                            if (priority > 0) faxPriority = priority;
-                                        }
-                                    }
-                                    else if (CONTACT_MAILS.equalsIgnoreCase(key)) {
-                                        if (mailDetailsDTO == null) {
-                                            mailDetailsDTO = contactDetailsDTO;
-                                            if (priority > 0) mailPriority = priority;
-                                        }
-                                    }
-                                    else if (CONTACT_WEBSITES.equalsIgnoreCase(key)) {
-                                        if (websiteDetailsDTO == null) {
-                                            websiteDetailsDTO = contactDetailsDTO;
-                                            if (priority > 0) websitePriority = priority;
-                                        }
-                                    }
-                                    else {
-                                        if (contactList.length >= priority && priority > 0) {
-                                            contactList[priority - 1] = contactDetailsDTO;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+        if (!contactDetailJson.has(COMMUNICATION) || contactDetailJson.get(COMMUNICATION) == null) {
+            return;
+        }
+
+        Object communObj = contactDetailJson.get(COMMUNICATION);
+        if (!(communObj instanceof JSONArray)) {
+            return;
+        }
+
+        JSONArray communication = (JSONArray) communObj;
+        if (communication.isEmpty()) {
+            return;
+        }
+
+        processCommunicationArray(contactDetailJson, contactType, communication,
+                                  isDoNotContact, priority, accumulator);
+    }
+
+    private int extractPriority(JSONObject contactDetailJson) {
+        if (!contactDetailJson.has(PRIORITY)) {
+            return 0;
+        }
+
+        Object priorityObj = contactDetailJson.get(PRIORITY);
+        if (priorityObj instanceof String) {
+            return Integer.parseInt((String) priorityObj);
+        }
+        return contactDetailJson.getInt(PRIORITY);
+    }
+
+    private void processCommunicationArray(JSONObject contactDetailJson, String contactType,
+                                          JSONArray communication, boolean isDoNotContact,
+                                          int priority, ContactAccumulator accumulator) {
+        ContactDetailsDTO contactDetailsDTO = createContactDTOIfNeeded(contactDetailJson, contactType, isDoNotContact);
+
+        for (Object commObj : communication) {
+            JSONObject communicationObj = (JSONObject) commObj;
+
+            if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType)) {
+                contactDetailsDTO = new ContactDetailsDTO();
+                mapContactBaseDTO(contactDetailJson, contactDetailsDTO);
+            }
+
+            processCommunicationObject(communicationObj, contactType, contactDetailsDTO,
+                                      isDoNotContact, accumulator);
+        }
+
+        storeContactByType(contactDetailsDTO, contactType, priority, accumulator);
+    }
+
+    private ContactDetailsDTO createContactDTOIfNeeded(JSONObject contactDetailJson,
+                                                       String contactType, boolean isDoNotContact) {
+        if (isDoNotContact && CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType)) {
+            return new ContactDetailsDTO();
+        }
+
+        if (!isDoNotContact && isStandardContactType(contactType)) {
+            ContactDetailsDTO dto = new ContactDetailsDTO();
+            mapContactBaseDTO(contactDetailJson, dto);
+            return dto;
+        }
+
+        return null;
+    }
+
+    private boolean isStandardContactType(String contactType) {
+        return CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType) ||
+               CONTACT_WEBSITES.equalsIgnoreCase(contactType) ||
+               CONTACT_EMAILS.equalsIgnoreCase(contactType) ||
+               CONTACT_FAXES.equalsIgnoreCase(contactType) ||
+               CONTACT_PHONES.equalsIgnoreCase(contactType) ||
+               CONTACT_MAILS.equalsIgnoreCase(contactType);
+    }
+
+    private void processCommunicationObject(JSONObject communicationObj, String contactType,
+                                           ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                           ContactAccumulator accumulator) {
+        if (!communicationObj.has(COMMUNICATION_INFO) || communicationObj.get(COMMUNICATION_INFO) == null) {
+            return;
+        }
+
+        JSONArray communicationInfoDetails = (JSONArray) communicationObj.get(COMMUNICATION_INFO);
+        if (communicationInfoDetails.isEmpty()) {
+            return;
+        }
+
+        CommunicationInfoContext context = new CommunicationInfoContext();
+
+        for (Object info : communicationInfoDetails) {
+            if (info instanceof JSONObject infoJson) {
+                processCommunicationInfo(infoJson, communicationObj, contactType, contactDetailsDTO,
+                                        isDoNotContact, context, accumulator);
+            }
+        }
+
+        finalizePhoneFaxNumber(contactType, context, contactDetailsDTO, accumulator);
+
+        if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType) &&
+            contactDetailsDTO != null && !contactDetailsDTO.isEmpty()) {
+            contactDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_AUTOMATED_SERVICES);
+            accumulator.addAutomatedService(contactDetailsDTO);
+        }
+    }
+
+    private void processCommunicationInfo(JSONObject infoJson, JSONObject communicationObj,
+                                          String contactType, ContactDetailsDTO contactDetailsDTO,
+                                          boolean isDoNotContact, CommunicationInfoContext context,
+                                          ContactAccumulator accumulator) {
+        if (!infoJson.has(TYPE)) {
+            return;
+        }
+
+        String type = infoJson.getString(TYPE);
+        Object value = !infoJson.isNull(VALUE) ? infoJson.get(VALUE) : "";
+
+        processPhoneFaxInfo(type, value, contactType, isDoNotContact, context);
+        processEmailInfo(type, value, contactType, contactDetailsDTO, isDoNotContact, accumulator);
+        processAutomatedServiceInfo(type, value, contactType, communicationObj, contactDetailsDTO, context);
+        processMailInfo(type, value, contactType, contactDetailsDTO, isDoNotContact, accumulator);
+        processWebsiteInfo(type, value, contactType, contactDetailsDTO, isDoNotContact, accumulator);
+    }
+
+    private void processPhoneFaxInfo(String type, Object value, String contactType,
+                                     boolean isDoNotContact, CommunicationInfoContext context) {
+        if (isDoNotContact || (!CONTACT_PHONES.equals(contactType) && !CONTACT_FAXES.equals(contactType))) {
+            return;
+        }
+
+        if (PHONE_NUMBER.equals(type)) {
+            context.number = (String) value;
+        } else if (EXTENSION.equals(type)) {
+            context.extension = (String) value;
+        } else if (PHONE_COUNTRY_CODE.equals(type)) {
+            context.countryCode = (String) value;
+            if (!StringUtils.isEmpty(context.countryCode) && !context.countryCode.contains("+")) {
+                context.countryCode = "+" + context.countryCode;
+            }
+        } else if (AREA_CODE.equals(type)) {
+            context.areaCode = (String) value;
+        }
+    }
+
+    private void processEmailInfo(String type, Object value, String contactType,
+                                  ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                  ContactAccumulator accumulator) {
+        if (isDoNotContact || !CONTACT_EMAILS.equals(contactType) || !ADDRESS.equals(type)) {
+            return;
+        }
+
+        String email = (String) value;
+        if (email != null && !email.isBlank()) {
+            accumulator.addEmail(email);
+            if (contactDetailsDTO != null) {
+                contactDetailsDTO.setEmail(email);
+            }
+        }
+    }
+
+    private void processAutomatedServiceInfo(String type, Object value, String contactType,
+                                            JSONObject communicationObj, ContactDetailsDTO contactDetailsDTO,
+                                            CommunicationInfoContext context) {
+        if (!CONTACT_AUTOMATED_SERVICES.equals(contactType) || contactDetailsDTO == null) {
+            return;
+        }
+
+        if (communicationObj.has(NAME)) {
+            contactDetailsDTO.setProvider(communicationObj.getString(NAME));
+        }
+
+        if (CODES.equals(type)) {
+            contactDetailsDTO.setCode((String) value);
+        } else if (BRANCH.equals(type)) {
+            contactDetailsDTO.setBranch((String) value);
+        } else if (SUR_CHARGE_AMOUNT.equals(type) && !StringUtils.isBlank((String) value)) {
+            contactDetailsDTO.setSurcharge((String) value);
+        } else if (SUR_CHARGE_CURRENCY.equals(type)) {
+            if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
+                contactDetailsDTO.setSurcharge(contactDetailsDTO.getSurcharge() + " " + value);
+            }
+        } else if (SUR_CHARGE_PAYMENT.equals(type)) {
+            if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
+                contactDetailsDTO.setPaymentMethod((String) value);
+            }
+        } else if (TURN_AROUND_TIME.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
+            contactDetailsDTO.setTurnAroundTime(value + " days");
+        } else if (FOLLOW_UP_ALLOWED.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
+            context.isFollowUpAllowed = ((String) value).equalsIgnoreCase("true");
+        } else if (context.isFollowUpAllowed && FOLLOW_UP_ALLOWED_AFTER.equals(type) && value != null) {
+            String followUpValue = StringUtils.isBlank((String) value) ? "0" : (String) value;
+            contactDetailsDTO.setFollowUpAllowedAfter(followUpValue + " days");
+        }
+    }
+
+    private void processMailInfo(String type, Object value, String contactType,
+                                 ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                 ContactAccumulator accumulator) {
+        if (isDoNotContact || !CONTACT_MAILS.equals(contactType) || !ADDRESS.equals(type)) {
+            return;
+        }
+
+        String address = (String) value;
+        if (address != null && !address.isBlank() && !address.equalsIgnoreCase("n/a")) {
+            accumulator.addMailAddress(address);
+            if (contactDetailsDTO != null) {
+                contactDetailsDTO.setMailAddresses(accumulator.getMailAddresses());
+            }
+        }
+    }
+
+    private void processWebsiteInfo(String type, Object value, String contactType,
+                                    ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                    ContactAccumulator accumulator) {
+        if (isDoNotContact || !CONTACT_WEBSITES.equals(contactType) || !ADDRESSES.equals(type)) {
+            return;
+        }
+
+        String link = (String) value;
+        if (link != null && !link.isBlank()) {
+            accumulator.addWebsite(link);
+            if (contactDetailsDTO != null) {
+                contactDetailsDTO.setWebsite(link);
+            }
+        }
+    }
+
+    private void finalizePhoneFaxNumber(String contactType, CommunicationInfoContext context,
+                                        ContactDetailsDTO contactDetailsDTO, ContactAccumulator accumulator) {
+        if (StringUtils.isEmpty(context.number)) {
+            return;
+        }
+
+        String formattedNumber = buildPhoneFaxNumber(context);
+
+        if (CONTACT_PHONES.equalsIgnoreCase(contactType)) {
+            accumulator.addPhoneNumber(formattedNumber);
+        } else if (CONTACT_FAXES.equalsIgnoreCase(contactType)) {
+            accumulator.addFaxNumber(formattedNumber);
+        }
+
+        if (contactDetailsDTO != null) {
+            contactDetailsDTO.setNumber(formattedNumber);
+        }
+    }
+
+    private String buildPhoneFaxNumber(CommunicationInfoContext context) {
+        StringJoiner joiner = new StringJoiner("");
+
+        if (!context.number.contains("+")) {
+            if (!StringUtils.isEmpty(context.countryCode)) {
+                joiner.add(context.countryCode);
+            }
+            if (!StringUtils.isEmpty(context.areaCode)) {
+                joiner.add(context.areaCode);
+            }
+        }
+
+        joiner.add(context.number);
+
+        if (!StringUtils.isEmpty(context.extension)) {
+            joiner.add(":" + context.extension);
+        }
+
+        return joiner.toString();
+    }
+
+    private void storeContactByType(ContactDetailsDTO contactDetailsDTO, String contactType,
+                                    int priority, ContactAccumulator accumulator) {
+        if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType)) {
+            return;
+        }
+
+        if (contactDetailsDTO == null || contactDetailsDTO.isEmpty()) {
+            return;
+        }
+
+        contactDetailsDTO.setType(contactType.replace("contact", ""));
+
+        if (CONTACT_PHONES.equalsIgnoreCase(contactType)) {
+            accumulator.setPhoneContact(contactDetailsDTO, priority);
+        } else if (CONTACT_EMAILS.equalsIgnoreCase(contactType)) {
+            accumulator.setEmailContact(contactDetailsDTO, priority);
+        } else if (CONTACT_FAXES.equalsIgnoreCase(contactType)) {
+            accumulator.setFaxContact(contactDetailsDTO, priority);
+        } else if (CONTACT_MAILS.equalsIgnoreCase(contactType)) {
+            accumulator.setMailContact(contactDetailsDTO, priority);
+        } else if (CONTACT_WEBSITES.equalsIgnoreCase(contactType)) {
+            accumulator.setWebsiteContact(contactDetailsDTO, priority);
+        } else if (priority > 0) {
+            accumulator.setOtherContact(contactDetailsDTO, priority);
+        }
+    }
+
+    // Helper class to hold communication info context
+    private static class CommunicationInfoContext {
+        String number = "";
+        String extension = "";
+        String countryCode = "";
+        String areaCode = "";
+        boolean isFollowUpAllowed = false;
+    }
+
+    // Helper class to accumulate contacts during processing
+    private static class ContactAccumulator {
+        private final List<ContactDetailsDTO> automatedServices = new ArrayList<>();
+        private final ContactDetailsDTO[] contactList;
+
+        private ContactDetailsDTO phoneDetailsDTO;
+        private final List<String> phoneNumbers = new ArrayList<>();
+        private Integer phonePriority;
+
+        private ContactDetailsDTO emailDetailsDTO;
+        private final List<String> emailList = new ArrayList<>();
+        private Integer emailPriority;
+
+        private ContactDetailsDTO faxDetailsDTO;
+        private final List<String> faxNumbers = new ArrayList<>();
+        private Integer faxPriority;
+
+        private ContactDetailsDTO mailDetailsDTO;
+        private final List<String> mailAddresses = new ArrayList<>();
+        private Integer mailPriority;
+
+        private ContactDetailsDTO websiteDetailsDTO;
+        private final List<String> websiteList = new ArrayList<>();
+        private Integer websitePriority;
+
+        ContactAccumulator(int contactListSize) {
+            this.contactList = new ContactDetailsDTO[contactListSize];
+        }
+
+        void addAutomatedService(ContactDetailsDTO dto) {
+            automatedServices.add(dto);
+        }
+
+        void addPhoneNumber(String number) {
+            if (!number.isEmpty()) {
+                phoneNumbers.add(number);
+            }
+        }
+
+        void addFaxNumber(String number) {
+            if (!number.isEmpty()) {
+                faxNumbers.add(number);
+            }
+        }
+
+        void addEmail(String email) {
+            emailList.add(email);
+        }
+
+        void addMailAddress(String address) {
+            mailAddresses.add(address);
+        }
+
+        List<String> getMailAddresses() {
+            return mailAddresses;
+        }
+
+        void addWebsite(String website) {
+            websiteList.add(website);
+        }
+
+        void setPhoneContact(ContactDetailsDTO dto, int priority) {
+            if (phoneDetailsDTO == null) {
+                phoneDetailsDTO = dto;
+                if (priority > 0) {
+                    phonePriority = priority;
                 }
             }
         }
 
-        if (phoneDetailsDTO != null && !phoneNumbers.isEmpty()) {
-            phoneDetailsDTO.setNumbers(phoneNumbers);
-            phoneDetailsDTO.setNumber(null);
-            phoneDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_PHONES);
-            if (phonePriority != null && phonePriority > 0 && contactList.length >= phonePriority) {
-                contactList[phonePriority - 1] = phoneDetailsDTO;
-            } else {
-                contactDetailsDTOS.add(phoneDetailsDTO);
+        void setEmailContact(ContactDetailsDTO dto, int priority) {
+            if (emailDetailsDTO == null) {
+                emailDetailsDTO = dto;
+                if (priority > 0) {
+                    emailPriority = priority;
+                }
             }
         }
 
-        if (emailDetailsDTO != null && !emailList.isEmpty()) {
-            emailDetailsDTO.setEmails(emailList);
-            emailDetailsDTO.setEmail(null);
-            emailDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_EMAILS);
-
-            if (emailPriority != null && emailPriority > 0 && contactList.length >= emailPriority) {
-                contactList[emailPriority - 1] = emailDetailsDTO;
-            } else {
-                contactDetailsDTOS.add(emailDetailsDTO);
+        void setFaxContact(ContactDetailsDTO dto, int priority) {
+            if (faxDetailsDTO == null) {
+                faxDetailsDTO = dto;
+                if (priority > 0) {
+                    faxPriority = priority;
+                }
             }
         }
 
-        if (faxDetailsDTO != null && !faxNumbers.isEmpty()) {
-            faxDetailsDTO.setNumbers(faxNumbers);
-            faxDetailsDTO.setNumber(null);
-            faxDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_FAXES);
-
-            if (faxPriority != null && faxPriority > 0 && contactList.length >= faxPriority) {
-                contactList[faxPriority - 1] = faxDetailsDTO;
-            } else {
-                contactDetailsDTOS.add(faxDetailsDTO);
+        void setMailContact(ContactDetailsDTO dto, int priority) {
+            if (mailDetailsDTO == null) {
+                mailDetailsDTO = dto;
+                if (priority > 0) {
+                    mailPriority = priority;
+                }
             }
         }
 
-        if (mailDetailsDTO != null && !mailAddresses.isEmpty()) {
-            mailDetailsDTO.setMailAddresses(mailAddresses);
-            mailDetailsDTO.setMailAddress(null);
-            mailDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_MAILS);
-
-            if (mailPriority != null && mailPriority > 0 && contactList.length >= mailPriority) {
-                contactList[mailPriority - 1] = mailDetailsDTO;
-            } else {
-                contactDetailsDTOS.add(mailDetailsDTO);
+        void setWebsiteContact(ContactDetailsDTO dto, int priority) {
+            if (websiteDetailsDTO == null) {
+                websiteDetailsDTO = dto;
+                if (priority > 0) {
+                    websitePriority = priority;
+                }
             }
         }
 
-        if (websiteDetailsDTO != null && !websiteList.isEmpty()) {
-            websiteDetailsDTO.setWebsites(websiteList);
-            websiteDetailsDTO.setWebsite(null);
-            websiteDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_WEBSITES);
-
-            if (websitePriority != null && websitePriority > 0 && contactList.length >= websitePriority) {
-                contactList[websitePriority - 1] = websiteDetailsDTO;
-            } else {
-                contactDetailsDTOS.add(websiteDetailsDTO);
+        void setOtherContact(ContactDetailsDTO dto, int priority) {
+            if (contactList.length >= priority && priority > 0) {
+                contactList[priority - 1] = dto;
             }
         }
 
-        // add non-null items
-        if (contactList != null) {
+        List<ContactDetailsDTO> buildFinalContactList() {
+            List<ContactDetailsDTO> result = new ArrayList<>(automatedServices);
+
+            addGroupedContact(phoneDetailsDTO, phoneNumbers, phonePriority,
+                            Constants.SmartSearchKeys.TYPE_PHONES, result,
+                            (dto, numbers) -> {
+                                dto.setNumbers(numbers);
+                                dto.setNumber(null);
+                            });
+
+            addGroupedContact(emailDetailsDTO, emailList, emailPriority,
+                            Constants.SmartSearchKeys.TYPE_EMAILS, result,
+                            (dto, emails) -> {
+                                dto.setEmails(emails);
+                                dto.setEmail(null);
+                            });
+
+            addGroupedContact(faxDetailsDTO, faxNumbers, faxPriority,
+                            Constants.SmartSearchKeys.TYPE_FAXES, result,
+                            (dto, numbers) -> {
+                                dto.setNumbers(numbers);
+                                dto.setNumber(null);
+                            });
+
+            addGroupedContact(mailDetailsDTO, mailAddresses, mailPriority,
+                            Constants.SmartSearchKeys.TYPE_MAILS, result,
+                            (dto, addresses) -> {
+                                dto.setMailAddresses(addresses);
+                                dto.setMailAddress(null);
+                            });
+
+            addGroupedContact(websiteDetailsDTO, websiteList, websitePriority,
+                            Constants.SmartSearchKeys.TYPE_WEBSITES, result,
+                            (dto, websites) -> {
+                                dto.setWebsites(websites);
+                                dto.setWebsite(null);
+                            });
+
             for (ContactDetailsDTO contact : contactList) {
                 if (contact != null) {
-                    contactDetailsDTOS.add(contact);
+                    result.add(contact);
+                }
+            }
+
+            return result;
+        }
+
+        private <T> void addGroupedContact(ContactDetailsDTO dto, List<T> items, Integer priority,
+                                          String type, List<ContactDetailsDTO> result,
+                                          java.util.function.BiConsumer<ContactDetailsDTO, List<T>> setter) {
+            if (dto != null && !items.isEmpty()) {
+                setter.accept(dto, items);
+                dto.setType(type);
+
+                if (priority != null && priority > 0 && contactList.length >= priority) {
+                    contactList[priority - 1] = dto;
+                } else {
+                    result.add(dto);
                 }
             }
         }
-
-        return contactDetailsDTOS;
     }
 
     default String mapOrganizationAlias(Alias[] aliases) {
