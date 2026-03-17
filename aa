@@ -1,4 +1,4 @@
-// Create license_source collection with schema validation
+// Create license_source collection with enhanced schema validation
 db.createCollection("license_source", {
     validator: {
         $jsonSchema: {
@@ -20,11 +20,11 @@ db.createCollection("license_source", {
                 },
                 COUNTRY: {
                     bsonType: ["string", "null"],
-                    description: "Country name (required for GLOBAL and STATE scopes)"
+                    description: "Country name - required for GLOBAL and STATE, must be null for NATIONAL"
                 },
                 STATE: {
                     bsonType: ["string", "null"],
-                    description: "State name (required for STATE scope)"
+                    description: "State name - required for STATE scope, must be null for GLOBAL and NATIONAL"
                 },
                 LICENSE_TYPE: {
                     bsonType: "string",
@@ -86,22 +86,54 @@ db.createCollection("license_source", {
                     bsonType: ["bool", "null"],
                     description: "Whether the license source is active"
                 }
-            }
+            },
+            anyOf: [
+                {
+                    // GLOBAL: COUNTRY required, STATE must be null
+                    properties: {
+                        SCOPE: { enum: ["GLOBAL"] },
+                        COUNTRY: { bsonType: "string", minLength: 1 },
+                        STATE: { bsonType: "null" }
+                    },
+                    required: ["COUNTRY"]
+                },
+                {
+                    // NATIONAL: COUNTRY and STATE must be null
+                    properties: {
+                        SCOPE: { enum: ["NATIONAL"] },
+                        COUNTRY: { bsonType: "null" },
+                        STATE: { bsonType: "null" }
+                    }
+                },
+                {
+                    // STATE: COUNTRY and STATE required
+                    properties: {
+                        SCOPE: { enum: ["STATE"] },
+                        COUNTRY: { bsonType: "string", minLength: 1 },
+                        STATE: { bsonType: "string", minLength: 1 }
+                    },
+                    required: ["COUNTRY", "STATE"]
+                }
+            ]
         }
     },
-    validationLevel: "moderate",
-    validationAction: "warn"
+    validationLevel: "strict",
+    validationAction: "error"
 });
 
-// Create indexes for better query performance
+// Create indexes for filtering and query performance
 db.license_source.createIndex({ "HON": 1 }, { unique: true, name: "idx_hon_unique" });
 db.license_source.createIndex({ "SCOPE": 1 }, { name: "idx_scope" });
-db.license_source.createIndex({ "COUNTRY": 1 }, { name: "idx_country" });
-db.license_source.createIndex({ "STATE": 1 }, { name: "idx_state" });
 db.license_source.createIndex({ "LICENSE_TYPE": 1 }, { name: "idx_license_type" });
 db.license_source.createIndex({ "GOVERNING_AGENCY": 1 }, { name: "idx_governing_agency" });
-db.license_source.createIndex({ "SCOPE": 1, "COUNTRY": 1 }, { name: "idx_scope_country" });
+db.license_source.createIndex({ "STATE": 1 }, { name: "idx_state" });
+db.license_source.createIndex({ "COUNTRY": 1 }, { name: "idx_country" });
+
+// Composite indexes for common filter combinations
+db.license_source.createIndex({ "SCOPE": 1, "LICENSE_TYPE": 1 }, { name: "idx_scope_license_type" });
+db.license_source.createIndex({ "SCOPE": 1, "GOVERNING_AGENCY": 1 }, { name: "idx_scope_governing_agency" });
 db.license_source.createIndex({ "SCOPE": 1, "STATE": 1 }, { name: "idx_scope_state" });
+db.license_source.createIndex({ "SCOPE": 1, "LICENSE_TYPE": 1, "STATE": 1 }, { name: "idx_scope_license_state" });
 db.license_source.createIndex({ "ACTIVE": 1 }, { name: "idx_active" });
 
-print("license_source collection created successfully with schema validation and indexes");
+print("license_source collection created successfully with strict validation and filter indexes");
