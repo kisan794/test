@@ -1,8 +1,107 @@
-org.springframework.web.client.RestClientException: DMS upload 405 : "<!doctype html><html lang="en"><head><title>HTTP Status 405 – Method Not Allowed</title><style type="text/css">body {font-family:Tahoma,Arial,sans-serif;} h1, h2, h3, b {color:white;background-color:#525D76;} h1 {font-size:22px;} h2 {font-size:16px;} h3 {font-size:14px;} p {font-size:12px;} a {color:black;} .line {height:1px;background-color:#525D76;border:none;}</style></head><body><h1>HTTP Status 405 – Method Not Allowed</h1></body></html>"
-	at com.hireright.sourceintelligence.service.impl.ExternalServiceImpl.retryUploadService(ExternalServiceImpl.java:146)
-	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
-	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
-	at org.springframework.aop.support.AopUtils.invokeJoinpointUsingReflection(AopUtils.java:351)
-	at org.springframework.aop.framework.ReflectiveMethodInvocation.invokeJoinpoint(ReflectiveMethodInvocation.java:196)
-	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)
-	at org.springfram
+// Create license_source collection with schema validation
+db.createCollection("license_source", {
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["HON", "SCOPE", "LICENSE_TYPE", "GOVERNING_AGENCY"],
+            properties: {
+                _id: {
+                    bsonType: "objectId",
+                    description: "Unique identifier for the license source"
+                },
+                HON: {
+                    bsonType: "string",
+                    description: "HireRight Organization Number - required"
+                },
+                SCOPE: {
+                    bsonType: "string",
+                    enum: ["GLOBAL", "NATIONAL", "STATE"],
+                    description: "Scope of the license - required"
+                },
+                COUNTRY: {
+                    bsonType: ["string", "null"],
+                    description: "Country name (required for GLOBAL and STATE scopes)"
+                },
+                STATE: {
+                    bsonType: ["string", "null"],
+                    description: "State name (required for STATE scope)"
+                },
+                LICENSE_TYPE: {
+                    bsonType: "string",
+                    description: "Type of license - required"
+                },
+                WEB_ADDRESS: {
+                    bsonType: ["string", "null"],
+                    description: "Website URL for the licensing authority"
+                },
+                PHONE_EMAIL: {
+                    bsonType: ["string", "null"],
+                    description: "Contact phone number and/or email"
+                },
+                FAX: {
+                    bsonType: ["string", "null"],
+                    description: "Fax number"
+                },
+                GOVERNING_AGENCY: {
+                    bsonType: "string",
+                    description: "Name of the governing agency - required"
+                },
+                MULTI_STATE: {
+                    bsonType: ["string", "null"],
+                    description: "Multi-state privileges information (for STATE scope)"
+                },
+                EXPIRATION: {
+                    bsonType: ["string", "null"],
+                    description: "Expiration information"
+                },
+                LICENSE_STATUS: {
+                    bsonType: ["string", "null"],
+                    description: "License status information"
+                },
+                DISCIPLINARY_ACTIONS: {
+                    bsonType: ["string", "null"],
+                    description: "Disciplinary actions information"
+                },
+                ADDITIONAL_INFORMATION: {
+                    bsonType: ["string", "null"],
+                    description: "Additional information"
+                },
+                ADDITIONAL_INFORMATION_CONTINUED: {
+                    bsonType: ["string", "null"],
+                    description: "Continuation of additional information"
+                },
+                DATE_LAST_MODIFIED: {
+                    bsonType: ["date", "null"],
+                    description: "Date when the record was last modified"
+                },
+                CREATED_DATE: {
+                    bsonType: ["date", "null"],
+                    description: "Date when the record was created"
+                },
+                UPDATED_DATE: {
+                    bsonType: ["date", "null"],
+                    description: "Date when the record was last updated"
+                },
+                ACTIVE: {
+                    bsonType: ["bool", "null"],
+                    description: "Whether the license source is active"
+                }
+            }
+        }
+    },
+    validationLevel: "moderate",
+    validationAction: "warn"
+});
+
+// Create indexes for better query performance
+db.license_source.createIndex({ "HON": 1 }, { unique: true, name: "idx_hon_unique" });
+db.license_source.createIndex({ "SCOPE": 1 }, { name: "idx_scope" });
+db.license_source.createIndex({ "COUNTRY": 1 }, { name: "idx_country" });
+db.license_source.createIndex({ "STATE": 1 }, { name: "idx_state" });
+db.license_source.createIndex({ "LICENSE_TYPE": 1 }, { name: "idx_license_type" });
+db.license_source.createIndex({ "GOVERNING_AGENCY": 1 }, { name: "idx_governing_agency" });
+db.license_source.createIndex({ "SCOPE": 1, "COUNTRY": 1 }, { name: "idx_scope_country" });
+db.license_source.createIndex({ "SCOPE": 1, "STATE": 1 }, { name: "idx_scope_state" });
+db.license_source.createIndex({ "ACTIVE": 1 }, { name: "idx_active" });
+
+print("license_source collection created successfully with schema validation and indexes");
