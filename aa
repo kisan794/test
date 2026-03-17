@@ -1,139 +1,562 @@
-// Create license_source collection with enhanced schema validation
-db.createCollection("license_source", {
-    validator: {
-        $jsonSchema: {
-            bsonType: "object",
-            required: ["HON", "SCOPE", "LICENSE_TYPE", "GOVERNING_AGENCY"],
-            properties: {
-                _id: {
-                    bsonType: "objectId",
-                    description: "Unique identifier for the license source"
-                },
-                HON: {
-                    bsonType: "string",
-                    description: "HireRight Organization Number - required"
-                },
-                SCOPE: {
-                    bsonType: "string",
-                    enum: ["GLOBAL", "NATIONAL", "STATE"],
-                    description: "Scope of the license - required"
-                },
-                COUNTRY: {
-                    bsonType: ["string", "null"],
-                    description: "Country name - required for GLOBAL and STATE, must be null for NATIONAL"
-                },
-                STATE: {
-                    bsonType: ["string", "null"],
-                    description: "State name - required for STATE scope, must be null for GLOBAL and NATIONAL"
-                },
-                LICENSE_TYPE: {
-                    bsonType: "string",
-                    description: "Type of license - required"
-                },
-                WEB_ADDRESS: {
-                    bsonType: ["string", "null"],
-                    description: "Website URL for the licensing authority"
-                },
-                PHONE_EMAIL: {
-                    bsonType: ["string", "null"],
-                    description: "Contact phone number and/or email"
-                },
-                FAX: {
-                    bsonType: ["string", "null"],
-                    description: "Fax number"
-                },
-                GOVERNING_AGENCY: {
-                    bsonType: "string",
-                    description: "Name of the governing agency - required"
-                },
-                MULTI_STATE: {
-                    bsonType: ["string", "null"],
-                    description: "Multi-state privileges information (for STATE scope)"
-                },
-                EXPIRATION: {
-                    bsonType: ["string", "null"],
-                    description: "Expiration information"
-                },
-                LICENSE_STATUS: {
-                    bsonType: ["string", "null"],
-                    description: "License status information"
-                },
-                DISCIPLINARY_ACTIONS: {
-                    bsonType: ["string", "null"],
-                    description: "Disciplinary actions information"
-                },
-                ADDITIONAL_INFORMATION: {
-                    bsonType: ["string", "null"],
-                    description: "Additional information"
-                },
-                ADDITIONAL_INFORMATION_CONTINUED: {
-                    bsonType: ["string", "null"],
-                    description: "Continuation of additional information"
-                },
-                DATE_LAST_MODIFIED: {
-                    bsonType: ["date", "null"],
-                    description: "Date when the record was last modified"
-                },
-                CREATED_DATE: {
-                    bsonType: ["date", "null"],
-                    description: "Date when the record was created"
-                },
-                UPDATED_DATE: {
-                    bsonType: ["date", "null"],
-                    description: "Date when the record was last updated"
-                },
-                ACTIVE: {
-                    bsonType: ["bool", "null"],
-                    description: "Whether the license source is active"
-                }
-            },
-            anyOf: [
-                {
-                    // GLOBAL: COUNTRY required, STATE must be null
-                    properties: {
-                        SCOPE: { enum: ["GLOBAL"] },
-                        COUNTRY: { bsonType: "string", minLength: 1 },
-                        STATE: { bsonType: "null" }
-                    },
-                    required: ["COUNTRY"]
-                },
-                {
-                    // NATIONAL: COUNTRY and STATE must be null
-                    properties: {
-                        SCOPE: { enum: ["NATIONAL"] },
-                        COUNTRY: { bsonType: "null" },
-                        STATE: { bsonType: "null" }
-                    }
-                },
-                {
-                    // STATE: COUNTRY and STATE required
-                    properties: {
-                        SCOPE: { enum: ["STATE"] },
-                        COUNTRY: { bsonType: "string", minLength: 1 },
-                        STATE: { bsonType: "string", minLength: 1 }
-                    },
-                    required: ["COUNTRY", "STATE"]
-                }
-            ]
+package com.hireright.sourceintelligence.domain.mapper;
+
+import com.hireright.sourceintelligence.api.dto.Alias;
+import com.hireright.sourceintelligence.api.dto.ContactDetailsDTO;
+import com.hireright.sourceintelligence.api.dto.SourceDTO;
+import com.hireright.sourceintelligence.domain.constants.Constants;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import org.apache.commons.lang3.StringUtils;
+import org.bson.types.ObjectId;
+import org.json.*;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.StringJoiner;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
+import static com.hireright.sourceintelligence.domain.mapper.SourceMapper.mapToJSONObject;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.ReportActions.CREATE;
+
+@Mapper(componentModel = "spring", imports = {JSONObject.class, JSONArray.class})
+public interface SourceDTOMapper {
+
+    // Helper Methods
+    default String getPayloadField(Source source, String key) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            return payload.has(key) ? payload.getString(key) : "";
         }
-    },
-    validationLevel: "strict",
-    validationAction: "error"
-});
+        return "";
+    }
 
-// Create indexes for filtering and query performance
-db.license_source.createIndex({ "HON": 1 }, { unique: true, name: "idx_hon_unique" });
-db.license_source.createIndex({ "SCOPE": 1 }, { name: "idx_scope" });
-db.license_source.createIndex({ "LICENSE_TYPE": 1 }, { name: "idx_license_type" });
-db.license_source.createIndex({ "GOVERNING_AGENCY": 1 }, { name: "idx_governing_agency" });
-db.license_source.createIndex({ "STATE": 1 }, { name: "idx_state" });
-db.license_source.createIndex({ "COUNTRY": 1 }, { name: "idx_country" });
+    default String stripHtmlTags(String input) {
+        return input != null ? input.replaceAll("<[^>]*>", "").replace("&nbsp;", " ") : "";
+    }
 
-// Composite indexes for common filter combinations
-db.license_source.createIndex({ "SCOPE": 1, "LICENSE_TYPE": 1 }, { name: "idx_scope_license_type" });
-db.license_source.createIndex({ "SCOPE": 1, "GOVERNING_AGENCY": 1 }, { name: "idx_scope_governing_agency" });
-db.license_source.createIndex({ "SCOPE": 1, "STATE": 1 }, { name: "idx_scope_state" });
-db.license_source.createIndex({ "SCOPE": 1, "LICENSE_TYPE": 1, "STATE": 1 }, { name: "idx_scope_license_state" });
-db.license_source.createIndex({ "ACTIVE": 1 }, { name: "idx_active" });
 
-print("license_source collection created successfully with strict validation and filter indexes");
+    default Instant getLastModifiedDate(Source source, String lastModifiedDate) {
+        if (source.getAction().equals(CREATE)) {
+            return null;
+        }
+        return source.getLastModifiedDate();
+    }
+
+    default String getAddressLine(Source source) {
+        String line = "";
+        String postalCode = "";
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(ADDRESS)) {
+                JSONArray address = payload.getJSONArray(ADDRESS);
+                JSONObject addressJSONObject = address.getJSONObject(0);
+                if (addressJSONObject.has(LINE)) {
+                    line = addressJSONObject.getString(LINE);
+                }
+                if (addressJSONObject.has(POSTAL_CODE)) {
+                    postalCode = addressJSONObject.getString(POSTAL_CODE);
+                }
+            }
+        }
+        return Stream.of(line, source.getCity(), source.getState(), postalCode, source.getCountry())
+                .filter(value -> value != null && !value.isEmpty()) // Filter out null or empty values
+                .collect(Collectors.joining(", "));
+    }
+
+    default String getRelationship(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(RELATIONSHIPS)) {
+                JSONArray relationships = payload.getJSONArray(RELATIONSHIPS);
+                if (!relationships.isEmpty()) {
+                    JSONObject relationship = relationships.getJSONObject(0);
+                    return relationship.has(RELATIONSHIP) ? relationship.getString(RELATIONSHIP) : "";
+                }
+            }
+        }
+        return "";
+    }
+
+    default String getRelationshipName(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(RELATIONSHIPS)) {
+                JSONArray relationships = payload.getJSONArray(RELATIONSHIPS);
+                if (!relationships.isEmpty()) {
+                    JSONObject relationship = relationships.getJSONObject(0);
+                    return relationship.has(NAME) ? relationship.getString(NAME) : "";
+                }
+            }
+        }
+        return "";
+    }
+
+    default String getAdditionalInfo(Source source, String fieldName) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(ADDITIONAL_INFO)) {
+                JSONArray additionalInfo = payload.getJSONArray(ADDITIONAL_INFO);
+                if (!additionalInfo.isEmpty()) {
+                    JSONObject additionalInfoJSONObject = additionalInfo.getJSONObject(0);
+                    return additionalInfoJSONObject.has(fieldName) ? additionalInfoJSONObject.getString(fieldName) : "";
+                }
+            }
+        }
+        return "";
+    }
+
+    default void mapContactBaseDTO(JSONObject contactDetailJson, ContactDetailsDTO contactDTO) {
+        if (hasNonEmptyValue(contactDetailJson, TURN_AROUND_TIME)) {
+            String turnAroundTime = contactDetailJson.getString(TURN_AROUND_TIME);
+
+            if (hasNonEmptyValue(contactDetailJson, TURN_AROUND_TIME_UNIT)) {
+                turnAroundTime += " " + contactDetailJson.getString(TURN_AROUND_TIME_UNIT);
+            }
+
+            contactDTO.setTurnAroundTime(turnAroundTime);
+        }
+        if (contactDetailJson.has(FOLLOW_UP_ALLOWED) && !contactDetailJson.isNull(FOLLOW_UP_ALLOWED)) {
+            boolean isFollowUpAfter = getBooleanValue(contactDetailJson, FOLLOW_UP_ALLOWED);
+
+            if (isFollowUpAfter && contactDetailJson.has(FOLLOW_UP_ALLOWED_AFTER)) {
+                String followUp = contactDetailJson.optString(FOLLOW_UP_ALLOWED_AFTER);
+
+                if (contactDetailJson.has(FOLLOW_UP_ALLOWED_AFTER_UNITS)) {
+                    followUp += " " + contactDetailJson.optString(FOLLOW_UP_ALLOWED_AFTER_UNITS);
+                } else {
+                    followUp += " days";
+                }
+
+                contactDTO.setFollowUpAllowedAfter(followUp);
+            }
+        }
+        if (hasNonEmptyValue(contactDetailJson, SUR_CHARGE_AMOUNT)) {
+            String surcharge = contactDetailJson.optString(SUR_CHARGE_AMOUNT) + " "
+                    + contactDetailJson.optString(SUR_CHARGE_CURRENCY);
+            contactDTO.setSurcharge(surcharge.trim());
+        }
+        if (hasNonEmptyValue(contactDetailJson, SUR_CHARGE_PAYMENT)) {
+            contactDTO.setPaymentMethod(contactDetailJson.optString(SUR_CHARGE_PAYMENT));
+        }
+    }
+
+    private static boolean hasNonEmptyValue(JSONObject json, String key) {
+        return json.has(key)
+                && !json.isNull(key)
+                && !StringUtils.isBlank(json.optString(key));
+    }
+
+    private static boolean getBooleanValue(JSONObject json, String key) {
+        Object value = json.get(key);
+        if (value instanceof Boolean b) {
+            return b;
+        } else if (value instanceof String s) {
+            return Boolean.getBoolean(s);
+        }
+        return false;
+    }
+
+    default List<ContactDetailsDTO> mapContactDetails(Source source) {
+        List<ContactDetailsDTO> contactDetailsDTOS = new ArrayList<>();
+        ContactDetailsDTO[] contactList = null;
+        ContactDetailsDTO phoneDetailsDTO = null;
+        List<String> phoneNumbers = new ArrayList<>();
+        Integer phonePriority = null;
+        ContactDetailsDTO emailDetailsDTO = null;
+        List<String> emailList = new ArrayList<>();
+        Integer emailPriority = null;
+        ContactDetailsDTO faxDetailsDTO = null;
+        List<String> faxNumbers = new ArrayList<>();
+        Integer faxPriority = null;
+        ContactDetailsDTO mailDetailsDTO = null;
+        List<String> mailAddresses = new ArrayList<>();
+        Integer mailPriority = null;
+        ContactDetailsDTO websiteDetailsDTO = null;
+        List<String> websiteList = new ArrayList<>();
+        Integer websitePriority = null;
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(CONTACTS) && payload.get(CONTACTS) != null) {
+                var contacts = (JSONArray) payload.get(CONTACTS);
+                if (!contacts.isEmpty()) {
+                    var contactDetails = ((JSONObject) contacts.get(0)).has(CONTACT_DETAILS)
+                            ? (JSONArray) ((JSONObject) contacts.get(0)).get(CONTACT_DETAILS)
+                            : new JSONArray();
+                    if (contactDetails != null && !contactDetails.isEmpty()) {
+                        contactList = new ContactDetailsDTO[contactDetails.length()];
+                        JSONArray additionalInfoList = payload.getJSONArray(ADDITIONAL_INFO);
+                        JSONObject additionalInfoJSONObject = additionalInfoList.getJSONObject(0);
+                        String doNotContact = additionalInfoJSONObject.has(DO_NOT_CONTACT)
+                                ? additionalInfoJSONObject.getString(DO_NOT_CONTACT) : "";
+
+                        boolean isDoNotContact = !doNotContact.isEmpty() && !doNotContact.equalsIgnoreCase("false");
+                        for (Object contactDetail : contactDetails) {
+                            int priority = 0;
+                            JSONObject contactDetailJson = (JSONObject) contactDetail;
+                            if (contactDetailJson.has(TYPE) && !contactDetailJson.isNull(TYPE)) {
+                                String key = (String) contactDetailJson.get(TYPE);
+                                if (contactDetailJson.has(PRIORITY)) {
+                                    if (contactDetailJson.get(PRIORITY) instanceof String) {
+                                        priority = Integer.parseInt(contactDetailJson.getString(PRIORITY));
+                                    } else {
+                                        priority = contactDetailJson.getInt(PRIORITY);
+                                    }
+                                }
+                                ContactDetailsDTO contactDetailsDTO = null;
+                                if (contactDetailJson.has(COMMUNICATION) && contactDetailJson.get(COMMUNICATION) != null) {
+                                    Object communObj = contactDetailJson.get(COMMUNICATION);
+                                    if (communObj instanceof JSONArray) {
+                                        var communication = (JSONArray) contactDetailJson.get(COMMUNICATION);
+                                        if (!communication.isEmpty()) {
+                                            if (isDoNotContact && CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)) {
+                                                contactDetailsDTO = new ContactDetailsDTO();
+                                            } else if (!isDoNotContact && (
+                                                    CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key) ||
+                                                            CONTACT_WEBSITES.equalsIgnoreCase(key) ||
+                                                            CONTACT_EMAILS.equalsIgnoreCase(key) ||
+                                                            CONTACT_FAXES.equalsIgnoreCase(key) ||
+                                                            CONTACT_PHONES.equalsIgnoreCase(key) ||
+                                                            CONTACT_MAILS.equalsIgnoreCase(key))) {
+
+                                                contactDetailsDTO = new ContactDetailsDTO();
+                                                mapContactBaseDTO(contactDetailJson, contactDetailsDTO);
+                                            }
+                                            for (Object commObj : communication) {
+                                                JSONObject communicationObj = (JSONObject) commObj;
+                                                if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)) {
+                                                    contactDetailsDTO = new ContactDetailsDTO();
+                                                    mapContactBaseDTO(contactDetailJson, contactDetailsDTO);
+                                                }
+
+                                                if (communicationObj.has(COMMUNICATION_INFO) &&
+                                                        communicationObj.get(COMMUNICATION_INFO) != null) {
+                                                    JSONArray communicationInfoDetails =
+                                                            (JSONArray) communicationObj.get(COMMUNICATION_INFO);
+                                                    if (communicationInfoDetails.isEmpty()) continue;
+                                                    String number = "";
+                                                    String extension = "";
+                                                    String countryCode = "";
+                                                    String areaCode = "";
+                                                    boolean isFollowUpAllowed = false;
+                                                    for (Object info : communicationInfoDetails) {
+                                                        if (info instanceof JSONObject infoJson) {
+                                                            if (infoJson.has(TYPE)) {
+                                                                String type = (String) infoJson.get(TYPE);
+                                                                var value = !infoJson.isNull(VALUE) ? infoJson.get(VALUE) : "";
+                                                                if (!isDoNotContact &&
+                                                                        (CONTACT_PHONES.equals(key) || CONTACT_FAXES.equals(key))) {
+                                                                    if (PHONE_NUMBER.equals(type))
+                                                                        number = (String) value;
+                                                                    if (EXTENSION.equals(type))
+                                                                        extension = (String) value;
+                                                                    if (PHONE_COUNTRY_CODE.equals(type)) {
+                                                                        countryCode = (String) value;
+                                                                        if (!StringUtils.isEmpty(countryCode) && !countryCode.contains("+"))
+                                                                            countryCode = "+" + countryCode;
+                                                                    }
+
+                                                                    if (AREA_CODE.equals(type))
+                                                                        areaCode = (String) value;
+                                                                }
+
+                                                                if (!isDoNotContact &&
+                                                                        CONTACT_EMAILS.equals(key) &&
+                                                                        ADDRESS.equals(type)) {
+
+                                                                    String email = (String) value;
+                                                                    if (email != null && !email.isBlank()) {
+                                                                        emailList.add(email);
+                                                                        contactDetailsDTO.setEmail(email);
+                                                                    }
+                                                                }
+
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && communicationObj.has(NAME)) {
+                                                                    contactDetailsDTO.setProvider((String) communicationObj.get(NAME));
+                                                                }
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && CODES.equals(type)) {
+                                                                    contactDetailsDTO.setCode((String) value);
+                                                                }
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && BRANCH.equals(type)) {
+                                                                    contactDetailsDTO.setBranch((String) value);
+                                                                }
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && SUR_CHARGE_AMOUNT.equals(type) && !StringUtils.isBlank((String) value)) {
+                                                                    contactDetailsDTO.setSurcharge((String) value);
+                                                                }
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && SUR_CHARGE_CURRENCY.equals(type)) {
+                                                                    if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
+                                                                        contactDetailsDTO.setSurcharge(contactDetailsDTO.getSurcharge() + " " + value);
+                                                                    }
+                                                                }
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && SUR_CHARGE_PAYMENT.equals(type)) {
+                                                                    if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
+                                                                        contactDetailsDTO.setPaymentMethod((String) value);
+                                                                    }
+                                                                }
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && TURN_AROUND_TIME.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
+                                                                    contactDetailsDTO.setTurnAroundTime(value + " days");
+                                                                }
+                                                                if (CONTACT_AUTOMATED_SERVICES.equals(key) && FOLLOW_UP_ALLOWED.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
+                                                                    isFollowUpAllowed = ((String) value).equalsIgnoreCase("true") ? true : false;
+                                                                }
+                                                                if (isFollowUpAllowed && CONTACT_AUTOMATED_SERVICES.equals(key) && FOLLOW_UP_ALLOWED_AFTER.equals(type) && value != null) {
+                                                                    if (StringUtils.isBlank((String) value)) {
+                                                                        value = "0";
+                                                                    }
+                                                                    contactDetailsDTO.setFollowUpAllowedAfter(value + " days");
+                                                                }
+                                                                if (!isDoNotContact && (CONTACT_MAILS.equals(key) && ADDRESS.equals(type))) {
+                                                                    String address = (String) value;
+                                                                    if (address != null && !address.isBlank() && !address.equalsIgnoreCase("n/a")) {
+                                                                        mailAddresses.add(address);
+                                                                        contactDetailsDTO.setMailAddresses(mailAddresses);
+                                                                    }
+                                                                }
+                                                                if (!isDoNotContact && CONTACT_WEBSITES.equals(key) && ADDRESSES.equals(type)) {
+                                                                    String link = (String) value;
+                                                                    if (link != null && !link.isBlank()) {
+                                                                        websiteList.add(link);
+                                                                        contactDetailsDTO.setWebsite(link);
+                                                                    }
+                                                                }
+
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)
+                                                            && contactDetailsDTO != null
+                                                            && !contactDetailsDTO.isEmpty()) {
+
+                                                        contactDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_AUTOMATED_SERVICES);
+                                                        contactDetailsDTOS.add(contactDetailsDTO);
+                                                        continue;
+                                                    }
+
+                                                    if (!StringUtils.isEmpty(number)) {
+                                                        StringJoiner joiner = new StringJoiner("");
+                                                        if (!number.contains("+")) {
+                                                            if (!StringUtils.isEmpty(countryCode))
+                                                                joiner.add(countryCode);
+                                                            if (!StringUtils.isEmpty(areaCode)) joiner.add(areaCode);
+                                                        }
+                                                        joiner.add(number);//'number' is guaranteed to be non-empty due to first check
+                                                        if (!StringUtils.isEmpty(extension)) joiner.add(":"+extension);
+
+                                                        if (CONTACT_PHONES.equalsIgnoreCase(key)) {
+                                                            if(!joiner.toString().isEmpty()){
+                                                                phoneNumbers.add(joiner.toString());
+                                                            }
+                                                        } else if (CONTACT_FAXES.equalsIgnoreCase(key)) {
+                                                            if(!joiner.toString().isEmpty()){
+                                                                faxNumbers.add(joiner.toString());
+                                                            }
+                                                        }
+                                                        contactDetailsDTO.setNumber(joiner.toString());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(key)) {
+                                    continue;
+                                }
+                                // Store phones grouped
+                                if (contactDetailsDTO != null && !contactDetailsDTO.isEmpty()) {
+                                    contactDetailsDTO.setType(key.replace("contact", ""));
+
+                                    if (CONTACT_PHONES.equalsIgnoreCase(key)) {
+                                        if (phoneDetailsDTO == null) {
+                                            phoneDetailsDTO = contactDetailsDTO;
+                                            if (priority > 0) phonePriority = priority;
+                                        }
+
+                                    }
+                                    //Store Emails grouped
+                                    else if (CONTACT_EMAILS.equalsIgnoreCase(key)) {
+                                        if (emailDetailsDTO == null) {
+                                            emailDetailsDTO = contactDetailsDTO;
+                                            if (priority > 0) emailPriority = priority;
+                                        }
+                                    }
+                                    else if (CONTACT_FAXES.equalsIgnoreCase(key)) {
+                                        if (faxDetailsDTO == null) {
+                                            faxDetailsDTO = contactDetailsDTO;
+                                            if (priority > 0) faxPriority = priority;
+                                        }
+                                    }
+                                    else if (CONTACT_MAILS.equalsIgnoreCase(key)) {
+                                        if (mailDetailsDTO == null) {
+                                            mailDetailsDTO = contactDetailsDTO;
+                                            if (priority > 0) mailPriority = priority;
+                                        }
+                                    }
+                                    else if (CONTACT_WEBSITES.equalsIgnoreCase(key)) {
+                                        if (websiteDetailsDTO == null) {
+                                            websiteDetailsDTO = contactDetailsDTO;
+                                            if (priority > 0) websitePriority = priority;
+                                        }
+                                    }
+                                    else {
+                                        if (contactList.length >= priority && priority > 0) {
+                                            contactList[priority - 1] = contactDetailsDTO;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (phoneDetailsDTO != null && !phoneNumbers.isEmpty()) {
+            phoneDetailsDTO.setNumbers(phoneNumbers);
+            phoneDetailsDTO.setNumber(null);
+            phoneDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_PHONES);
+            if (phonePriority != null && phonePriority > 0 && contactList.length >= phonePriority) {
+                contactList[phonePriority - 1] = phoneDetailsDTO;
+            } else {
+                contactDetailsDTOS.add(phoneDetailsDTO);
+            }
+        }
+
+        if (emailDetailsDTO != null && !emailList.isEmpty()) {
+            emailDetailsDTO.setEmails(emailList);
+            emailDetailsDTO.setEmail(null);
+            emailDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_EMAILS);
+
+            if (emailPriority != null && emailPriority > 0 && contactList.length >= emailPriority) {
+                contactList[emailPriority - 1] = emailDetailsDTO;
+            } else {
+                contactDetailsDTOS.add(emailDetailsDTO);
+            }
+        }
+
+        if (faxDetailsDTO != null && !faxNumbers.isEmpty()) {
+            faxDetailsDTO.setNumbers(faxNumbers);
+            faxDetailsDTO.setNumber(null);
+            faxDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_FAXES);
+
+            if (faxPriority != null && faxPriority > 0 && contactList.length >= faxPriority) {
+                contactList[faxPriority - 1] = faxDetailsDTO;
+            } else {
+                contactDetailsDTOS.add(faxDetailsDTO);
+            }
+        }
+
+        if (mailDetailsDTO != null && !mailAddresses.isEmpty()) {
+            mailDetailsDTO.setMailAddresses(mailAddresses);
+            mailDetailsDTO.setMailAddress(null);
+            mailDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_MAILS);
+
+            if (mailPriority != null && mailPriority > 0 && contactList.length >= mailPriority) {
+                contactList[mailPriority - 1] = mailDetailsDTO;
+            } else {
+                contactDetailsDTOS.add(mailDetailsDTO);
+            }
+        }
+
+        if (websiteDetailsDTO != null && !websiteList.isEmpty()) {
+            websiteDetailsDTO.setWebsites(websiteList);
+            websiteDetailsDTO.setWebsite(null);
+            websiteDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_WEBSITES);
+
+            if (websitePriority != null && websitePriority > 0 && contactList.length >= websitePriority) {
+                contactList[websitePriority - 1] = websiteDetailsDTO;
+            } else {
+                contactDetailsDTOS.add(websiteDetailsDTO);
+            }
+        }
+
+        // add non-null items
+        if (contactList != null) {
+            for (ContactDetailsDTO contact : contactList) {
+                if (contact != null) {
+                    contactDetailsDTOS.add(contact);
+                }
+            }
+        }
+
+        return contactDetailsDTOS;
+    }
+
+    default String mapOrganizationAlias(Alias[] aliases) {
+        if (aliases != null && aliases.length > 0) {
+            List<String> aliasesList = new ArrayList<>();
+            String organizationAlias = "";
+            for (Alias alias : aliases) {
+                aliasesList.add(alias.getName());
+            }
+            organizationAlias = String.join("; ", aliasesList);
+            return organizationAlias;
+        }
+        return null;
+    }
+
+    default String mapDepartmentAlias(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(DEPARTMENT_ALIASES)) {
+                JSONArray aliases = payload.getJSONArray(DEPARTMENT_ALIASES);
+                if (!aliases.isEmpty()) {
+                    JSONObject alias = aliases.getJSONObject(0);
+                    return alias.has(NAME) ? alias.getString(NAME) : "";
+                }
+            }
+        }
+        return "";
+    }
+
+    default int mapUsedCount(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(USED_COUNT)) {
+                return (int) payload.get(USED_COUNT);
+            }
+        }
+        return 0;
+    }
+    default String map(ObjectId id){
+        return id.toHexString();
+    }
+
+    @Mapping(target = "organizationName", source = "organizationName")
+    @Mapping(target = "status", expression = "java(String.valueOf(source.getStatus()))")
+    @Mapping(target = "hon", source = "hon")
+    @Mapping(target = "country", source = "country")
+    @Mapping(target = "state", source = "state")
+    @Mapping(target = "postalCode", source = "postalCode")
+    @Mapping(target = "city", source = "city")
+    @Mapping(target = "region", source = "state")
+    @Mapping(target = "createdBy", source = "createdBy")
+    @Mapping(target = "flagPriority", source = "flagPriority")
+    @Mapping(target = "action", source = "action")
+    @Mapping(target = "lastModifiedBy", source = "lastModifiedBy")
+    @Mapping(target = "approvedBy", source = "approvedBy")
+    @Mapping(target = "lastApprovedDateTime", source = "lastApprovedDate")
+
+    @Mapping(target = "verificationValidationProcess", expression = "java(getAdditionalInfo(source, \"verificationValidationProcess\"))")
+    @Mapping(target = "doNotContact", expression = "java(getAdditionalInfo(source, \"doNotContact\"))")
+    @Mapping(target = "lastUsedDate", expression = "java(getPayloadField(source, \"lastUsedDateTime\"))")
+    @Mapping(target = "lastCleanUpDate", expression = "java(getPayloadField(source, \"lastCleanUpDate\"))")
+    @Mapping(target = "releaseType", expression = "java(getAdditionalInfo(source, \"releaseType\"))")
+    @Mapping(target = "departmentName", expression = "java(getPayloadField(source, \"departmentName\"))")
+    @Mapping(target = "notes", expression = "java(stripHtmlTags(getPayloadField(source, \"notes\")))")
+    @Mapping(target = "usedCount", expression = "java(mapUsedCount(source))")
+    @Mapping(target = "address", expression = "java(getAddressLine(source))")
+    @Mapping(target = "contactDetails", expression = "java(mapContactDetails(source))")
+    @Mapping(target = "organizationAlias", expression = "java(mapOrganizationAlias(source.getOrganizationAlias()))")
+    @Mapping(source = "id", target="id")
+    SourceDTO toSourceDTO(Source source);
+
+    List<SourceDTO> entityToSourceList(List<Source> source);
+
+
+}
+
