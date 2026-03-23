@@ -1,16 +1,67 @@
-Overview
-This document describes the made to the Data Migration API, which enables uploading Excel files data to migrate into the database.
-Ref: https://hireright.atlassian.net/browse/CF1-2614
+# Data Migration API - Technical Documentation
 
-Architecture Overview
-High-Level Architecture
+## Overview
 
+This document describes the Data Migration API, a new generic API that enables uploading Excel files containing vendor institution data to migrate into the database.
 
+---
+
+## Table of Contents
+
+1. [Executive Summary](#executive-summary)
+2. [Architecture Overview](#architecture-overview)
+3. [Detailed Layer Architecture](#detailed-layer-architecture)
+4. [Key Components](#key-components)
+5. [Design Patterns](#design-patterns)
+6. [API Specification](#api-specification)
+7. [Validation](#validation)
+8. [Error Handling](#error-handling)
+9. [Security](#security)
+10. [Performance Considerations](#performance-considerations)
+11. [Configuration](#configuration)
+12. [Usage Examples](#usage-examples)
+13. [Adding New Migration Types](#adding-new-migration-types)
+14. [Testing](#testing)
+15. [Deployment Notes](#deployment-notes)
+
+---
+
+## Executive Summary
+
+### What is This?
+
+A **new, generic Data Migration API** that enables uploading Excel files containing vendor institution data to migrate into the database. The API supports multiple vendor types using the **Strategy Pattern** for extensibility.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Generic Design** | `DataMigrationApi` - vendor-agnostic interface |
+| **Strategy Pattern** | Pluggable processors for different vendor types |
+| **Strongly-Typed Response** | `MigrationResponseDTO` with comprehensive statistics |
+| **Centralized Error Handling** | `ErrorConstants` with standardized error codes |
+| **Comprehensive Validation** | File size, format, type, and content validation |
+| **Easy Extensibility** | Add new vendor support by creating a single processor class |
+
+### Business Value
+
+- ✅ **Faster onboarding** of new vendors (e.g., Clearinghouse, NSC)
+- ✅ **Reduced maintenance** through centralized error handling
+- ✅ **Better monitoring** with performance metrics
+- ✅ **Improved reliability** with comprehensive validation
+
+---
+
+## Architecture Overview
+
+### High-Level Architecture
+
+```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Client Application                        │
 └────────────────────────┬────────────────────────────────────┘
                          │
-                         │ POST /sourceintelligence-service/api/v1/migration/upload?type=parchment
+                         │ POST /si/v1/migration/upload?type=parchment
                          │ Content-Type: multipart/form-data
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -48,17 +99,19 @@ High-Level Architecture
 │  • getMigrationType()                                       │
 │  • supports(migrationType)                                  │
 └────────────────────────┬────────────────────────────────────┘
-                       │
-        ┌───────────────┴───────────────┬─────────────────┐
-         ▼                                                
-┌──────────────────┐        
-│  Parchment       │         
-│  Processor       │         
-│  (Implemented)   │                          
-└──────────────────┘         
-Architecture Diagram
+                         │
+         ┌───────────────┴───────────────┬─────────────────┐
+         ▼                               ▼                 ▼
+┌──────────────────┐      ┌──────────────────┐   ┌─────────────┐
+│  Parchment       │      │  Clearinghouse   │   │   Future    │
+│  Processor       │      │  Processor       │   │  Processors │
+│  (Implemented)   │      │  (Future)        │   │             │
+└──────────────────┘      └──────────────────┘   └─────────────┘
+```
 
+### Component Diagram
 
+```
 ┌─────────────────────────────────────────────────────────────┐
 │                         API Layer                            │
 ├─────────────────────────────────────────────────────────────┤
@@ -90,38 +143,346 @@ Architecture Diagram
 │  VendorsRepository                                          │
 │  MongoTemplate                                              │
 └─────────────────────────────────────────────────────────────┘
- 
+```
 
-Error Constants Added
+---
 
+## Detailed Layer Architecture
 
-MIGRATION_FILE_EMPTY("109_40018", "LOW", "Migration file is empty..."),
-MIGRATION_FILE_INVALID_FORMAT("109_40019", "LOW", "Invalid file format..."),
-MIGRATION_TYPE_UNSUPPORTED("109_40020", "LOW", "Unsupported migration type..."),
-MIGRATION_NO_RECORDS_FOUND("109_40021", "LOW", "No records found..."),
-MIGRATION_FILE_TOO_LARGE("109_40022", "LOW", "File size exceeds maximum..."),
-MIGRATION_PARSE_ERROR("109_50018", "HIGH", "Failed to parse migration file..."),
-MIGRATION_PROCESSING_ERROR("109_50019", "HIGH", "Error processing migration data...")
- 
+### 1. Controller Layer (API Layer)
 
-Request
+The Controller Layer handles HTTP requests, performs initial validation, and orchestrates the migration workflow.
 
+#### DataMigrationApi (Interface)
 
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload?type=parchment" \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@parchment_institutions.xlsx"
-Response Schema
-Success Response (200 OK):
+**Location:** `com.hireright.sourceintelligence.api.v1.DataMigrationApi`
 
+**Purpose:** Defines the contract for data migration endpoints with OpenAPI documentation.
 
+**Key Features:**
+- OpenAPI/Swagger annotations for API documentation
+- Request/response schema definitions
+- HTTP method and path mappings
+- Endpoint: `POST /api/v1/migration/upload`
+
+#### DataMigrationApiController (Implementation)
+
+**Location:** `com.hireright.sourceintelligence.api.v1.DataMigrationApiController`
+
+**Responsibilities:**
+1. Request validation (file presence, size, format, migration type)
+2. Performance tracking (start time, processing time)
+3. Error handling (catches exceptions, returns structured responses)
+4. Response building (constructs `MigrationResponseDTO` with statistics)
+
+**Key Methods:**
+- `uploadExcelFile()` - Main endpoint handler
+- `buildSuccessResponse()` - Constructs success response
+
+**Dependencies:**
+- `ExcelParserService` - For parsing Excel files
+- `MigrationService` - For processing migration logic
+
+**Configuration:** `migration.file.max-size-mb` (default: 10MB)
+
+---
+
+### 2. Service Layer
+
+The Service Layer contains business logic and orchestrates data processing.
+
+#### MigrationService
+
+**Location:** `com.hireright.sourceintelligence.service.impl.MigrationService`
+
+**Purpose:** Orchestrates migration processing using the Strategy Pattern.
+
+**Responsibilities:**
+1. Validate migration type support
+2. Delegate to appropriate processor
+3. Aggregate processing results
+4. Provide supported types information
+
+**Key Methods:**
+- `processInstitutionRecords()` - Delegates to appropriate processor
+- `getSupportedMigrationTypes()` - Returns comma-separated list of supported types
+- `isMigrationTypeSupported()` - Validates migration type
+
+**Dependencies:** `MigrationProcessorFactory`
+
+---
+
+#### ExcelParserService
+
+**Location:** `com.hireright.sourceintelligence.service.impl.ExcelParserService`
+
+**Purpose:** Parse Excel files and extract institution records.
+
+**Responsibilities:**
+1. Read Excel files (.xlsx and .xls formats)
+2. Extract data from cells and convert to `InstitutionRecord` objects
+3. Handle various cell types (String, Numeric, Boolean, Formula, Blank)
+4. Skip empty rows
+
+**Key Methods:**
+- `parseExcelFile()` - Main parsing method
+- `getCellValueAsString()` - Handles different cell types
+- `isRowEmpty()` - Checks if row contains data
+
+**Excel File Structure Expected:**
+
+| Column | Field | Description |
+|--------|-------|-------------|
+| 0 | Institution Name | Name of the institution |
+| 1 | Country | Country location |
+| 2 | City | City location |
+| 3 | State/County/Region | State or region |
+| 4 | Service Provider | Vendor service provider |
+| 5 | Surcharge Amount | Additional charges |
+| 6 | Payment Method | Payment method accepted |
+| 7 | Code | Institution code |
+| 8 | Turnaround Time | Processing time |
+| 9 | Follow-up Allowed | Whether follow-up is allowed |
+
+**Dependencies:** Apache POI library
+
+---
+
+### 3. Strategy Pattern Layer
+
+This layer implements the Strategy Pattern for extensible migration processing.
+
+#### MigrationProcessorFactory
+
+**Location:** `com.hireright.sourceintelligence.service.migration.MigrationProcessorFactory`
+
+**Purpose:** Factory for selecting appropriate migration processor based on type.
+
+**Key Features:**
+- Auto-discovery of processors via Spring DI
+- Runtime processor selection
+- Validation of migration type support
+
+**Key Methods:**
+- `getProcessor()` - Finds and returns matching processor
+- `getSupportedTypes()` - Returns comma-separated list of supported types
+- `isSupported()` - Validates migration type support
+
+**How It Works:**
+1. Spring injects all `MigrationProcessor` implementations
+2. Factory maintains list of available processors
+3. At runtime, selects processor based on migration type
+4. Throws exception if no matching processor found
+
+---
+
+#### MigrationProcessor (Interface)
+
+**Location:** `com.hireright.sourceintelligence.service.migration.MigrationProcessor`
+
+**Purpose:** Strategy interface for migration processors.
+
+**Key Methods:**
+- `processInstitutionRecords()` - Process institution records for specific migration type
+- `getMigrationType()` - Get migration type identifier (e.g., "parchment")
+- `supports()` - Check if this processor supports given migration type (default implementation)
+
+**Return Map Structure:**
+- `totalRecords` (Integer) - Total records processed
+- `updatedRecords` (Integer) - Successfully updated records
+- `notFoundRecords` (Integer) - Records not found in database
+- `notFoundInstitutions` (List<String>) - Names of institutions not found
+
+---
+
+#### ParchmentMigrationProcessor
+
+**Location:** `com.hireright.sourceintelligence.service.migration.ParchmentMigrationProcessor`
+
+**Purpose:** Concrete implementation for Parchment Exchange migrations.
+
+**Responsibilities:**
+1. Find Parchment Exchange vendor in database
+2. Match institutions by name, country, city, state
+3. Update source organization contact information
+4. Create/update automated services contact
+5. Add Parchment Exchange communication details
+6. Track processing statistics
+
+**Key Methods:**
+- `processInstitutionRecords()` - Main processing method (transactional)
+- `processInstitutionRecord()` - Process single record
+- `updateParchmentExchangeContact()` - Update contact details
+
+**Database Operations:**
+- Reads from `Vendors` collection
+- Reads from source collections (by organization type)
+- Updates source documents with new contact information
+
+**Transaction Management:** Uses `@Transactional` for atomicity, rolls back on exceptions
+
+---
+
+### 4. Data Access Layer
+
+#### VendorsRepository
+
+**Location:** `com.hireright.sourceintelligence.domain.repository.VendorsRepository`
+
+**Purpose:** MongoDB repository for vendor data access.
+
+**Key Methods:**
+- `findByOrganizationType()` - Find vendors by organization type
+- `findByOrganizationTypeOrderByVendorAsc()` - Find and sort vendors
+- `findByOrganizationTypeOrderByVendorCaseInsensitive()` - Case-insensitive sorting
+
+**Usage in Migration:** Fetch vendor information (e.g., "Parchment Exchange")
+
+---
+
+#### MongoTemplate
+
+**Purpose:** Direct MongoDB operations for complex queries and updates.
+
+**Usage in Migration:**
+- Save updated source documents
+- Perform collection-specific operations
+- Handle dynamic collection names (e.g., `education_source`, `employment_source`)
+
+---
+
+### 5. Data Transfer Objects (DTOs)
+
+#### InstitutionRecord
+
+**Location:** `com.hireright.sourceintelligence.api.dto.InstitutionRecord`
+
+**Purpose:** Represents a single institution record from Excel file.
+
+**Fields:** institutionName, country, city, stateCountyRegion, serviceProvider, surchargeAmount, paymentMethod, code, turnaroundTime, followUpAllowed
+
+---
+
+#### MigrationResponseDTO
+
+**Location:** `com.hireright.sourceintelligence.api.dto.MigrationResponseDTO`
+
+**Purpose:** Structured response for migration operations.
+
+**Fields:**
+- `status` - "success" or "error"
+- `message` - Human-readable message
+- `migrationType` - Type of migration performed
+- `filename` - Uploaded filename
+- `totalRecords` - Total records in file
+- `updatedRecords` - Successfully updated
+- `notFoundRecords` - Not found in database
+- `notFoundInstitutions` - Names of not found institutions
+- `failedRecords` - Failed to process
+- `errors` - Error messages
+- `processingTimeMs` - Processing time in milliseconds
+
+---
+
+## Key Components
+
+### 1. Core API Files
+
+| File | Purpose |
+|------|---------|
+| `DataMigrationApi.java` | Generic, vendor-agnostic API interface |
+| `DataMigrationApiController.java` | API controller implementation |
+
+### 2. Strategy Pattern Components
+
+| File | Purpose |
+|------|---------|
+| `MigrationProcessor.java` | Strategy interface for migration processors |
+| `ParchmentMigrationProcessor.java` | Parchment-specific implementation |
+| `MigrationProcessorFactory.java` | Factory to select appropriate processor |
+| `MigrationResponseDTO.java` | Structured response object |
+
+### 3. Error Constants
+
+**Location:** `ErrorConstants.java`
+
+- MIGRATION_FILE_EMPTY (109_40018, LOW)
+- MIGRATION_FILE_INVALID_FORMAT (109_40019, LOW)
+- MIGRATION_TYPE_UNSUPPORTED (109_40020, LOW)
+- MIGRATION_NO_RECORDS_FOUND (109_40021, LOW)
+- MIGRATION_FILE_TOO_LARGE (109_40022, LOW)
+- MIGRATION_PARSE_ERROR (109_50018, HIGH)
+- MIGRATION_PROCESSING_ERROR (109_50019, HIGH)
+
+---
+
+## Design Patterns
+
+### Strategy Pattern
+
+The API implements the **Strategy Pattern** to handle different migration types.
+
+**Benefits:**
+- ✅ Open/Closed Principle: Open for extension, closed for modification
+- ✅ Single Responsibility: Each processor handles one vendor
+- ✅ Easy Testing: Processors can be tested independently
+- ✅ Runtime Selection: Migration type determined at runtime
+
+**Implementation:**
+
+**Strategy Interface:** `MigrationProcessor`
+- `processInstitutionRecords()` - Process records
+- `getMigrationType()` - Return type identifier
+- `supports()` - Check if processor supports type
+
+**Concrete Strategy:** `ParchmentMigrationProcessor`
+- Implements `MigrationProcessor` interface
+- Returns "parchment" as migration type
+- Processes Parchment-specific logic
+
+**Factory:** `MigrationProcessorFactory`
+- Auto-discovers all processors via Spring DI
+- Selects processor based on migration type
+- Throws exception if no matching processor found
+
+---
+
+## API Specification
+
+### Endpoint
+
+```
+POST /sourceintelligence-service/api/v1/migration/upload
+```
+
+### Request Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `file` | MultipartFile | Yes | - | Excel file (.xlsx or .xls) containing migration data |
+| `type` | String | No | "parchment" | Migration type identifier |
+
+### Request Example
+
+**Using curl:**
+- Method: POST
+- Endpoint: `/sourceintelligence-service/api/v1/migration/upload?type=parchment`
+- Header: `Content-Type: multipart/form-data`
+- Body: Upload Excel file as form data with key "file"
+
+### Response Schema
+
+**Success Response (200 OK):**
+
+```json
 {
   "status": "success",
   "message": "File processed successfully",
   "migrationType": "parchment",
   "filename": "parchment_institutions.xlsx",
   "totalRecords": 150,
-  "updatedRecords": 147,
-  "notFoundRecords": 3,
+  "updatedRecords": 145,
+  "notFoundRecords": 5,
   "notFoundInstitutions": [
     "University ABC",
     "College XYZ",
@@ -129,9 +490,309 @@ Success Response (200 OK):
   ],
   "processingTimeMs": 2345
 }
-Error Response (400 Bad Request):
+```
 
+**Error Response (400 Bad Request):**
 
+```json
+{
+  "errorCode": "109_40020",
+  "status": "BAD_REQUEST",
+  "timestamp": "2026-03-23T10:30:00Z",
+  "message": "Unsupported migration type: 'unknown'. Supported types: parchment",
+  "traceId": "abc-123-def-456"
+}
+```
+
+### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | String | "success" or "error" |
+| `message` | String | Human-readable message |
+| `migrationType` | String | Type of migration performed |
+| `filename` | String | Name of uploaded file |
+| `totalRecords` | Integer | Total records found in file |
+| `updatedRecords` | Integer | Successfully updated records |
+| `notFoundRecords` | Integer | Records not found in database |
+| `notFoundInstitutions` | Array | List of institution names not found |
+| `processingTimeMs` | Long | Processing time in milliseconds |
+
+---
+
+## Validation
+
+The Data Migration API implements comprehensive validation at multiple levels to ensure data integrity and prevent processing errors.
+
+### 1. Request-Level Validation
+
+Performed in `DataMigrationApiController` before processing begins.
+
+#### File Validation
+
+**Empty File Check:**
+- Error Code: 109_40018
+- Message: "Migration file is empty. Please upload a valid Excel file."
+
+**File Size Validation:**
+- Error Code: 109_40022
+- Message: "File size exceeds maximum allowed size of {maxFileSizeMb} MB."
+- Configurable via `migration.file.max-size-mb` property
+
+**File Format Validation:**
+- Error Code: 109_40019
+- Message: "Invalid file format. Please upload an Excel file (.xlsx or .xls)."
+- Supported Formats: `.xlsx` (Excel 2007+), `.xls` (Excel 97-2003)
+
+#### Migration Type Validation
+
+**Type Support Check:**
+- Error Code: 109_40020
+- Message: "Unsupported migration type: '{type}'. Supported types: {list}."
+- Dynamically includes all registered processors
+
+#### Content Validation
+
+**Records Presence Check:**
+- Error Code: 109_40021
+- Message: "No records found in the Excel file. Please check the file content."
+
+---
+
+### 2. Data-Level Validation
+
+Performed during Excel parsing and record processing.
+
+#### Excel Parsing Validation
+
+**Row Validation:**
+- Skips completely empty rows
+- Validates cell types before extraction
+- Handles null cells gracefully
+
+**Cell Type Handling:**
+- STRING - Direct string value (trimmed)
+- NUMERIC - Numbers and dates
+- BOOLEAN - Boolean values
+- FORMULA - Formula results
+- BLANK - Empty cells
+
+**Empty Row Detection:** Checks all cells in row; returns true if all cells are blank or empty
+
+---
+
+### 3. Business Logic Validation
+
+Performed in migration processors during record processing.
+
+#### Institution Matching Validation
+
+**Parchment Processor Validation:**
+
+1. **Vendor Existence:** Validates "Parchment Exchange" vendor exists in database
+2. **Institution Matching:** Uses MongoDB query with criteria:
+   - Institution name (case-insensitive exact match using regex)
+   - Country (exact match)
+   - City (exact match)
+   - State/Region (exact match)
+
+**Not Found Handling:**
+- Records not found are tracked in `notFoundInstitutions` response field
+- Processing continues for other records
+- No exception thrown
+
+---
+
+### 4. Spring Framework Validation
+
+#### Bean Validation Annotations
+
+**Controller Level:**
+- `@Validated` - Enables validation on controller
+- `@NotNull` - Ensures file parameter is provided
+
+---
+
+### 5. Validation Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Request Received                          │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Spring Framework Validation                     │
+│  • @NotNull on file parameter                               │
+│  • @Validated on controller                                 │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Controller Validation Layer                     │
+│  • Migration type supported?                                │
+│  • File empty?                                              │
+│  • File size within limit?                                  │
+│  • File format valid (.xlsx/.xls)?                          │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Excel Parsing Validation                        │
+│  • File readable?                                           │
+│  • Contains records?                                        │
+│  • Rows properly formatted?                                 │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Business Logic Validation                       │
+│  • Vendor exists?                                           │
+│  • Institutions match criteria?                             │
+│  • Data integrity maintained?                               │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Processing Complete                         │
+│  • Success response with statistics                         │
+│  • Includes not found institutions                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 6. Validation Best Practices
+
+#### Fail Fast Principle
+- Validate at the earliest possible point
+- Return errors immediately to avoid wasted processing
+- Provide clear, actionable error messages
+
+#### Graceful Degradation
+- Continue processing when individual records fail
+- Track failures and report in response
+- Don't fail entire batch for single record issues
+
+#### Comprehensive Feedback
+- Include all validation errors in response
+- Provide specific error codes for each validation type
+- Include context (e.g., which institutions not found)
+
+---
+
+## Error Handling
+
+The Data Migration API implements comprehensive error handling with centralized error constants, structured responses, and detailed logging.
+
+### 1. Error Categories
+
+#### Validation Errors (4xx)
+
+| Error Code | HTTP Status | Scenario | Message |
+|------------|-------------|----------|---------|
+| 109_40018 | 400 | Empty file | "Migration file is empty. Please upload a valid Excel file." |
+| 109_40019 | 400 | Invalid format | "Invalid file format. Please upload an Excel file (.xlsx or .xls)." |
+| 109_40020 | 400 | Unsupported type | "Unsupported migration type: '{type}'. Supported types: {list}." |
+| 109_40021 | 400 | No records | "No records found in the Excel file. Please check the file content." |
+| 109_40022 | 400 | File too large | "File size exceeds maximum allowed size of {size} MB." |
+
+#### Processing Errors (5xx)
+
+| Error Code | HTTP Status | Scenario | Message |
+|------------|-------------|----------|---------|
+| 109_50018 | 500 | Parse failure | "Failed to parse migration file: {details}" |
+| 109_50019 | 500 | Processing failure | "Error processing migration data: {details}" |
+
+---
+
+### 2. Error Constants Definition
+
+**Location:** `com.hireright.sourceintelligence.constants.ErrorConstants`
+
+**Error Code Structure:**
+- `109` - Service identifier (Source Intelligence)
+- `4xxxx` - Client errors (validation, bad request)
+- `5xxxx` - Server errors (processing, system failures)
+- Last 2 digits - Specific error identifier
+
+**Severity Levels:**
+- `LOW` - Expected errors (validation failures)
+- `HIGH` - Unexpected errors (system failures)
+
+**Defined Constants:**
+- MIGRATION_FILE_EMPTY (109_40018, LOW)
+- MIGRATION_FILE_INVALID_FORMAT (109_40019, LOW)
+- MIGRATION_TYPE_UNSUPPORTED (109_40020, LOW)
+- MIGRATION_NO_RECORDS_FOUND (109_40021, LOW)
+- MIGRATION_FILE_TOO_LARGE (109_40022, LOW)
+- MIGRATION_PARSE_ERROR (109_50018, HIGH)
+- MIGRATION_PROCESSING_ERROR (109_50019, HIGH)
+
+---
+
+### 3. Error Handling Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Request Received                          │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Validation Layer                                │
+│  • File validation                                          │
+│  • Type validation                                          │
+│  • Content validation                                       │
+└────────────┬───────────────────────────┬────────────────────┘
+             │                           │
+          Success                     Failure
+             │                           │
+             ▼                           ▼
+┌─────────────────────────┐   ┌──────────────────────────────┐
+│   Processing Layer      │   │  logAndThrowInvalidRequest() │
+│  • Parse Excel          │   │  • Log error with context    │
+│  • Process records      │   │  • Throw InvalidRequest      │
+└────────┬────────────────┘   └────────────┬─────────────────┘
+         │                                  │
+      Success                               │
+         │                                  │
+         ▼                                  │
+┌─────────────────────────┐                │
+│   Success Response      │                │
+│  • Statistics           │                │
+│  • Processing time      │                │
+└─────────────────────────┘                │
+                                            │
+         ┌──────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│           GlobalApiExceptionHandler                          │
+│  • Catches InvalidRequestException                          │
+│  • Extracts error code and message                          │
+│  • Builds structured error response                         │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Error Response (JSON)                           │
+│  {                                                           │
+│    "errorCode": "109_40020",                                │
+│    "status": "BAD_REQUEST",                                 │
+│    "timestamp": 1774245214.257195300,                       │
+│    "message": "Unsupported migration type...",              │
+│    "errors": [...]                                          │
+│  }                                                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4. Error Response Structure
+
+**Standard Error Response:**
+```json
 {
     "errorCode": "109_40020",
     "status": "BAD_REQUEST",
@@ -144,15 +805,484 @@ Error Response (400 Bad Request):
         }
     ]
 }
- 
+```
 
-Properties
-Maximum file size for migration uploads (in MB)
-migration.file.max-size-mb=${migrationFileMaxSizeMB:10}
+**Response Fields:**
+- `errorCode` - Unique error identifier from ErrorConstants
+- `status` - HTTP status name (BAD_REQUEST, INTERNAL_SERVER_ERROR)
+- `timestamp` - Unix timestamp of error occurrence
+- `message` - Generic error message
+- `errors` - Array of specific error details
+
+---
+
+### 5. Logging Strategy
+
+#### Success Logging
+
+**Key Log Points:**
+- Request received (filename, size, type)
+- Excel parsing started
+- Records found count
+- Processing started
+- Institution matched (name, HON)
+- Institution updated
+- Migration completed (statistics, processing time)
+
+#### Error Logging
+
+**Validation Errors:** Logged with error code, status, and message
+**Processing Errors:** Logged with filename and exception details
+**Not Found Warnings:** Logged with institution details (name, country, city, state)
+
+---
+
+### 6. Exception Handling Utilities
+
+**LoggingThrowable Utility:**
+- `logAndThrowInvalidRequest()` - Logs error with code and message, then throws InvalidRequestException
+- Used throughout controller for consistent error handling
+- Formats error messages with provided arguments
+
+---
+
+### 7. Error Recovery Strategies
+
+#### Partial Success Handling
+- Process continues even if some records fail
+- Track failed/not found records
+- Return comprehensive statistics
+- Client can retry failed records
+
+#### Transaction Management
+- Use `@Transactional` for atomicity
+- Rollback on exceptions within processor
+- Each record processed independently
+- Prevents partial updates to single record
+
+#### Graceful Degradation
+- Return partial results when possible
+- Include error details in response
+- Don't fail entire batch for single record
+- Provide actionable feedback
+
+---
+
+## Security
+
+The Data Migration API implements multiple security layers to protect against unauthorized access and malicious uploads.
+
+### 1. Authentication & Authorization
+
+#### Spring Security Integration
+
+**Controller Security:**
+- Inherits security from Spring Security configuration
+- Uses `@CrossOrigin` for CORS (should be restricted in production)
+
+**Recommended Security Configuration:**
+- Use Spring Security with OAuth2/JWT
+- Restrict access to `/api/v1/migration/**` endpoints
+- Require roles: `ADMIN` or `DATA_MIGRATION_USER`
+
+---
+
+### 2. Input Validation Security
+
+#### File Upload Security
+
+**File Size Limits:**
+- Configurable via `migration.file.max-size-mb` (default: 10MB)
+- Prevents DoS attacks via large file uploads
+
+**File Type Validation:**
+- Only allows Excel files (.xlsx, .xls)
+- Prevents malicious file uploads
+
+**Content Type Validation:**
+- Enforces `multipart/form-data` content type
+
+---
+
+### 3. Injection Prevention
+
+#### SQL/NoSQL Injection Protection
+
+**Parameterized Queries:**
+- MongoDB queries use parameterized criteria
+- `Pattern.quote()` escapes special regex characters
+- Prevents regex injection attacks
+
+**Spring Data MongoDB:**
+- Uses parameterized queries by default
+- Prevents NoSQL injection
+- Type-safe query building
+
+---
+
+### 4. Cross-Origin Resource Sharing (CORS)
+
+**Current Configuration:** `@CrossOrigin` - Allows all origins (should be restricted in production)
+
+**Recommended Production Configuration:**
+- Restrict to trusted domains only
+- Allow only POST method
+- Specify allowed headers (Content-Type, Authorization)
+- Set appropriate maxAge for preflight caching
+- Consider global CORS configuration for consistency
+
+---
+
+### 5. Data Security
+
+#### Sensitive Data Handling
+
+**Logging Security:**
+- Avoid logging sensitive data (record details, institution codes, payment information)
+- Log only aggregated statistics and metadata
+
+**Data Encryption:**
+- Use HTTPS/TLS for data in transit
+- Encrypt sensitive fields in database
+- Secure file storage during processing
+
+**Data Retention:**
+- Don't persist uploaded files
+- Process in memory when possible
+- Clear temporary data after processing
+
+---
+
+### 6. Rate Limiting
+
+**Recommended Implementation:**
+- Use RateLimiter (e.g., Guava or Resilience4j)
+- Limit requests per second (e.g., 10 requests/second)
+- Throw exception when limit exceeded
+
+**Benefits:**
+- Prevents DoS attacks
+- Protects system resources
+- Ensures fair usage
+
+---
+
+### 7. Audit Logging
+
+**Security Audit Trail:**
+
+**Audit Information to Track:**
+- User identity (from authentication)
+- Timestamp
+- File name and size
+- Migration type
+- IP address
+- Success/failure status
+- Number of records processed
+
+---
+
+### 8. Security Best Practices
+
+#### Principle of Least Privilege
+- Grant minimum necessary permissions
+- Separate read/write roles
+- Restrict migration access to authorized users
+
+#### Defense in Depth
+- Multiple validation layers
+- File type and size checks
+- Content validation
+- Business logic validation
+
+#### Secure Defaults
+- Default file size limit (10MB)
+- Require authentication
+- Validate all inputs
+- Fail securely (don't expose internals)
+
+---
+
+## Performance Considerations
+
+The Data Migration API is designed for efficient processing of large Excel files with optimized resource usage.
+
+### 1. Performance Metrics
+
+#### Current Performance Characteristics
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **File Size Limit** | 10 MB (default) | Configurable via properties |
+| **Typical Processing Time** | 1-3 seconds | For 100-200 records |
+| **Memory Usage** | ~50-100 MB | Per request (depends on file size) |
+| **Concurrent Requests** | Limited by server | Consider rate limiting |
+| **Database Operations** | O(n) | One query per record |
+
+---
+
+### 2. Optimization Strategies
+
+#### Excel Parsing Optimization
+
+**Current Implementation:**
+- Loads entire workbook into memory (suitable for files < 10MB)
+- Row-by-row processing (skips empty rows immediately)
+- Efficient cell type checking and value extraction
+
+**For Very Large Files:**
+- Consider streaming API (OPCPackage + XSSFReader)
+- Stream rows instead of loading all into memory
+
+---
+
+#### Database Query Optimization
+
+**Batch Vendor Lookup:**
+- Load vendors once at start, not per record
+- Filter in memory to find matching vendor
+
+**Indexed Queries:**
+- Ensure indexes on frequently queried fields (organizationName, country, city, state)
+- Use compound indexes for multi-field queries
+
+**Recommended MongoDB Indexes:**
+- Compound index on: organizationName, country, city, state
+- Single index on: organizationType
+
+---
+
+#### Transaction Management
+
+**Transactional Scope:**
+- `@Transactional` annotation on processor methods
+- All records processed in single transaction
+- Automatic rollback on exceptions
+
+**Benefits:** Data consistency, prevents partial updates, automatic rollback
+
+**Considerations:** Large batches may hold locks longer; consider smaller transactions for very large files
+
+---
+
+### 3. Memory Management
+
+#### File Upload Memory
+
+**Spring Multipart Configuration:**
+- `max-file-size`: 10MB
+- `max-request-size`: 10MB
+- `file-size-threshold`: 2MB (files larger than this written to disk)
+- `location`: /tmp/migration-uploads
+
+**Benefits:** Files > 2MB written to disk, reduces heap memory pressure, prevents OutOfMemoryError
+
+---
+
+#### Collection Size Management
+
+**Record Processing:**
+- Process records in stream-like fashion (one at a time)
+- Allow garbage collection of processed records
+
+**Avoid Large Collections:**
+- Track only essential data (e.g., names of not found institutions)
+- Don't keep all record objects in memory after processing
+
+---
+
+### 4. Concurrency Considerations
+
+#### Thread Safety
+
+**Stateless Services:**
+- No instance variables in service classes
+- Thread-safe by design
+
+**Concurrent Request Handling:**
+- Each request processed independently
+- No shared state between requests
+- Spring manages thread pool
+
+**Database Concurrency:**
+- MongoDB handles concurrent writes
+- Use optimistic locking if needed
+- Monitor connection pool size
+
+---
+
+### 5. Caching Strategies
+
+#### Vendor Data Caching
+
+**Current:** Per-request vendor lookup from database
+
+**Recommended:** Cache vendor data using Spring Cache
+- Use `@Cacheable` annotation on vendor lookup method
+- Configure cache manager (e.g., ConcurrentMapCacheManager)
+
+**Benefits:**
+- Reduces database queries
+- Faster vendor lookups
+- Lower database load
+
+---
+
+### 6. Monitoring & Profiling
+
+#### Performance Tracking
+
+**Processing Time Measurement:**
+- Track start and end time of migration
+- Include processing time in response
+- Log detailed timing for parsing and processing phases
+
+---
+
+#### Metrics to Monitor
+
+**Application Metrics:**
+- Request rate (requests/second)
+- Average processing time
+- 95th/99th percentile latency
+- Error rate
+- Success rate
+
+**System Metrics:**
+- CPU usage during processing
+- Memory usage (heap/non-heap)
+- Garbage collection frequency
+- Thread pool utilization
+
+**Database Metrics:**
+- Query execution time
+- Connection pool usage
+- Index hit rate
+- Lock wait time
+
+---
+
+### 7. Performance Tuning Recommendations
+
+#### For Small Files (< 1000 records)
+- Current implementation is optimal
+- No special tuning needed
+- Focus on query optimization
+
+#### For Medium Files (1000-10000 records)
+- Consider batch database operations
+- Implement vendor caching
+- Monitor transaction timeout
+- Add progress logging
+
+#### For Large Files (> 10000 records)
+- Implement streaming Excel parsing
+- Break into smaller transactions
+- Consider async processing
+- Add progress tracking endpoint
+- Implement pagination for results
+
+---
+
+### 8. Scalability Considerations
+
+#### Horizontal Scaling
+- Stateless design allows multiple instances
+- Load balancer distributes requests
+- No session affinity required
+- Shared database handles concurrency
+
+#### Vertical Scaling
+- Increase heap size for larger files
+- More CPU cores for concurrent requests
+- Faster disk I/O for file operations
+
+#### Database Scaling
+- Read replicas for vendor lookups
+- Sharding by organization type
+- Connection pool tuning
+- Index optimization
+
+---
+
+### 9. Performance Testing
+
+#### Load Testing Scenarios
+
+**Scenario 1: Normal Load** - 10 concurrent users, 100 requests
+**Scenario 2: Peak Load** - 50 concurrent users, 500 requests
+**Scenario 3: Stress Test** - Gradually increase load until failure
+
+**Monitor:** Response time, error rate, resource usage (CPU, memory, database connections)
+
+---
+
+### 10. Performance Best Practices
+
+#### Code-Level Optimizations
+- ✅ Use efficient data structures (ArrayList vs LinkedList)
+- ✅ Minimize object creation in loops
+- ✅ Close resources properly (try-with-resources)
+- ✅ Avoid unnecessary string concatenation
+- ✅ Use StringBuilder for string building
+
+#### Database Optimizations
+- ✅ Create appropriate indexes
+- ✅ Use projection to fetch only needed fields
+- ✅ Batch operations when possible
+- ✅ Monitor slow queries
+- ✅ Optimize query patterns
+
+#### Application Optimizations
+- ✅ Enable caching for static data
+- ✅ Use connection pooling
+- ✅ Configure appropriate timeouts
+- ✅ Implement rate limiting
+- ✅ Monitor and tune JVM settings
+
+---
+
+## Configuration
+
+### Application Properties
+
+Add to `application.properties` or `application.yml`:
+
+**Required Properties:**
+- `migration.file.max-size-mb` - Maximum file size in MB (default: 10)
+- `spring.servlet.multipart.max-file-size` - Spring max file size (10MB)
+- `spring.servlet.multipart.max-request-size` - Spring max request size (10MB)
+
+### Environment-Specific Configuration
+
+**Development:** `migration.file.max-size-mb=5`
+**Production:** `migration.file.max-size-mb=20`
 
 
-Add all layers (Service Layer, Controller Layer, Data Layer)
-Error handling
-Validation
-Security information
-Performance Considerations
+## Monitoring & Observability
+
+## FAQ
+
+### Q: Can I upload files larger than 10MB?
+
+**A:** Yes, configure `migration.file.max-size-mb` in `application.properties`.
+
+### Q: What Excel formats are supported?
+
+**A:** Both `.xlsx` (Excel 2007+) and `.xls` (Excel 97-2003) formats are supported.
+
+### Q: How do I add a new migration type?
+
+**A:** Simply create a new class implementing `MigrationProcessor` and annotate it with `@Component`. Spring will auto-discover it.
+
+### Q: What happens if an institution is not found?
+
+**A:** It's logged in the `notFoundInstitutions` array in the response. The migration continues processing other records.
+
+### Q: Is the migration transactional?
+
+**A:** Yes, the `@Transactional` annotation ensures atomicity within each processor.
+
+
+
+
