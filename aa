@@ -1,107 +1,169 @@
-// Create license_source collection with schema validation
-db.createCollection("license_source", {
-    validator: {
-        $jsonSchema: {
-            bsonType: "object",
-            required: ["HON", "SCOPE", "LICENSE_TYPE", "GOVERNING_AGENCY"],
-            properties: {
-                _id: {
-                    bsonType: "objectId",
-                    description: "Unique identifier for the license source"
-                },
-                HON: {
-                    bsonType: "string",
-                    description: "HireRight Organization Number - required"
-                },
-                SCOPE: {
-                    bsonType: "string",
-                    enum: ["GLOBAL", "NATIONAL", "STATE"],
-                    description: "Scope of the license - required"
-                },
-                COUNTRY: {
-                    bsonType: ["string", "null"],
-                    description: "Country name (required for GLOBAL and STATE scopes)"
-                },
-                STATE: {
-                    bsonType: ["string", "null"],
-                    description: "State name (required for STATE scope)"
-                },
-                LICENSE_TYPE: {
-                    bsonType: "string",
-                    description: "Type of license - required"
-                },
-                WEB_ADDRESS: {
-                    bsonType: ["string", "null"],
-                    description: "Website URL for the licensing authority"
-                },
-                PHONE_EMAIL: {
-                    bsonType: ["string", "null"],
-                    description: "Contact phone number and/or email"
-                },
-                FAX: {
-                    bsonType: ["string", "null"],
-                    description: "Fax number"
-                },
-                GOVERNING_AGENCY: {
-                    bsonType: "string",
-                    description: "Name of the governing agency - required"
-                },
-                MULTI_STATE: {
-                    bsonType: ["string", "null"],
-                    description: "Multi-state privileges information (for STATE scope)"
-                },
-                EXPIRATION: {
-                    bsonType: ["string", "null"],
-                    description: "Expiration information"
-                },
-                LICENSE_STATUS: {
-                    bsonType: ["string", "null"],
-                    description: "License status information"
-                },
-                DISCIPLINARY_ACTIONS: {
-                    bsonType: ["string", "null"],
-                    description: "Disciplinary actions information"
-                },
-                ADDITIONAL_INFORMATION: {
-                    bsonType: ["string", "null"],
-                    description: "Additional information"
-                },
-                ADDITIONAL_INFORMATION_CONTINUED: {
-                    bsonType: ["string", "null"],
-                    description: "Continuation of additional information"
-                },
-                DATE_LAST_MODIFIED: {
-                    bsonType: ["date", "null"],
-                    description: "Date when the record was last modified"
-                },
-                CREATED_DATE: {
-                    bsonType: ["date", "null"],
-                    description: "Date when the record was created"
-                },
-                UPDATED_DATE: {
-                    bsonType: ["date", "null"],
-                    description: "Date when the record was last updated"
-                },
-                ACTIVE: {
-                    bsonType: ["bool", "null"],
-                    description: "Whether the license source is active"
-                }
-            }
+package com.hireright.sourceintelligence.api.v1;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
+
+import static com.hireright.sourceintelligence.api.ApiConstants.ApiPath.BASE_SOURCE_INTELLIGENCE_SERVICE_V1_API_PATH;
+
+@RequestMapping(value = BASE_SOURCE_INTELLIGENCE_SERVICE_V1_API_PATH + "/migration")
+@Tag(name = "Parchment Migration", description = "Endpoints for Parchment Exchange data migration")
+public interface ParchmentMigrationApi {
+
+    @Operation(
+        summary = "Upload Excel file for Parchment Exchange migration",
+        description = "Upload an Excel file containing Parchment Exchange institution data to update source organizations",
+        responses = {
+            @ApiResponse(
+                description = "File processed successfully",
+                responseCode = "200",
+                content = @Content(
+                    mediaType = "application/json",
+                    schema = @Schema(implementation = Map.class)
+                )
+            ),
+            @ApiResponse(
+                description = "Invalid file format or empty file",
+                responseCode = "400",
+                content = @Content(
+                    mediaType = "application/json",
+                    schema = @Schema(implementation = Map.class)
+                )
+            ),
+            @ApiResponse(
+                description = "Internal server error",
+                responseCode = "500",
+                content = @Content(
+                    mediaType = "application/json",
+                    schema = @Schema(implementation = Map.class)
+                )
+            )
         }
-    },
-    validationLevel: "moderate",
-    validationAction: "warn"
-});
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping(
+        value = "/upload",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+        produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    ResponseEntity<Map<String, Object>> uploadExcelFile(
+        @RequestParam("file") MultipartFile file
+    );
 
-// Create indexes for better query performance
-db.license_source.createIndex({ "HON": 1 }, { unique: true, name: "idx_hon_unique" });
-db.license_source.createIndex({ "SCOPE": 1 }, { name: "idx_scope" });
-db.license_source.createIndex({ "COUNTRY": 1 }, { name: "idx_country" });
-db.license_source.createIndex({ "STATE": 1 }, { name: "idx_state" });
-db.license_source.createIndex({ "LICENSE_TYPE": 1 }, { name: "idx_license_type" });
-db.license_source.createIndex({ "GOVERNING_AGENCY": 1 }, { name: "idx_governing_agency" });
-db.license_source.createIndex({ "SCOPE": 1, "COUNTRY": 1 }, { name: "idx_scope_country" });
-db.license_source.createIndex({ "SCOPE": 1, "STATE": 1 }, { name: "idx_scope_state" });
-db.license_source.createIndex({ "ACTIVE": 1 }, { name: "idx_active" });
+    @Operation(
+        summary = "Health check for migration service",
+        description = "Check if the Parchment Exchange migration service is running",
+        responses = {
+            @ApiResponse(
+                description = "Service is up and running",
+                responseCode = "200",
+                content = @Content(
+                    mediaType = "application/json",
+                    schema = @Schema(implementation = Map.class)
+                )
+            )
+        }
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping(
+        value = "/health",
+        produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    ResponseEntity<Map<String, String>> health();
+}
 
-print("license_source collection created successfully with schema validation and indexes");
+
+package com.hireright.sourceintelligence.api.v1;
+
+import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.service.impl.ExcelParserService;
+import com.hireright.sourceintelligence.service.impl.MigrationService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Slf4j
+@RestController
+@RequiredArgsConstructor
+@Validated
+@CrossOrigin
+public class ParchmentMigrationApiController implements ParchmentMigrationApi {
+
+    private final ExcelParserService excelParserService;
+    private final MigrationService migrationService;
+
+    @Override
+    public ResponseEntity<Map<String, Object>> uploadExcelFile(MultipartFile file) {
+        log.info("Received file upload request: {}", file.getOriginalFilename());
+
+        try {
+            if (file.isEmpty()) {
+                return ResponseEntity.badRequest()
+                    .body(createErrorResponse("File is empty"));
+            }
+
+            String filename = file.getOriginalFilename();
+            if (filename == null || (!filename.endsWith(".xlsx") && !filename.endsWith(".xls"))) {
+                return ResponseEntity.badRequest()
+                    .body(createErrorResponse("Invalid file format. Please upload an Excel file (.xlsx or .xls)"));
+            }
+
+            log.info("Parsing Excel file: {}", filename);
+            List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+
+            if (records.isEmpty()) {
+                return ResponseEntity.badRequest()
+                    .body(createErrorResponse("No records found in the Excel file"));
+            }
+
+            log.info("Found {} records in Excel file", records.size());
+
+            Map<String, Object> result = migrationService.processInstitutionRecords(records);
+
+            result.put("status", "success");
+            result.put("message", "File processed successfully");
+            result.put("filename", filename);
+
+            log.info("Processing completed successfully");
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            log.error("Error processing file", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(createErrorResponse("Error processing file: " + e.getMessage()));
+        }
+    }
+
+    @Override
+    public ResponseEntity<Map<String, String>> health() {
+        Map<String, String> response = new HashMap<>();
+        response.put("status", "UP");
+        response.put("service", "Parchment Exchange Migration Service");
+        return ResponseEntity.ok(response);
+    }
+
+    private Map<String, Object> createErrorResponse(String message) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "error");
+        response.put("message", message);
+        return response;
+    }
+}
+
