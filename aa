@@ -1,411 +1,653 @@
-package com.hireright.sourceintelligence.service.migration;
+package com.hireright.sourceintelligence.api.v1;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.api.dto.MigrationResponseDTO;
+import com.hireright.sourceintelligence.service.impl.ExcelParserService;
+import com.hireright.sourceintelligence.service.impl.MigrationService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests for DataMigrationApiController.
+ * Tests all validation, error handling, and success scenarios.
+ */
+@ExtendWith(MockitoExtension.class)
+class DataMigrationApiControllerTest {
+
+    @Mock
+    private ExcelParserService excelParserService;
+
+    @Mock
+    private MigrationService migrationService;
+
+    @InjectMocks
+    private DataMigrationApiController controller;
+
+    private MockMultipartFile validFile;
+    private List<InstitutionRecord> sampleRecords;
+    private Map<String, Object> sampleProcessingResult;
+
+    @BeforeEach
+    void setUp() {
+        // Set max file size to 10MB
+        ReflectionTestUtils.setField(controller, "maxFileSizeMb", 10);
+
+        // Create valid test file
+        validFile = new MockMultipartFile(
+                "file",
+                "test-migration.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "test content".getBytes()
+        );
+
+        // Create sample institution records
+        sampleRecords = Arrays.asList(
+                InstitutionRecord.builder()
+                        .institutionName("Harvard University")
+                        .country("USA")
+                        .city("Cambridge")
+                        .stateCountyRegion("MA")
+                        .serviceProvider("Parchment Exchange")
+                        .surchargeAmount("5.00")
+                        .paymentMethod("Credit Card")
+                        .code("HARV001")
+                        .turnaroundTime("3")
+                        .followUpAllowed("Yes")
+                        .build(),
+                InstitutionRecord.builder()
+                        .institutionName("MIT")
+                        .country("USA")
+                        .city("Cambridge")
+                        .stateCountyRegion("MA")
+                        .serviceProvider("Parchment Exchange")
+                        .surchargeAmount("5.00")
+                        .paymentMethod("Credit Card")
+                        .code("MIT001")
+                        .turnaroundTime("3")
+                        .followUpAllowed("Yes")
+                        .build()
+        );
+
+        // Create sample processing result
+        sampleProcessingResult = new HashMap<>();
+        sampleProcessingResult.put("totalRecords", 2);
+        sampleProcessingResult.put("updatedRecords", 2);
+        sampleProcessingResult.put("notFoundRecords", 0);
+        sampleProcessingResult.put("notFoundInstitutions", new ArrayList<>());
+    }
+
+    @Test
+    void testUploadExcelFile_Success() throws IOException {
+        // Arrange
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+        when(excelParserService.parseExcelFile(any(MultipartFile.class))).thenReturn(sampleRecords);
+        when(migrationService.processInstitutionRecords(anyList(), eq("parchment")))
+                .thenReturn(sampleProcessingResult);
+
+        // Act
+        ResponseEntity<MigrationResponseDTO> response = controller.uploadExcelFile(validFile, "parchment");
+
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("success", response.getBody().getStatus());
+        assertEquals("File processed successfully", response.getBody().getMessage());
+        assertEquals("parchment", response.getBody().getMigrationType());
+        assertEquals("test-migration.xlsx", response.getBody().getFilename());
+        assertEquals(2, response.getBody().getTotalRecords());
+        assertEquals(2, response.getBody().getUpdatedRecords());
+        assertEquals(0, response.getBody().getNotFoundRecords());
+        assertNotNull(response.getBody().getProcessingTimeMs());
+
+        // Verify interactions
+        verify(migrationService).isMigrationTypeSupported("parchment");
+        verify(excelParserService).parseExcelFile(validFile);
+        verify(migrationService).processInstitutionRecords(sampleRecords, "parchment");
+    }
+
+    @Test
+    void testUploadExcelFile_UnsupportedMigrationType() {
+        // Arrange
+        when(migrationService.isMigrationTypeSupported("unknown")).thenReturn(false);
+        when(migrationService.getSupportedMigrationTypes()).thenReturn("parchment");
+
+        // Act & Assert
+        assertThrows(Exception.class, () -> {
+            controller.uploadExcelFile(validFile, "unknown");
+        });
+
+        verify(migrationService).isMigrationTypeSupported("unknown");
+        verify(migrationService).getSupportedMigrationTypes();
+        verifyNoInteractions(excelParserService);
+    }
+
+    @Test
+    void testUploadExcelFile_EmptyFile() {
+        // Arrange
+        MockMultipartFile emptyFile = new MockMultipartFile(
+                "file",
+                "empty.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                new byte[0]
+        );
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+
+        // Act & Assert
+        assertThrows(Exception.class, () -> {
+            controller.uploadExcelFile(emptyFile, "parchment");
+        });
+
+        verify(migrationService).isMigrationTypeSupported("parchment");
+        verifyNoInteractions(excelParserService);
+    }
+
+    @Test
+    void testUploadExcelFile_FileTooLarge() {
+        // Arrange
+        byte[] largeContent = new byte[11 * 1024 * 1024]; // 11MB
+        MockMultipartFile largeFile = new MockMultipartFile(
+                "file",
+                "large.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                largeContent
+        );
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+
+        // Act & Assert
+        assertThrows(Exception.class, () -> {
+            controller.uploadExcelFile(largeFile, "parchment");
+        });
+
+        verify(migrationService).isMigrationTypeSupported("parchment");
+        verifyNoInteractions(excelParserService);
+    }
+
+    @Test
+    void testUploadExcelFile_InvalidFileFormat() {
+        // Arrange
+        MockMultipartFile invalidFile = new MockMultipartFile(
+                "file",
+                "test.txt",
+                "text/plain",
+                "test content".getBytes()
+        );
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+
+        // Act & Assert
+        assertThrows(Exception.class, () -> {
+            controller.uploadExcelFile(invalidFile, "parchment");
+        });
+
+        verify(migrationService).isMigrationTypeSupported("parchment");
+        verifyNoInteractions(excelParserService);
+    }
+
+    @Test
+    void testUploadExcelFile_NoRecordsFound() throws IOException {
+        // Arrange
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+        when(excelParserService.parseExcelFile(any(MultipartFile.class))).thenReturn(Collections.emptyList());
+
+        // Act & Assert
+        assertThrows(Exception.class, () -> {
+            controller.uploadExcelFile(validFile, "parchment");
+        });
+
+        verify(migrationService).isMigrationTypeSupported("parchment");
+        verify(excelParserService).parseExcelFile(validFile);
+        verify(migrationService, never()).processInstitutionRecords(anyList(), anyString());
+    }
+
+    @Test
+    void testUploadExcelFile_ParseError() throws IOException {
+        // Arrange
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+        when(excelParserService.parseExcelFile(any(MultipartFile.class)))
+                .thenThrow(new IOException("Failed to parse Excel file"));
+
+        // Act & Assert
+        assertThrows(Exception.class, () -> {
+            controller.uploadExcelFile(validFile, "parchment");
+        });
+
+        verify(migrationService).isMigrationTypeSupported("parchment");
+        verify(excelParserService).parseExcelFile(validFile);
+        verify(migrationService, never()).processInstitutionRecords(anyList(), anyString());
+    }
+
+    @Test
+    void testUploadExcelFile_ProcessingError() throws IOException {
+        // Arrange
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+        when(excelParserService.parseExcelFile(any(MultipartFile.class))).thenReturn(sampleRecords);
+        when(migrationService.processInstitutionRecords(anyList(), eq("parchment")))
+                .thenThrow(new RuntimeException("Database connection failed"));
+
+        // Act & Assert
+        assertThrows(Exception.class, () -> {
+            controller.uploadExcelFile(validFile, "parchment");
+        });
+
+        verify(migrationService).isMigrationTypeSupported("parchment");
+        verify(excelParserService).parseExcelFile(validFile);
+        verify(migrationService).processInstitutionRecords(sampleRecords, "parchment");
+    }
+
+    @Test
+    void testUploadExcelFile_PartialSuccess() throws IOException {
+        // Arrange
+        Map<String, Object> partialResult = new HashMap<>();
+        partialResult.put("totalRecords", 2);
+        partialResult.put("updatedRecords", 1);
+        partialResult.put("notFoundRecords", 1);
+        partialResult.put("notFoundInstitutions", Arrays.asList("Unknown University"));
+
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+        when(excelParserService.parseExcelFile(any(MultipartFile.class))).thenReturn(sampleRecords);
+        when(migrationService.processInstitutionRecords(anyList(), eq("parchment")))
+                .thenReturn(partialResult);
+
+        // Act
+        ResponseEntity<MigrationResponseDTO> response = controller.uploadExcelFile(validFile, "parchment");
+
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("success", response.getBody().getStatus());
+        assertEquals(2, response.getBody().getTotalRecords());
+        assertEquals(1, response.getBody().getUpdatedRecords());
+        assertEquals(1, response.getBody().getNotFoundRecords());
+        assertEquals(1, response.getBody().getNotFoundInstitutions().size());
+        assertEquals("Unknown University", response.getBody().getNotFoundInstitutions().get(0));
+    }
+
+    @Test
+    void testUploadExcelFile_DefaultMigrationType() throws IOException {
+        // Arrange
+        when(migrationService.isMigrationTypeSupported("parchment")).thenReturn(true);
+        when(excelParserService.parseExcelFile(any(MultipartFile.class))).thenReturn(sampleRecords);
+        when(migrationService.processInstitutionRecords(anyList(), eq("parchment")))
+                .thenReturn(sampleProcessingResult);
+
+        // Act - not specifying migration type should default to "parchment"
+        ResponseEntity<MigrationResponseDTO> response = controller.uploadExcelFile(validFile, "parchment");
+
+        // Assert
+        assertNotNull(response);
+        assertEquals("parchment", response.getBody().getMigrationType());
+    }
+}
+
+
+
+package com.hireright.sourceintelligence.api.v1;
+
+import com.hireright.sourceintelligence.api.dto.MigrationResponseDTO;
 import com.hireright.sourceintelligence.domain.entity.Source;
 import com.hireright.sourceintelligence.domain.entity.Vendors;
 import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
-import com.hireright.sourceintelligence.util.Helper;
-import com.hireright.sourceintelligence.util.StateMapper;
-import com.mongodb.BasicDBList;
-import com.mongodb.BasicDBObject;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
-import java.util.*;
+import java.io.ByteArrayOutputStream;
+import java.util.Collections;
 
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Processor for Parchment Exchange migration data.
- * Handles the specific logic for updating source organizations with Parchment Exchange contact information.
+ * Integration tests for Data Migration API.
+ * Tests the complete flow from controller to service to processor.
  */
-@Slf4j
-@Component
-@RequiredArgsConstructor
-public class ParchmentMigrationProcessor implements MigrationProcessor {
-    
-    private final VendorsRepository vendorsRepository;
-    private final MongoTemplate mongoTemplate;
-    
-    private static final String MIGRATION_TYPE = "parchment";
-    private static final String PARCHMENT_EXCHANGE = "Parchment Exchange";
-    private static final String CONTACT_TYPE_AUTOMATED_SERVICES = "contactAutomatedServices";
-    private static final String SOURCE_TYPE_EDUCATION = "Education";
-    private static final String CURRENCY_USD = "USD";
-    private static final String TIME_UNIT_DAYS = "days";
+@SpringBootTest
+@AutoConfigureMockMvc
+class DataMigrationApiIntegrationTest {
 
-    @Override
-    public String getMigrationType() {
-        return MIGRATION_TYPE;
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private VendorsRepository vendorsRepository;
+
+    @MockBean
+    private MongoTemplate mongoTemplate;
+
+    private Vendors parchmentVendor;
+
+    @BeforeEach
+    void setUp() {
+        parchmentVendor = new Vendors();
+        parchmentVendor.setVendor("Parchment Exchange");
+        parchmentVendor.setProviderId(123);
+        parchmentVendor.setWebsite("https://www.parchment.com");
     }
 
-    @Override
-    @Transactional
-    public Map<String, Object> processInstitutionRecords(List<InstitutionRecord> records) {
-        int totalRecords = records.size();
-        int updatedRecords = 0;
-        int notFoundRecords = 0;
-        List<String> notFoundInstitutions = new ArrayList<>();
-
-        // Find vendor by name
-        List<Vendors> vendors = vendorsRepository.findAll();
-        Vendors vendor = vendors.stream()
-            .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor()))
-            .findFirst()
-            .orElseThrow(() -> new RuntimeException("Vendor 'Parchment Exchange' not found in database"));
-
-        log.info("Found vendor: {} with providerId: {}", vendor.getVendor(), vendor.getProviderId());
-
-        // Map to store sources to be saved, grouped by collection name
-        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
-
-        for (InstitutionRecord record : records) {
-            try {
-                Source updatedSource = processInstitutionRecord(record, vendor);
-                if (updatedSource != null) {
-                    updatedRecords++;
-
-                    // Group sources by collection name for bulk save
-                    String collectionName = Helper.getCollectionName(updatedSource.getHon(), SOURCE_COLLECTION_SUFFIX);
-                    sourcesToSaveByCollection
-                        .computeIfAbsent(collectionName, k -> new ArrayList<>())
-                        .add(updatedSource);
-
-                    log.debug("Prepared institution for bulk save: {} (HON: {})",
-                        updatedSource.getOrganizationName(), updatedSource.getHon());
-                } else {
-                    notFoundRecords++;
-                    notFoundInstitutions.add(record.getInstitutionName());
-                }
-            } catch (Exception e) {
-                log.error("Error processing record: {}", record.getInstitutionName(), e);
-                notFoundRecords++;
-                notFoundInstitutions.add(record.getInstitutionName() + " (Error: " + e.getMessage() + ")");
-            }
-        }
-
-        // Perform bulk save operations for each collection
-        performBulkSave(sourcesToSaveByCollection);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("totalRecords", totalRecords);
-        result.put("updatedRecords", updatedRecords);
-        result.put("notFoundRecords", notFoundRecords);
-        result.put("notFoundInstitutions", notFoundInstitutions);
-
-        log.info("Processing complete. Total: {}, Updated: {}, Not Found: {}",
-            totalRecords, updatedRecords, notFoundRecords);
-
-        return result;
-    }
-
-    /**
-     * Perform bulk save operations for all collections.
-     * This significantly improves performance by reducing database round trips.
-     * Uses MongoDB bulk operations for efficient batch processing.
-     *
-     * @param sourcesToSaveByCollection Map of collection names to lists of sources to save
-     */
-    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
-        for (Map.Entry<String, List<Source>> entry : sourcesToSaveByCollection.entrySet()) {
-            String collectionName = entry.getKey();
-            List<Source> sources = entry.getValue();
-
-            if (!sources.isEmpty()) {
-                log.info("Performing bulk save of {} sources to collection: {}", sources.size(), collectionName);
-
-                try {
-                    // Use MongoDB's bulkOps for efficient batch operations
-                    var bulkOps = mongoTemplate.bulkOps(
-                        org.springframework.data.mongodb.core.BulkOperations.BulkMode.UNORDERED,
-                        collectionName
-                    );
-
-                    for (Source source : sources) {
-                        // Create query to find existing document by _id
-                        Query query = new Query(Criteria.where("_id").is(source.getId()));
-
-                        // Create update from source object
-                        org.springframework.data.mongodb.core.query.Update update =
-                            new org.springframework.data.mongodb.core.query.Update();
-
-                        // Map all fields from source to update
-                        update.set("hon", source.getHon());
-                        update.set("organizationName", source.getOrganizationName());
-                        update.set("city", source.getCity());
-                        update.set("country", source.getCountry());
-                        update.set("state", source.getState());
-                        update.set("payload", source.getPayload());
-                        // Add other fields as needed
-
-                        // Upsert: update if exists, insert if not
-                        bulkOps.upsert(query, update);
-                    }
-
-                    // Execute bulk operation
-                    var result = bulkOps.execute();
-
-                    log.info("Successfully saved {} sources to collection: {} (Modified: {}, Upserted: {})",
-                        sources.size(), collectionName, result.getModifiedCount(), result.getUpserts().size());
-
-                } catch (Exception e) {
-                    log.error("Error during bulk save to collection: {}", collectionName, e);
-
-                    // Fallback to individual saves if bulk operation fails
-                    log.warn("Falling back to individual saves for collection: {}", collectionName);
-                    for (Source source : sources) {
-                        try {
-                            mongoTemplate.save(source, collectionName);
-                        } catch (Exception saveEx) {
-                            log.error("Failed to save source: {} (HON: {})",
-                                source.getOrganizationName(), source.getHon(), saveEx);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Process a single institution record and return the updated source.
-     * Returns null if the institution is not found.
-     *
-     * @param record Institution record to process
-     * @param vendor Parchment vendor information
-     * @return Updated Source object, or null if not found
-     */
-    private Source processInstitutionRecord(InstitutionRecord record, Vendors vendor) {
-        String stateFullName = StateMapper.getFullName(record.getStateCountyRegion());
-        if (stateFullName.isEmpty() && !record.getStateCountyRegion().isEmpty()) {
-            stateFullName = record.getStateCountyRegion();
-        }
-
-        log.debug("Searching for institution: {}, City: {}, Country: {}, State: {}",
-            record.getInstitutionName(), record.getCity(), record.getCountry(), stateFullName);
-
-        // Search for source using MongoTemplate with regex for case-insensitive search
-        Query query = new Query();
-        query.addCriteria(Criteria.where("organizationName").regex("^" + record.getInstitutionName() + "$", "i")
-            .and("city").regex("^" + record.getCity() + "$", "i")
-            .and("country").regex("^" + record.getCountry() + "$", "i")
-            .and("state").is(stateFullName));
-
-        // Search across all education source collections
-        Source source = mongoTemplate.findOne(query, Source.class, "education_source");
-
-        if (source == null) {
-            log.warn("Institution not found: {}", record.getInstitutionName());
-            return null;
-        }
-
-        log.info("Found matching institution: {} (HON: {})", source.getOrganizationName(), source.getHon());
-
-        updateParchmentExchangeContact(source, record, vendor);
-
-        return source;
-    }
-
-    private void updateParchmentExchangeContact(Source source, InstitutionRecord record, Vendors vendor) {
-        BasicDBObject payload = (BasicDBObject) source.getPayload();
-        if (payload == null) {
-            payload = new BasicDBObject();
-            source.setPayload(payload);
-        }
-
-        BasicDBList contacts = (BasicDBList) payload.get("contacts");
-        if (contacts == null) {
-            contacts = new BasicDBList();
-            payload.put("contacts", contacts);
-        }
-
-        BasicDBObject contact;
-        if (contacts.isEmpty()) {
-            contact = new BasicDBObject();
-            contact.put("purpose", "");
-            contact.put("purposeRule", new BasicDBList());
-            contact.put("contactDetails", new BasicDBList());
-            contacts.add(contact);
-        } else {
-            contact = (BasicDBObject) contacts.get(0);
-        }
+    @Test
+    void testUploadExcelFile_EndToEnd_Success() throws Exception {
+        // Arrange
+        MockMultipartFile file = createValidExcelFile();
         
-        BasicDBList contactDetails = (BasicDBList) contact.get("contactDetails");
-        if (contactDetails == null) {
-            contactDetails = new BasicDBList();
-            contact.put("contactDetails", contactDetails);
-        }
+        when(vendorsRepository.findAll()).thenReturn(Collections.singletonList(parchmentVendor));
+        
+        Source mockSource = createMockSource("EDU123", "Harvard University");
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), anyString()))
+                .thenReturn(mockSource);
 
-        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_TYPE_AUTOMATED_SERVICES);
+        // Act & Assert
+        MvcResult result = mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(file)
+                        .param("type", "parchment")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("success"))
+                .andExpect(jsonPath("$.message").value("File processed successfully"))
+                .andExpect(jsonPath("$.migrationType").value("parchment"))
+                .andExpect(jsonPath("$.filename").value("migration.xlsx"))
+                .andExpect(jsonPath("$.totalRecords").value(1))
+                .andExpect(jsonPath("$.updatedRecords").value(1))
+                .andExpect(jsonPath("$.notFoundRecords").value(0))
+                .andExpect(jsonPath("$.processingTimeMs").exists())
+                .andReturn();
 
-        if (automatedServicesContact == null) {
-            int maxPriority = getMaxPriority(contactDetails);
-            int newPriority = maxPriority + 1;
-
-            automatedServicesContact = createAutomatedServicesContact(newPriority);
-            contactDetails.add(automatedServicesContact);
-            log.debug("Created new contactAutomatedServices with priority: {}", newPriority);
-        }
-
-        updateParchmentExchangeCommunication(automatedServicesContact, record, vendor);
+        verify(vendorsRepository).findAll();
+        verify(mongoTemplate).findOne(any(Query.class), eq(Source.class), anyString());
+        // Verify bulk operations were used instead of individual save
+        verify(mongoTemplate).bulkOps(any(), anyString());
     }
 
-    private BasicDBObject findContactDetailByType(BasicDBList contactDetails, String type) {
-        for (Object obj : contactDetails) {
-            BasicDBObject cd = (BasicDBObject) obj;
-            if (type.equals(cd.get("type"))) {
-                return cd;
+    @Test
+    void testUploadExcelFile_UnsupportedMigrationType() throws Exception {
+        // Arrange
+        MockMultipartFile file = createValidExcelFile();
+
+        // Act & Assert
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(file)
+                        .param("type", "unknown")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").exists())
+                .andExpect(jsonPath("$.message").exists());
+
+        verifyNoInteractions(vendorsRepository);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    @Test
+    void testUploadExcelFile_EmptyFile() throws Exception {
+        // Arrange
+        MockMultipartFile emptyFile = new MockMultipartFile(
+                "file",
+                "empty.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                new byte[0]
+        );
+
+        // Act & Assert
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(emptyFile)
+                        .param("type", "parchment")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("109_40018"));
+
+        verifyNoInteractions(vendorsRepository);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    @Test
+    void testUploadExcelFile_InvalidFileFormat() throws Exception {
+        // Arrange
+        MockMultipartFile invalidFile = new MockMultipartFile(
+                "file",
+                "test.txt",
+                "text/plain",
+                "This is not an Excel file".getBytes()
+        );
+
+        // Act & Assert
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(invalidFile)
+                        .param("type", "parchment")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("109_40019"));
+
+        verifyNoInteractions(vendorsRepository);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    @Test
+    void testUploadExcelFile_FileTooLarge() throws Exception {
+        // Arrange - Create a file larger than 10MB
+        byte[] largeContent = new byte[11 * 1024 * 1024]; // 11MB
+        MockMultipartFile largeFile = new MockMultipartFile(
+                "file",
+                "large.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                largeContent
+        );
+
+        // Act & Assert
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(largeFile)
+                        .param("type", "parchment")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("109_40022"));
+
+        verifyNoInteractions(vendorsRepository);
+        verifyNoInteractions(mongoTemplate);
+    }
+
+    @Test
+    void testUploadExcelFile_InstitutionNotFound() throws Exception {
+        // Arrange
+        MockMultipartFile file = createValidExcelFile();
+        
+        when(vendorsRepository.findAll()).thenReturn(Collections.singletonList(parchmentVendor));
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), anyString()))
+                .thenReturn(null); // Institution not found
+
+        // Act & Assert
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(file)
+                        .param("type", "parchment")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("success"))
+                .andExpect(jsonPath("$.totalRecords").value(1))
+                .andExpect(jsonPath("$.updatedRecords").value(0))
+                .andExpect(jsonPath("$.notFoundRecords").value(1))
+                .andExpect(jsonPath("$.notFoundInstitutions[0]").value("Harvard University"));
+
+        verify(vendorsRepository).findAll();
+        verify(mongoTemplate).findOne(any(Query.class), eq(Source.class), anyString());
+        verify(mongoTemplate, never()).save(any(Source.class), anyString());
+    }
+
+    @Test
+    void testUploadExcelFile_DefaultMigrationType() throws Exception {
+        // Arrange
+        MockMultipartFile file = createValidExcelFile();
+        
+        when(vendorsRepository.findAll()).thenReturn(Collections.singletonList(parchmentVendor));
+        
+        Source mockSource = createMockSource("EDU123", "Harvard University");
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), anyString()))
+                .thenReturn(mockSource);
+
+        // Act & Assert - Not specifying type parameter should default to "parchment"
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(file)
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.migrationType").value("parchment"));
+    }
+
+    @Test
+    void testUploadExcelFile_VendorNotFound() throws Exception {
+        // Arrange
+        MockMultipartFile file = createValidExcelFile();
+        
+        when(vendorsRepository.findAll()).thenReturn(Collections.emptyList());
+
+        // Act & Assert
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(file)
+                        .param("type", "parchment")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.errorCode").value("109_50019"));
+
+        verify(vendorsRepository).findAll();
+        verifyNoMoreInteractions(mongoTemplate);
+    }
+
+    @Test
+    void testUploadExcelFile_MultipleRecords() throws Exception {
+        // Arrange
+        MockMultipartFile file = createExcelFileWithMultipleRecords();
+        
+        when(vendorsRepository.findAll()).thenReturn(Collections.singletonList(parchmentVendor));
+        
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), anyString()))
+                .thenReturn(source1, source2);
+
+        // Act & Assert
+        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
+                        .file(file)
+                        .param("type", "parchment")
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalRecords").value(2))
+                .andExpect(jsonPath("$.updatedRecords").value(2))
+                .andExpect(jsonPath("$.notFoundRecords").value(0));
+
+        // Verify bulk operations were used
+        verify(mongoTemplate).bulkOps(any(), anyString());
+    }
+
+    // Helper methods
+
+    private MockMultipartFile createValidExcelFile() throws Exception {
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("Sheet1");
+
+        // Header row
+        Row headerRow = sheet.createRow(0);
+        String[] headers = {"Institution Name", "Country", "City", "State/County/Region",
+                "Service Provider", "Surcharge Amount", "Payment Method", "Code",
+                "Turnaround Time", "Follow Up Allowed"};
+        for (int i = 0; i < headers.length; i++) {
+            headerRow.createCell(i).setCellValue(headers[i]);
+        }
+
+        // Data row
+        Row dataRow = sheet.createRow(1);
+        dataRow.createCell(0).setCellValue("Harvard University");
+        dataRow.createCell(1).setCellValue("USA");
+        dataRow.createCell(2).setCellValue("Cambridge");
+        dataRow.createCell(3).setCellValue("MA");
+        dataRow.createCell(4).setCellValue("Parchment Exchange");
+        dataRow.createCell(5).setCellValue("5.00");
+        dataRow.createCell(6).setCellValue("Credit Card");
+        dataRow.createCell(7).setCellValue("HARV001");
+        dataRow.createCell(8).setCellValue("3");
+        dataRow.createCell(9).setCellValue("Yes");
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        workbook.write(outputStream);
+        workbook.close();
+
+        return new MockMultipartFile(
+                "file",
+                "migration.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                outputStream.toByteArray()
+        );
+    }
+
+    private MockMultipartFile createExcelFileWithMultipleRecords() throws Exception {
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("Sheet1");
+
+        // Header row
+        Row headerRow = sheet.createRow(0);
+        String[] headers = {"Institution Name", "Country", "City", "State/County/Region",
+                "Service Provider", "Surcharge Amount", "Payment Method", "Code",
+                "Turnaround Time", "Follow Up Allowed"};
+        for (int i = 0; i < headers.length; i++) {
+            headerRow.createCell(i).setCellValue(headers[i]);
+        }
+
+        // Data rows
+        String[][] data = {
+                {"Harvard University", "USA", "Cambridge", "MA", "Parchment Exchange", "5.00", "Credit Card", "HARV001", "3", "Yes"},
+                {"MIT", "USA", "Cambridge", "MA", "Parchment Exchange", "5.00", "Credit Card", "MIT001", "3", "Yes"}
+        };
+
+        for (int i = 0; i < data.length; i++) {
+            Row dataRow = sheet.createRow(i + 1);
+            for (int j = 0; j < data[i].length; j++) {
+                dataRow.createCell(j).setCellValue(data[i][j]);
             }
         }
-        return null;
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        workbook.write(outputStream);
+        workbook.close();
+
+        return new MockMultipartFile(
+                "file",
+                "migration.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                outputStream.toByteArray()
+        );
     }
 
-    private int getMaxPriority(BasicDBList contactDetails) {
-        int maxPriority = 0;
-        for (Object obj : contactDetails) {
-            BasicDBObject cd = (BasicDBObject) obj;
-            Object priority = cd.get("priority");
-            if (priority != null) {
-                int p = priority instanceof Integer ? (Integer) priority : Integer.parseInt(priority.toString());
-                maxPriority = Math.max(maxPriority, p);
-            }
-        }
-        return maxPriority;
-    }
-
-    private BasicDBObject createAutomatedServicesContact(int priority) {
-        BasicDBObject contact = new BasicDBObject();
-        contact.put("followUpAllowed", "");
-        contact.put("type", CONTACT_TYPE_AUTOMATED_SERVICES);
-        contact.put("priority", priority);
-        contact.put("version", "");
-        contact.put("turnAroundTime", "");
-        contact.put("surChargeAmount", "");
-        contact.put("name", "");
-        contact.put("paymentMethod", "");
-        contact.put("turnAroundTimeUnit", TIME_UNIT_DAYS);
-        contact.put("surChargeCurrency", "");
-        contact.put("communication", new BasicDBList());
-        contact.put("fromYear", "");
-        contact.put("toYear", "");
-        return contact;
-    }
-    
-    private void updateParchmentExchangeCommunication(BasicDBObject contactDetail, InstitutionRecord record, Vendors vendor) {
-        BasicDBList communications = (BasicDBList) contactDetail.get("communication");
-        if (communications == null) {
-            communications = new BasicDBList();
-            contactDetail.put("communication", communications);
-        }
-
-        BasicDBObject parchmentComm = null;
-        for (Object obj : communications) {
-            BasicDBObject comm = (BasicDBObject) obj;
-            if (PARCHMENT_EXCHANGE.equals(comm.get("name"))) {
-                parchmentComm = comm;
-                break;
-            }
-        }
-
-        if (parchmentComm == null) {
-            int maxPriority = getMaxPriority(communications);
-            int newPriority = maxPriority + 1;
-
-            parchmentComm = createParchmentExchangeCommunication(record, vendor, newPriority);
-            communications.add(parchmentComm);
-            log.debug("Added Parchment Exchange communication with priority: {}", newPriority);
-        } else {
-            updateCommunicationInfo((BasicDBList) parchmentComm.get("communicationInfo"), record, vendor);
-            log.debug("Updated existing Parchment Exchange communication");
-        }
-    }
-
-    private BasicDBObject createParchmentExchangeCommunication(InstitutionRecord record, Vendors vendor, int priority) {
-        BasicDBList communicationInfoList = createCommunicationInfoList(record, vendor);
-
-        BasicDBObject communication = new BasicDBObject();
-        communication.put("name", PARCHMENT_EXCHANGE);
-        communication.put("communicationInfo", communicationInfoList);
-        communication.put("providerID", String.valueOf(vendor.getProviderId()));
-        communication.put("priority", priority);
-        return communication;
-    }
-
-    private BasicDBList createCommunicationInfoList(InstitutionRecord record, Vendors vendor) {
-        BasicDBList infoList = new BasicDBList();
-
-        infoList.add(createCommunicationInfo("companyNames", record.getInstitutionName()));
-        infoList.add(createCommunicationInfo("codes", record.getCode()));
-        infoList.add(createCommunicationInfo("branch", ""));
-        infoList.add(createCommunicationInfo("uri", vendor.getWebsite()));
-        infoList.add(createCommunicationInfo("sourceType", SOURCE_TYPE_EDUCATION));
-
-        String surchargeAmount = record.getSurchargeAmount() != null ? record.getSurchargeAmount() : "";
-        String currency = "USA".equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : "";
-        infoList.add(createCommunicationInfo("surChargeAmount", surchargeAmount));
-        infoList.add(createCommunicationInfo("surChargeCurrency", currency));
-
-        String paymentMethod = record.getPaymentMethod() != null ? record.getPaymentMethod() : "";
-        infoList.add(createCommunicationInfo("paymentMethod", paymentMethod));
-
-        String followUpAllowed = record.getFollowUpAllowed() != null ? record.getFollowUpAllowed() : "";
-        infoList.add(createCommunicationInfo("followUpAllowed", followUpAllowed));
-        infoList.add(createCommunicationInfo("followUpAllowedAfter", ""));
-        infoList.add(createCommunicationInfo("followUpAllowedAfterTimeUnit", TIME_UNIT_DAYS));
-
-        String turnaroundTime = record.getTurnaroundTime() != null ? record.getTurnaroundTime() : "";
-        infoList.add(createCommunicationInfo("turnAroundTime", turnaroundTime));
-        infoList.add(createCommunicationInfo("turnAroundTimeUnit", TIME_UNIT_DAYS));
-
-        infoList.add(createCommunicationInfo("fromYear", ""));
-        infoList.add(createCommunicationInfo("toYear", ""));
-
-        return infoList;
-    }
-
-    private BasicDBObject createCommunicationInfo(String type, String value) {
-        BasicDBObject info = new BasicDBObject();
-        info.put("type", type);
-        info.put("value", value != null ? value : "");
-        return info;
-    }
-
-    private void updateCommunicationInfo(BasicDBList communicationInfoList, InstitutionRecord record, Vendors vendor) {
-        if (communicationInfoList == null) {
-            return;
-        }
-
-        updateInfoValue(communicationInfoList, "companyNames", record.getInstitutionName());
-        updateInfoValue(communicationInfoList, "codes", record.getCode());
-        updateInfoValue(communicationInfoList, "uri", vendor.getWebsite());
-
-        String surchargeAmount = record.getSurchargeAmount() != null ? record.getSurchargeAmount() : "";
-        String currency = "USA".equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : "";
-        updateInfoValue(communicationInfoList, "surChargeAmount", surchargeAmount);
-        updateInfoValue(communicationInfoList, "surChargeCurrency", currency);
-
-        String paymentMethod = record.getPaymentMethod() != null ? record.getPaymentMethod() : "";
-        updateInfoValue(communicationInfoList, "paymentMethod", paymentMethod);
-
-        String followUpAllowed = record.getFollowUpAllowed() != null ? record.getFollowUpAllowed() : "";
-        updateInfoValue(communicationInfoList, "followUpAllowed", followUpAllowed);
-
-        String turnaroundTime = record.getTurnaroundTime() != null ? record.getTurnaroundTime() : "";
-        updateInfoValue(communicationInfoList, "turnAroundTime", turnaroundTime);
-    }
-
-    private void updateInfoValue(BasicDBList communicationInfoList, String type, String value) {
-        for (Object obj : communicationInfoList) {
-            BasicDBObject info = (BasicDBObject) obj;
-            if (type.equals(info.get("type"))) {
-                info.put("value", value != null ? value : "");
-                break;
-            }
-        }
+    private Source createMockSource(String hon, String organizationName) {
+        Source source = new Source();
+        source.setHon(hon);
+        source.setOrganizationName(organizationName);
+        return source;
     }
 }
 
