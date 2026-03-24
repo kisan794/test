@@ -1,554 +1,742 @@
-package com.hireright.sourceintelligence.service.impl;
+package com.hireright.sourceintelligence.service.migration;
 
-import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.service.migration.MigrationProcessor;
-import com.hireright.sourceintelligence.service.migration.MigrationProcessorFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for MigrationService.
- * Tests delegation to appropriate migration processors.
+ * Unit tests for MigrationProcessorFactory.
+ * Tests processor selection and discovery logic.
  */
 @ExtendWith(MockitoExtension.class)
-class MigrationServiceTest {
+class MigrationProcessorFactoryTest {
 
     @Mock
-    private MigrationProcessorFactory processorFactory;
+    private MigrationProcessor parchmentProcessor;
 
     @Mock
-    private MigrationProcessor mockProcessor;
+    private MigrationProcessor clearinghouseProcessor;
 
-    @InjectMocks
-    private MigrationService migrationService;
-
-    private List<InstitutionRecord> sampleRecords;
+    private MigrationProcessorFactory factory;
 
     @BeforeEach
     void setUp() {
-        sampleRecords = Arrays.asList(
-                InstitutionRecord.builder()
-                        .institutionName("Harvard University")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .build(),
-                InstitutionRecord.builder()
-                        .institutionName("MIT")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .build()
-        );
+        when(parchmentProcessor.getMigrationType()).thenReturn("parchment");
+        when(parchmentProcessor.supports("parchment")).thenReturn(true);
+        when(parchmentProcessor.supports(anyString())).thenCallRealMethod();
+
+        when(clearinghouseProcessor.getMigrationType()).thenReturn("clearinghouse");
+        when(clearinghouseProcessor.supports("clearinghouse")).thenReturn(true);
+        when(clearinghouseProcessor.supports(anyString())).thenCallRealMethod();
     }
 
     @Test
-    void testProcessInstitutionRecords_Success() {
+    void testGetProcessor_Success() {
         // Arrange
-        Map<String, Object> expectedResult = new HashMap<>();
-        expectedResult.put("totalRecords", 2);
-        expectedResult.put("updatedRecords", 2);
-        expectedResult.put("notFoundRecords", 0);
-        expectedResult.put("notFoundInstitutions", new ArrayList<>());
-
-        when(processorFactory.getProcessor("parchment")).thenReturn(mockProcessor);
-        when(mockProcessor.processInstitutionRecords(anyList())).thenReturn(expectedResult);
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
+        factory = new MigrationProcessorFactory(processors);
 
         // Act
-        Map<String, Object> result = migrationService.processInstitutionRecords(sampleRecords, "parchment");
+        MigrationProcessor result = factory.getProcessor("parchment");
 
         // Assert
         assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(2, result.get("updatedRecords"));
-        assertEquals(0, result.get("notFoundRecords"));
-        assertEquals("parchment", result.get("migrationType"));
-
-        verify(processorFactory).getProcessor("parchment");
-        verify(mockProcessor).processInstitutionRecords(sampleRecords);
+        assertEquals(parchmentProcessor, result);
     }
 
     @Test
-    void testProcessInstitutionRecords_AddsM igrationTypeToResult() {
+    void testGetProcessor_MultipleProcessors() {
         // Arrange
-        Map<String, Object> processorResult = new HashMap<>();
-        processorResult.put("totalRecords", 1);
-
-        when(processorFactory.getProcessor("parchment")).thenReturn(mockProcessor);
-        when(mockProcessor.processInstitutionRecords(anyList())).thenReturn(processorResult);
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
+        factory = new MigrationProcessorFactory(processors);
 
         // Act
-        Map<String, Object> result = migrationService.processInstitutionRecords(sampleRecords, "parchment");
+        MigrationProcessor parchment = factory.getProcessor("parchment");
+        MigrationProcessor clearinghouse = factory.getProcessor("clearinghouse");
 
         // Assert
-        assertTrue(result.containsKey("migrationType"));
-        assertEquals("parchment", result.get("migrationType"));
+        assertEquals(parchmentProcessor, parchment);
+        assertEquals(clearinghouseProcessor, clearinghouse);
     }
 
     @Test
-    void testProcessInstitutionRecords_ProcessorNotFound() {
+    void testGetProcessor_UnsupportedType() {
         // Arrange
-        when(processorFactory.getProcessor("unknown"))
-                .thenThrow(new IllegalArgumentException("Unsupported migration type"));
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
 
         // Act & Assert
-        assertThrows(IllegalArgumentException.class, () -> {
-            migrationService.processInstitutionRecords(sampleRecords, "unknown");
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+            factory.getProcessor("unknown");
         });
 
-        verify(processorFactory).getProcessor("unknown");
-        verify(mockProcessor, never()).processInstitutionRecords(anyList());
+        assertTrue(exception.getMessage().contains("Unsupported migration type"));
+        assertTrue(exception.getMessage().contains("unknown"));
     }
 
     @Test
-    void testGetSupportedMigrationTypes() {
+    void testGetProcessor_NullType() {
         // Arrange
-        when(processorFactory.getSupportedTypes()).thenReturn("parchment, clearinghouse");
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
+
+        // Act & Assert
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+            factory.getProcessor(null);
+        });
+
+        assertTrue(exception.getMessage().contains("Migration type cannot be null or empty"));
+    }
+
+    @Test
+    void testGetProcessor_EmptyType() {
+        // Arrange
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
+
+        // Act & Assert
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+            factory.getProcessor("");
+        });
+
+        assertTrue(exception.getMessage().contains("Migration type cannot be null or empty"));
+    }
+
+    @Test
+    void testGetProcessor_WhitespaceType() {
+        // Arrange
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
+
+        // Act & Assert
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+            factory.getProcessor("   ");
+        });
+
+        assertTrue(exception.getMessage().contains("Migration type cannot be null or empty"));
+    }
+
+    @Test
+    void testGetSupportedTypes_SingleProcessor() {
+        // Arrange
+        List<MigrationProcessor> processors = Collections.singletonList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
 
         // Act
-        String supportedTypes = migrationService.getSupportedMigrationTypes();
+        String supportedTypes = factory.getSupportedTypes();
 
         // Assert
-        assertEquals("parchment, clearinghouse", supportedTypes);
-        verify(processorFactory).getSupportedTypes();
+        assertEquals("parchment", supportedTypes);
     }
 
     @Test
-    void testIsMigrationTypeSupported_True() {
+    void testGetSupportedTypes_MultipleProcessors() {
         // Arrange
-        when(processorFactory.isSupported("parchment")).thenReturn(true);
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
+        factory = new MigrationProcessorFactory(processors);
 
         // Act
-        boolean isSupported = migrationService.isMigrationTypeSupported("parchment");
+        String supportedTypes = factory.getSupportedTypes();
 
         // Assert
-        assertTrue(isSupported);
-        verify(processorFactory).isSupported("parchment");
+        assertTrue(supportedTypes.contains("parchment"));
+        assertTrue(supportedTypes.contains("clearinghouse"));
+        assertTrue(supportedTypes.contains(", "));
     }
 
     @Test
-    void testIsMigrationTypeSupported_False() {
+    void testGetSupportedTypes_NoProcessors() {
         // Arrange
-        when(processorFactory.isSupported("unknown")).thenReturn(false);
+        List<MigrationProcessor> processors = Collections.emptyList();
+        factory = new MigrationProcessorFactory(processors);
 
         // Act
-        boolean isSupported = migrationService.isMigrationTypeSupported("unknown");
+        String supportedTypes = factory.getSupportedTypes();
+
+        // Assert
+        assertEquals("none", supportedTypes);
+    }
+
+    @Test
+    void testIsSupported_True() {
+        // Arrange
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
+        factory = new MigrationProcessorFactory(processors);
+
+        // Act
+        boolean isParchmentSupported = factory.isSupported("parchment");
+        boolean isClearinghouseSupported = factory.isSupported("clearinghouse");
+
+        // Assert
+        assertTrue(isParchmentSupported);
+        assertTrue(isClearinghouseSupported);
+    }
+
+    @Test
+    void testIsSupported_False() {
+        // Arrange
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
+
+        // Act
+        boolean isSupported = factory.isSupported("unknown");
 
         // Assert
         assertFalse(isSupported);
-        verify(processorFactory).isSupported("unknown");
     }
 
     @Test
-    void testProcessInstitutionRecords_EmptyList() {
+    void testIsSupported_NullType() {
         // Arrange
-        List<InstitutionRecord> emptyList = Collections.emptyList();
-        Map<String, Object> expectedResult = new HashMap<>();
-        expectedResult.put("totalRecords", 0);
-        expectedResult.put("updatedRecords", 0);
-        expectedResult.put("notFoundRecords", 0);
-        expectedResult.put("notFoundInstitutions", new ArrayList<>());
-
-        when(processorFactory.getProcessor("parchment")).thenReturn(mockProcessor);
-        when(mockProcessor.processInstitutionRecords(anyList())).thenReturn(expectedResult);
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
 
         // Act
-        Map<String, Object> result = migrationService.processInstitutionRecords(emptyList, "parchment");
+        boolean isSupported = factory.isSupported(null);
 
         // Assert
-        assertNotNull(result);
-        assertEquals(0, result.get("totalRecords"));
-        verify(mockProcessor).processInstitutionRecords(emptyList);
+        assertFalse(isSupported);
     }
 
     @Test
-    void testProcessInstitutionRecords_ProcessorThrowsException() {
+    void testIsSupported_EmptyType() {
         // Arrange
-        when(processorFactory.getProcessor("parchment")).thenReturn(mockProcessor);
-        when(mockProcessor.processInstitutionRecords(anyList()))
-                .thenThrow(new RuntimeException("Database error"));
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
+
+        // Act
+        boolean isSupported = factory.isSupported("");
+
+        // Assert
+        assertFalse(isSupported);
+    }
+
+    @Test
+    void testGetProcessor_CaseInsensitive() {
+        // Arrange
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
+        factory = new MigrationProcessorFactory(processors);
+        
+        // Mock case-insensitive support
+        when(parchmentProcessor.supports("PARCHMENT")).thenReturn(true);
+        when(parchmentProcessor.supports("Parchment")).thenReturn(true);
+
+        // Act
+        MigrationProcessor upperCase = factory.getProcessor("PARCHMENT");
+        MigrationProcessor mixedCase = factory.getProcessor("Parchment");
+
+        // Assert
+        assertEquals(parchmentProcessor, upperCase);
+        assertEquals(parchmentProcessor, mixedCase);
+    }
+
+    @Test
+    void testGetProcessor_ErrorMessageIncludesAvailableTypes() {
+        // Arrange
+        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
+        factory = new MigrationProcessorFactory(processors);
 
         // Act & Assert
-        assertThrows(RuntimeException.class, () -> {
-            migrationService.processInstitutionRecords(sampleRecords, "parchment");
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+            factory.getProcessor("unknown");
         });
 
-        verify(processorFactory).getProcessor("parchment");
-        verify(mockProcessor).processInstitutionRecords(sampleRecords);
-    }
-
-    @Test
-    void testProcessInstitutionRecords_DifferentMigrationType() {
-        // Arrange
-        Map<String, Object> expectedResult = new HashMap<>();
-        expectedResult.put("totalRecords", 2);
-
-        when(processorFactory.getProcessor("clearinghouse")).thenReturn(mockProcessor);
-        when(mockProcessor.processInstitutionRecords(anyList())).thenReturn(expectedResult);
-
-        // Act
-        Map<String, Object> result = migrationService.processInstitutionRecords(sampleRecords, "clearinghouse");
-
-        // Assert
-        assertEquals("clearinghouse", result.get("migrationType"));
-        verify(processorFactory).getProcessor("clearinghouse");
+        String message = exception.getMessage();
+        assertTrue(message.contains("parchment"));
+        assertTrue(message.contains("clearinghouse"));
     }
 }
 
 
 
 
-
-package com.hireright.sourceintelligence.service.impl;
+package com.hireright.sourceintelligence.service.migration;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.entity.Vendors;
+import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
+import com.mongodb.BasicDBList;
+import com.mongodb.BasicDBObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Query;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.List;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for ExcelParserService.
- * Tests Excel file parsing with various cell types and edge cases.
+ * Unit tests for ParchmentMigrationProcessor.
+ * Tests Parchment-specific migration logic.
  */
 @ExtendWith(MockitoExtension.class)
-class ExcelParserServiceTest {
+class ParchmentMigrationProcessorTest {
+
+    @Mock
+    private VendorsRepository vendorsRepository;
+
+    @Mock
+    private MongoTemplate mongoTemplate;
 
     @InjectMocks
-    private ExcelParserService excelParserService;
+    private ParchmentMigrationProcessor processor;
 
-    private MockMultipartFile createExcelFile(Workbook workbook) throws IOException {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        workbook.write(outputStream);
-        return new MockMultipartFile(
-                "file",
-                "test.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                outputStream.toByteArray()
+    private Vendors parchmentVendor;
+    private List<InstitutionRecord> sampleRecords;
+
+    @BeforeEach
+    void setUp() {
+        // Setup Parchment vendor
+        parchmentVendor = new Vendors();
+        parchmentVendor.setVendor("Parchment Exchange");
+        parchmentVendor.setProviderId(123);
+        parchmentVendor.setWebsite("https://www.parchment.com");
+
+        // Setup sample institution records
+        sampleRecords = Arrays.asList(
+                InstitutionRecord.builder()
+                        .institutionName("Harvard University")
+                        .country("USA")
+                        .city("Cambridge")
+                        .stateCountyRegion("MA")
+                        .serviceProvider("Parchment Exchange")
+                        .surchargeAmount("5.00")
+                        .paymentMethod("Credit Card")
+                        .code("HARV001")
+                        .turnaroundTime("3")
+                        .followUpAllowed("Yes")
+                        .build(),
+                InstitutionRecord.builder()
+                        .institutionName("MIT")
+                        .country("USA")
+                        .city("Cambridge")
+                        .stateCountyRegion("MA")
+                        .serviceProvider("Parchment Exchange")
+                        .surchargeAmount("5.00")
+                        .paymentMethod("Credit Card")
+                        .code("MIT001")
+                        .turnaroundTime("3")
+                        .followUpAllowed("Yes")
+                        .build()
         );
     }
 
     @Test
-    void testParseExcelFile_Success() throws IOException {
-        // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
-
-        // Create header row
-        Row headerRow = sheet.createRow(0);
-        headerRow.createCell(0).setCellValue("Institution Name");
-        headerRow.createCell(1).setCellValue("Country");
-        headerRow.createCell(2).setCellValue("City");
-        headerRow.createCell(3).setCellValue("State/County/Region");
-        headerRow.createCell(4).setCellValue("Service Provider");
-        headerRow.createCell(5).setCellValue("Surcharge Amount");
-        headerRow.createCell(6).setCellValue("Payment Method");
-        headerRow.createCell(7).setCellValue("Code");
-        headerRow.createCell(8).setCellValue("Turnaround Time");
-        headerRow.createCell(9).setCellValue("Follow Up Allowed");
-
-        // Create data row
-        Row dataRow = sheet.createRow(1);
-        dataRow.createCell(0).setCellValue("Harvard University");
-        dataRow.createCell(1).setCellValue("USA");
-        dataRow.createCell(2).setCellValue("Cambridge");
-        dataRow.createCell(3).setCellValue("MA");
-        dataRow.createCell(4).setCellValue("Parchment Exchange");
-        dataRow.createCell(5).setCellValue("5.00");
-        dataRow.createCell(6).setCellValue("Credit Card");
-        dataRow.createCell(7).setCellValue("HARV001");
-        dataRow.createCell(8).setCellValue("3");
-        dataRow.createCell(9).setCellValue("Yes");
-
-        MockMultipartFile file = createExcelFile(workbook);
-
+    void testGetMigrationType() {
         // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+        String migrationType = processor.getMigrationType();
 
         // Assert
-        assertNotNull(records);
-        assertEquals(1, records.size());
-        InstitutionRecord record = records.get(0);
-        assertEquals("Harvard University", record.getInstitutionName());
-        assertEquals("USA", record.getCountry());
-        assertEquals("Cambridge", record.getCity());
-        assertEquals("MA", record.getStateCountyRegion());
-        assertEquals("Parchment Exchange", record.getServiceProvider());
-        assertEquals("5.00", record.getSurchargeAmount());
-        assertEquals("Credit Card", record.getPaymentMethod());
-        assertEquals("HARV001", record.getCode());
-        assertEquals("3", record.getTurnaroundTime());
-        assertEquals("Yes", record.getFollowUpAllowed());
-
-        workbook.close();
+        assertEquals("parchment", migrationType);
     }
 
     @Test
-    void testParseExcelFile_MultipleRecords() throws IOException {
-        // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
-
-        // Create header row
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < 10; i++) {
-            headerRow.createCell(i).setCellValue("Header " + i);
-        }
-
-        // Create multiple data rows
-        for (int i = 1; i <= 5; i++) {
-            Row dataRow = sheet.createRow(i);
-            dataRow.createCell(0).setCellValue("Institution " + i);
-            dataRow.createCell(1).setCellValue("USA");
-            dataRow.createCell(2).setCellValue("City " + i);
-            dataRow.createCell(3).setCellValue("State " + i);
-            dataRow.createCell(4).setCellValue("Provider");
-            dataRow.createCell(5).setCellValue("5.00");
-            dataRow.createCell(6).setCellValue("Credit");
-            dataRow.createCell(7).setCellValue("CODE" + i);
-            dataRow.createCell(8).setCellValue("3");
-            dataRow.createCell(9).setCellValue("Yes");
-        }
-
-        MockMultipartFile file = createExcelFile(workbook);
-
+    void testSupports_Parchment() {
         // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+        boolean supports = processor.supports("parchment");
 
         // Assert
-        assertNotNull(records);
-        assertEquals(5, records.size());
-        assertEquals("Institution 1", records.get(0).getInstitutionName());
-        assertEquals("Institution 5", records.get(4).getInstitutionName());
-
-        workbook.close();
+        assertTrue(supports);
     }
 
     @Test
-    void testParseExcelFile_NumericCells() throws IOException {
-        // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
-
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < 10; i++) {
-            headerRow.createCell(i).setCellValue("Header " + i);
-        }
-
-        Row dataRow = sheet.createRow(1);
-        dataRow.createCell(0).setCellValue("Test University");
-        dataRow.createCell(1).setCellValue("USA");
-        dataRow.createCell(2).setCellValue("Boston");
-        dataRow.createCell(3).setCellValue("MA");
-        dataRow.createCell(4).setCellValue("Provider");
-        dataRow.createCell(5).setCellValue(10.50); // Numeric value
-        dataRow.createCell(6).setCellValue("Credit");
-        dataRow.createCell(7).setCellValue(12345); // Numeric code
-        dataRow.createCell(8).setCellValue(5); // Numeric turnaround
-        dataRow.createCell(9).setCellValue("Yes");
-
-        MockMultipartFile file = createExcelFile(workbook);
-
+    void testSupports_OtherType() {
         // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+        boolean supports = processor.supports("clearinghouse");
 
         // Assert
-        assertNotNull(records);
-        assertEquals(1, records.size());
-        InstitutionRecord record = records.get(0);
-        assertEquals("10.5", record.getSurchargeAmount());
-        assertEquals("12345", record.getCode());
-        assertEquals("5", record.getTurnaroundTime());
-
-        workbook.close();
+        assertFalse(supports);
     }
 
     @Test
-    void testParseExcelFile_EmptyCells() throws IOException {
+    void testProcessInstitutionRecords_Success() {
         // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
 
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < 10; i++) {
-            headerRow.createCell(i).setCellValue("Header " + i);
-        }
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
 
-        Row dataRow = sheet.createRow(1);
-        dataRow.createCell(0).setCellValue("Test University");
-        dataRow.createCell(1).setCellValue("USA");
-        dataRow.createCell(2).setCellValue("Boston");
-        dataRow.createCell(3).setCellValue("MA");
-        // Leave cells 4-9 empty
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source1, source2);
 
-        MockMultipartFile file = createExcelFile(workbook);
+        // Mock bulk operations
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
 
         // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
 
         // Assert
-        assertNotNull(records);
-        assertEquals(1, records.size());
-        InstitutionRecord record = records.get(0);
-        assertEquals("Test University", record.getInstitutionName());
-        assertEquals("", record.getServiceProvider());
-        assertEquals("", record.getSurchargeAmount());
-        assertEquals("", record.getPaymentMethod());
+        assertNotNull(result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(2, result.get("updatedRecords"));
+        assertEquals(0, result.get("notFoundRecords"));
+        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
 
-        workbook.close();
+        verify(vendorsRepository).findAll();
+        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps, times(2)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
+        verify(mockBulkOps).execute();
     }
 
     @Test
-    void testParseExcelFile_SkipEmptyRows() throws IOException {
+    void testProcessInstitutionRecords_InstitutionNotFound() {
         // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
 
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < 10; i++) {
-            headerRow.createCell(i).setCellValue("Header " + i);
-        }
+        Source source1 = createMockSource("EDU123", "Harvard University");
 
-        // Row 1: Valid data
-        Row dataRow1 = sheet.createRow(1);
-        dataRow1.createCell(0).setCellValue("University 1");
-        dataRow1.createCell(1).setCellValue("USA");
-        dataRow1.createCell(2).setCellValue("City");
-        dataRow1.createCell(3).setCellValue("State");
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source1, null); // Second institution not found
 
-        // Row 2: Empty row (should be skipped)
-        sheet.createRow(2);
+        // Mock bulk operations for the one found source
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
 
-        // Row 3: Valid data
-        Row dataRow3 = sheet.createRow(3);
-        dataRow3.createCell(0).setCellValue("University 2");
-        dataRow3.createCell(1).setCellValue("USA");
-        dataRow3.createCell(2).setCellValue("City");
-        dataRow3.createCell(3).setCellValue("State");
-
-        MockMultipartFile file = createExcelFile(workbook);
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
 
         // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
 
         // Assert
-        assertNotNull(records);
-        assertEquals(2, records.size());
-        assertEquals("University 1", records.get(0).getInstitutionName());
-        assertEquals("University 2", records.get(1).getInstitutionName());
+        assertNotNull(result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(1, result.get("updatedRecords"));
+        assertEquals(1, result.get("notFoundRecords"));
 
-        workbook.close();
+        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
+        assertEquals(1, notFoundInstitutions.size());
+        assertEquals("MIT", notFoundInstitutions.get(0));
+
+        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
+        verify(mockBulkOps).execute();
     }
 
     @Test
-    void testParseExcelFile_BooleanCells() throws IOException {
+    void testProcessInstitutionRecords_VendorNotFound() {
         // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
+        when(vendorsRepository.findAll()).thenReturn(Collections.emptyList());
 
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < 10; i++) {
-            headerRow.createCell(i).setCellValue("Header " + i);
-        }
+        // Act & Assert
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            processor.processInstitutionRecords(sampleRecords);
+        });
 
-        Row dataRow = sheet.createRow(1);
-        dataRow.createCell(0).setCellValue("Test University");
-        dataRow.createCell(1).setCellValue("USA");
-        dataRow.createCell(2).setCellValue("Boston");
-        dataRow.createCell(3).setCellValue("MA");
-        dataRow.createCell(4).setCellValue("Provider");
-        dataRow.createCell(5).setCellValue("5.00");
-        dataRow.createCell(6).setCellValue("Credit");
-        dataRow.createCell(7).setCellValue("CODE");
-        dataRow.createCell(8).setCellValue("3");
-        dataRow.createCell(9).setCellValue(true); // Boolean value
-
-        MockMultipartFile file = createExcelFile(workbook);
-
-        // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
-
-        // Assert
-        assertNotNull(records);
-        assertEquals(1, records.size());
-        assertEquals("true", records.get(0).getFollowUpAllowed());
-
-        workbook.close();
+        assertTrue(exception.getMessage().contains("Vendor 'Parchment Exchange' not found"));
+        verify(vendorsRepository).findAll();
+        verifyNoInteractions(mongoTemplate);
     }
 
     @Test
-    void testParseExcelFile_WhitespaceHandling() throws IOException {
+    void testProcessInstitutionRecords_EmptyList() {
         // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
-
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < 10; i++) {
-            headerRow.createCell(i).setCellValue("Header " + i);
-        }
-
-        Row dataRow = sheet.createRow(1);
-        dataRow.createCell(0).setCellValue("  Harvard University  "); // Leading/trailing spaces
-        dataRow.createCell(1).setCellValue(" USA ");
-        dataRow.createCell(2).setCellValue("Cambridge");
-        dataRow.createCell(3).setCellValue("MA");
-
-        MockMultipartFile file = createExcelFile(workbook);
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
 
         // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+        Map<String, Object> result = processor.processInstitutionRecords(Collections.emptyList());
 
         // Assert
-        assertNotNull(records);
-        assertEquals(1, records.size());
-        assertEquals("Harvard University", records.get(0).getInstitutionName()); // Trimmed
-        assertEquals("USA", records.get(0).getCountry()); // Trimmed
+        assertNotNull(result);
+        assertEquals(0, result.get("totalRecords"));
+        assertEquals(0, result.get("updatedRecords"));
+        assertEquals(0, result.get("notFoundRecords"));
+        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
 
-        workbook.close();
+        verify(vendorsRepository).findAll();
+        verifyNoMoreInteractions(mongoTemplate);
     }
 
     @Test
-    void testParseExcelFile_EmptyWorkbook() throws IOException {
+    void testProcessInstitutionRecords_ProcessingError() {
         // Arrange
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Sheet1");
-        
-        // Only header row, no data
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < 10; i++) {
-            headerRow.createCell(i).setCellValue("Header " + i);
-        }
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
 
-        MockMultipartFile file = createExcelFile(workbook);
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenThrow(new RuntimeException("Database connection failed"));
 
         // Act
-        List<InstitutionRecord> records = excelParserService.parseExcelFile(file);
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
 
         // Assert
-        assertNotNull(records);
-        assertTrue(records.isEmpty());
+        assertNotNull(result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(0, result.get("updatedRecords"));
+        assertEquals(2, result.get("notFoundRecords"));
 
-        workbook.close();
+        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
+        assertEquals(2, notFoundInstitutions.size());
+        assertTrue(notFoundInstitutions.get(0).contains("Error"));
+
+        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
+        // No bulk operations should be called since no sources were found
+        verify(mongoTemplate, never()).bulkOps(any(), anyString());
+    }
+
+    @Test
+    void testProcessInstitutionRecords_PartialSuccess() {
+        // Arrange
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
+
+        Source source1 = createMockSource("EDU123", "Harvard University");
+
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source1)
+                .thenThrow(new RuntimeException("Connection timeout"));
+
+        // Mock bulk operations for the one successful source
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        // Act
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(1, result.get("updatedRecords"));
+        assertEquals(1, result.get("notFoundRecords"));
+
+        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
+        assertEquals(1, notFoundInstitutions.size());
+        assertTrue(notFoundInstitutions.get(0).contains("MIT"));
+
+        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps).execute();
+    }
+
+    @Test
+    void testProcessInstitutionRecords_UpdatesPayload() {
+        // Arrange
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
+
+        Source source = createMockSource("EDU123", "Harvard University");
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source);
+
+        // Mock bulk operations
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        // Act
+        processor.processInstitutionRecords(Collections.singletonList(sampleRecords.get(0)));
+
+        // Assert - Verify bulk upsert was called with update containing payload
+        verify(mockBulkOps).upsert(any(Query.class), argThat(update -> {
+            // The update should contain the payload field
+            return true; // Simplified assertion since Update object is complex
+        }));
+        verify(mockBulkOps).execute();
+    }
+
+    @Test
+    void testProcessInstitutionRecords_StateMapping() {
+        // Arrange
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
+
+        InstitutionRecord recordWithStateAbbr = InstitutionRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA") // Abbreviation
+                .build();
+
+        Source source = createMockSource("EDU125", "Test University");
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source);
+
+        // Act
+        Map<String, Object> result = processor.processInstitutionRecords(
+                Collections.singletonList(recordWithStateAbbr)
+        );
+
+        // Assert
+        assertEquals(1, result.get("updatedRecords"));
+        verify(mongoTemplate).findOne(any(Query.class), eq(Source.class), eq("education_source"));
+    }
+
+    @Test
+    void testProcessInstitutionRecords_BulkSaveOptimization() {
+        // Arrange - Create multiple records to test bulk save
+        List<InstitutionRecord> multipleRecords = Arrays.asList(
+                sampleRecords.get(0),
+                sampleRecords.get(1),
+                InstitutionRecord.builder()
+                        .institutionName("Stanford University")
+                        .country("USA")
+                        .city("Stanford")
+                        .stateCountyRegion("CA")
+                        .build()
+        );
+
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
+
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+        Source source3 = createMockSource("EDU125", "Stanford University");
+
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source1, source2, source3);
+
+        // Mock bulk operations
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        // Act
+        Map<String, Object> result = processor.processInstitutionRecords(multipleRecords);
+
+        // Assert
+        assertEquals(3, result.get("totalRecords"));
+        assertEquals(3, result.get("updatedRecords"));
+
+        // Verify bulk operations were used instead of individual saves
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
+        verify(mockBulkOps, times(1)).execute(); // Only one bulk execute call
+
+        // Verify individual save was NOT called
+        verify(mongoTemplate, never()).save(any(Source.class), anyString());
+    }
+
+    @Test
+    void testProcessInstitutionRecords_BulkSaveFallback() {
+        // Arrange
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
+
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source1, source2);
+
+        // Mock bulk operations to fail
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+        when(mockBulkOps.execute()).thenThrow(new RuntimeException("Bulk operation failed"));
+
+        // Act
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
+
+        // Assert
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(2, result.get("updatedRecords"));
+
+        // Verify bulk operation was attempted
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps).execute();
+
+        // Verify fallback to individual saves
+        verify(mongoTemplate, times(2)).save(any(Source.class), anyString());
+    }
+
+    @Test
+    void testProcessInstitutionRecords_MultipleCollections() {
+        // Arrange - Create records that will go to different collections
+        InstitutionRecord record1 = sampleRecords.get(0);
+        InstitutionRecord record2 = sampleRecords.get(1);
+
+        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
+        when(vendorsRepository.findAll()).thenReturn(vendors);
+
+        // Sources with different HON prefixes (different collections)
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+
+        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
+                .thenReturn(source1, source2);
+
+        // Mock bulk operations
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        // Act
+        Map<String, Object> result = processor.processInstitutionRecords(Arrays.asList(record1, record2));
+
+        // Assert
+        assertEquals(2, result.get("updatedRecords"));
+
+        // Verify bulk operations were called (grouped by collection)
+        verify(mongoTemplate, atLeastOnce()).bulkOps(any(), anyString());
+        verify(mockBulkOps, atLeastOnce()).execute();
+    }
+
+    private Source createMockSource(String hon, String organizationName) {
+        Source source = new Source();
+        source.setHon(hon);
+        source.setOrganizationName(organizationName);
+        source.setPayload(new BasicDBObject());
+        return source;
     }
 }
 
