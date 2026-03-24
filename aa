@@ -1,714 +1,411 @@
-# Data Migration API - Technical Documentation
-
-## Overview
-
-This document describes the refactoring and improvements made to the Data Migration API, which enables uploading Excel files containing vendor institution data to migrate into the database.
-
----
-
-## Table of Contents
-
-1. [Executive Summary](#executive-summary)
-2. [Architecture Overview](#architecture-overview)
-3. [Key Changes](#key-changes)
-4. [Design Patterns](#design-patterns)
-5. [API Specification](#api-specification)
-6. [Error Handling](#error-handling)
-7. [Configuration](#configuration)
-8. [Usage Examples](#usage-examples)
-9. [Adding New Migration Types](#adding-new-migration-types)
-10. [Testing](#testing)
-11. [Deployment Notes](#deployment-notes)
-
----
-
-## Executive Summary
-
-### What Changed?
-
-The Parchment Migration API has been refactored into a **generic, extensible Data Migration API** that supports multiple vendor types using the **Strategy Pattern**.
-
-### Key Improvements
-
-| Area | Before | After |
-|------|--------|-------|
-| **Naming** | `ParchmentMigrationApi` (vendor-specific) | `DataMigrationApi` (generic) |
-| **Architecture** | Hardcoded Parchment logic in service | Strategy Pattern with pluggable processors |
-| **Response Type** | `Map<String, Object>` | `MigrationResponseDTO` (strongly-typed) |
-| **Error Handling** | Manual error responses | Centralized `ErrorConstants` |
-| **Validation** | Basic checks | Comprehensive validation (file size, format, type) |
-| **Extensibility** | Requires code changes for new vendors | Add new processor class only |
-
-### Business Value
-
-- ✅ **Faster onboarding** of new vendors (e.g., Clearinghouse, NSC)
-- ✅ **Reduced maintenance** through centralized error handling
-- ✅ **Better monitoring** with performance metrics
-- ✅ **Improved reliability** with comprehensive validation
-
----
-
-## Architecture Overview
-
-### High-Level Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Client Application                        │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         │ POST /si/v1/migration/upload?type=parchment
-                         │ Content-Type: multipart/form-data
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│              DataMigrationApiController                      │
-│  • Validates file (size, format, empty)                     │
-│  • Validates migration type                                 │
-│  • Tracks processing time                                   │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 ExcelParserService                           │
-│  • Parses Excel file (.xlsx, .xls)                          │
-│  • Extracts InstitutionRecord objects                       │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   MigrationService                           │
-│  • Validates migration type support                         │
-│  • Delegates to appropriate processor                       │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│             MigrationProcessorFactory                        │
-│  • Auto-discovers all processors via Spring DI              │
-│  • Selects processor based on migration type                │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│              MigrationProcessor (Interface)                  │
-│  • processInstitutionRecords(records)                       │
-│  • getMigrationType()                                       │
-│  • supports(migrationType)                                  │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-         ┌───────────────┴───────────────┬─────────────────┐
-         ▼                               ▼                 ▼
-┌──────────────────┐      ┌──────────────────┐   ┌─────────────┐
-│  Parchment       │      │  Clearinghouse   │   │   Future    │
-│  Processor       │      │  Processor       │   │  Processors │
-│  (Implemented)   │      │  (Future)        │   │             │
-└──────────────────┘      └──────────────────┘   └─────────────┘
-```
-
-### Component Diagram
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         API Layer                            │
-├─────────────────────────────────────────────────────────────┤
-│  DataMigrationApi (Interface)                               │
-│  DataMigrationApiController (Implementation)                │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Service Layer                           │
-├─────────────────────────────────────────────────────────────┤
-│  MigrationService                                           │
-│  ExcelParserService                                         │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Strategy Pattern Layer                     │
-├─────────────────────────────────────────────────────────────┤
-│  MigrationProcessorFactory                                  │
-│  MigrationProcessor (Interface)                             │
-│  ParchmentMigrationProcessor                                │
-└─────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Data Access Layer                         │
-├─────────────────────────────────────────────────────────────┤
-│  VendorsRepository                                          │
-│  MongoTemplate                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Key Changes
-
-### 1. File Renaming
-
-| Old Name | New Name | Reason |
-|----------|----------|--------|
-| `ParchmentMigrationApi.java` | `DataMigrationApi.java` | Generic, vendor-agnostic naming |
-| `ParchmentMigrationApiController.java` | `DataMigrationApiController.java` | Consistency with interface |
-
-### 2. New Files Created
-
-| File | Purpose |
-|------|---------|
-| `MigrationProcessor.java` | Strategy interface for migration processors |
-| `ParchmentMigrationProcessor.java` | Parchment-specific implementation |
-| `MigrationProcessorFactory.java` | Factory to select appropriate processor |
-| `MigrationResponseDTO.java` | Structured response object |
-
-### 3. Error Constants Added
-
-```java
-// ErrorConstants.java
-MIGRATION_FILE_EMPTY("109_40018", "LOW", "Migration file is empty..."),
-MIGRATION_FILE_INVALID_FORMAT("109_40019", "LOW", "Invalid file format..."),
-MIGRATION_TYPE_UNSUPPORTED("109_40020", "LOW", "Unsupported migration type..."),
-MIGRATION_NO_RECORDS_FOUND("109_40021", "LOW", "No records found..."),
-MIGRATION_FILE_TOO_LARGE("109_40022", "LOW", "File size exceeds maximum..."),
-MIGRATION_PARSE_ERROR("109_50018", "HIGH", "Failed to parse migration file..."),
-MIGRATION_PROCESSING_ERROR("109_50019", "HIGH", "Error processing migration data...")
-```
-
----
-
-## Design Patterns
-
-### Strategy Pattern
-
-The refactoring implements the **Strategy Pattern** to handle different migration types.
-
-**Benefits:**
-- ✅ Open/Closed Principle: Open for extension, closed for modification
-- ✅ Single Responsibility: Each processor handles one vendor
-- ✅ Easy Testing: Processors can be tested independently
-- ✅ Runtime Selection: Migration type determined at runtime
-
-**Implementation:**
-
-```java
-// Strategy Interface
-public interface MigrationProcessor {
-    Map<String, Object> processInstitutionRecords(List<InstitutionRecord> records);
-    String getMigrationType();
-    default boolean supports(String migrationType) {
-        return getMigrationType().equalsIgnoreCase(migrationType);
-    }
-}
-
-// Concrete Strategy
-@Component
-public class ParchmentMigrationProcessor implements MigrationProcessor {
-    @Override
-    public String getMigrationType() {
-        return "parchment";
-    }
-    
-    @Override
-    public Map<String, Object> processInstitutionRecords(List<InstitutionRecord> records) {
-        // Parchment-specific logic
-    }
-}
-
-// Factory
-@Component
-public class MigrationProcessorFactory {
-    private final List<MigrationProcessor> processors;
-    
-    public MigrationProcessor getProcessor(String migrationType) {
-        return processors.stream()
-            .filter(p -> p.supports(migrationType))
-            .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException(...));
-    }
-}
-```
-
----
-
-## API Specification
-
-### Endpoint
-
-```
-POST /sourceintelligence-service/api/v1/migration/upload
-```
-
-### Request Parameters
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `file` | MultipartFile | Yes | - | Excel file (.xlsx or .xls) containing migration data |
-| `type` | String | No | "parchment" | Migration type identifier |
-
-### Request Example
-
-```bash
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload?type=parchment" \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@parchment_institutions.xlsx"
-```
-
-### Response Schema
-
-**Success Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "message": "File processed successfully",
-  "migrationType": "parchment",
-  "filename": "parchment_institutions.xlsx",
-  "totalRecords": 150,
-  "updatedRecords": 145,
-  "notFoundRecords": 5,
-  "notFoundInstitutions": [
-    "University ABC",
-    "College XYZ",
-    "Institute DEF"
-  ],
-  "processingTimeMs": 2345
-}
-```
-
-**Error Response (400 Bad Request):**
-
-```json
-{
-  "errorCode": "109_40020",
-  "status": "BAD_REQUEST",
-  "timestamp": "2026-03-23T10:30:00Z",
-  "message": "Unsupported migration type: 'unknown'. Supported types: parchment",
-  "traceId": "abc-123-def-456"
-}
-```
-
-### Response Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `status` | String | "success" or "error" |
-| `message` | String | Human-readable message |
-| `migrationType` | String | Type of migration performed |
-| `filename` | String | Name of uploaded file |
-| `totalRecords` | Integer | Total records found in file |
-| `updatedRecords` | Integer | Successfully updated records |
-| `notFoundRecords` | Integer | Records not found in database |
-| `notFoundInstitutions` | Array | List of institution names not found |
-| `processingTimeMs` | Long | Processing time in milliseconds |
-
----
-
-## Error Handling
-
-### Validation Errors
-
-| Error Code | HTTP Status | Scenario | Message |
-|------------|-------------|----------|---------|
-| 109_40018 | 400 | Empty file | "Migration file is empty. Please upload a valid Excel file." |
-| 109_40019 | 400 | Invalid format | "Invalid file format. Please upload an Excel file (.xlsx or .xls)." |
-| 109_40020 | 400 | Unsupported type | "Unsupported migration type: '{type}'. Supported types: {list}." |
-| 109_40021 | 400 | No records | "No records found in the Excel file. Please check the file content." |
-| 109_40022 | 400 | File too large | "File size exceeds maximum allowed size of {size} MB." |
-
-### Processing Errors
-
-| Error Code | HTTP Status | Scenario | Message |
-|------------|-------------|----------|---------|
-| 109_50018 | 500 | Parse failure | "Failed to parse migration file: {details}" |
-| 109_50019 | 500 | Processing failure | "Error processing migration data: {details}" |
-
-### Error Handling Flow
-
-```
-Request → Validation → Processing → Response
-   ↓          ↓            ↓
-  Error    Error        Error
-   ↓          ↓            ↓
-GlobalApiExceptionHandler
-   ↓
-Structured Error Response
-```
-
----
-
-## Configuration
-
-### Application Properties
-
-Add to `application.properties` or `application.yml`:
-
-```properties
-# Maximum file size for migration uploads (in MB)
-migration.file.max-size-mb=10
-
-# Spring multipart configuration
-spring.servlet.multipart.max-file-size=10MB
-spring.servlet.multipart.max-request-size=10MB
-```
-
-### Environment-Specific Configuration
-
-**Development:**
-```properties
-migration.file.max-size-mb=5
-```
-
-**Production:**
-```properties
-migration.file.max-size-mb=20
-```
-
----
-
-## Usage Examples
-
-### Example 1: Parchment Migration (Default)
-
-**Request:**
-```bash
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload" \
-  -F "file=@parchment_data.xlsx"
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "migrationType": "parchment",
-  "totalRecords": 100,
-  "updatedRecords": 98,
-  "notFoundRecords": 2,
-  "processingTimeMs": 1523
-}
-```
-
-### Example 2: Explicit Migration Type
-
-**Request:**
-```bash
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload?type=parchment" \
-  -F "file=@institutions.xlsx"
-```
-
-### Example 3: Error - File Too Large
-
-**Request:**
-```bash
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload" \
-  -F "file=@huge_file.xlsx"
-```
-
-**Response (400):**
-```json
-{
-  "errorCode": "109_40022",
-  "status": "BAD_REQUEST",
-  "message": "File size exceeds maximum allowed size of 10 MB.",
-  "timestamp": "2026-03-23T10:30:00Z"
-}
-```
-
-### Example 4: Error - Unsupported Type
-
-**Request:**
-```bash
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload?type=unknown" \
-  -F "file=@data.xlsx"
-```
-
-**Response (400):**
-```json
-{
-  "errorCode": "109_40020",
-  "status": "BAD_REQUEST",
-  "message": "Unsupported migration type: 'unknown'. Supported types: parchment"
-}
-```
-
----
-
-## Adding New Migration Types
-
-### Step-by-Step Guide
-
-To add support for a new vendor (e.g., "Clearinghouse"):
-
-#### Step 1: Create Processor Class
-
-Create `ClearinghouseMigrationProcessor.java`:
-
-```java
 package com.hireright.sourceintelligence.service.migration;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.entity.Vendors;
+import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
+import com.hireright.sourceintelligence.util.Helper;
+import com.hireright.sourceintelligence.util.StateMapper;
+import com.mongodb.BasicDBList;
+import com.mongodb.BasicDBObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
+
+/**
+ * Processor for Parchment Exchange migration data.
+ * Handles the specific logic for updating source organizations with Parchment Exchange contact information.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ClearinghouseMigrationProcessor implements MigrationProcessor {
+public class ParchmentMigrationProcessor implements MigrationProcessor {
     
-    // Inject required dependencies
     private final VendorsRepository vendorsRepository;
     private final MongoTemplate mongoTemplate;
     
+    private static final String MIGRATION_TYPE = "parchment";
+    private static final String PARCHMENT_EXCHANGE = "Parchment Exchange";
+    private static final String CONTACT_TYPE_AUTOMATED_SERVICES = "contactAutomatedServices";
+    private static final String SOURCE_TYPE_EDUCATION = "Education";
+    private static final String CURRENCY_USD = "USD";
+    private static final String TIME_UNIT_DAYS = "days";
+
     @Override
     public String getMigrationType() {
-        return "clearinghouse";
+        return MIGRATION_TYPE;
     }
-    
+
     @Override
     @Transactional
     public Map<String, Object> processInstitutionRecords(List<InstitutionRecord> records) {
-        log.info("Processing {} Clearinghouse records", records.size());
-        
-        // Implement Clearinghouse-specific logic here
         int totalRecords = records.size();
         int updatedRecords = 0;
         int notFoundRecords = 0;
         List<String> notFoundInstitutions = new ArrayList<>();
-        
-        // Your processing logic...
-        
+
+        // Find vendor by name
+        List<Vendors> vendors = vendorsRepository.findAll();
+        Vendors vendor = vendors.stream()
+            .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor()))
+            .findFirst()
+            .orElseThrow(() -> new RuntimeException("Vendor 'Parchment Exchange' not found in database"));
+
+        log.info("Found vendor: {} with providerId: {}", vendor.getVendor(), vendor.getProviderId());
+
+        // Map to store sources to be saved, grouped by collection name
+        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
+
+        for (InstitutionRecord record : records) {
+            try {
+                Source updatedSource = processInstitutionRecord(record, vendor);
+                if (updatedSource != null) {
+                    updatedRecords++;
+
+                    // Group sources by collection name for bulk save
+                    String collectionName = Helper.getCollectionName(updatedSource.getHon(), SOURCE_COLLECTION_SUFFIX);
+                    sourcesToSaveByCollection
+                        .computeIfAbsent(collectionName, k -> new ArrayList<>())
+                        .add(updatedSource);
+
+                    log.debug("Prepared institution for bulk save: {} (HON: {})",
+                        updatedSource.getOrganizationName(), updatedSource.getHon());
+                } else {
+                    notFoundRecords++;
+                    notFoundInstitutions.add(record.getInstitutionName());
+                }
+            } catch (Exception e) {
+                log.error("Error processing record: {}", record.getInstitutionName(), e);
+                notFoundRecords++;
+                notFoundInstitutions.add(record.getInstitutionName() + " (Error: " + e.getMessage() + ")");
+            }
+        }
+
+        // Perform bulk save operations for each collection
+        performBulkSave(sourcesToSaveByCollection);
+
         Map<String, Object> result = new HashMap<>();
         result.put("totalRecords", totalRecords);
         result.put("updatedRecords", updatedRecords);
         result.put("notFoundRecords", notFoundRecords);
         result.put("notFoundInstitutions", notFoundInstitutions);
-        
+
+        log.info("Processing complete. Total: {}, Updated: {}, Not Found: {}",
+            totalRecords, updatedRecords, notFoundRecords);
+
         return result;
     }
-}
-```
 
-#### Step 2: That's It!
+    /**
+     * Perform bulk save operations for all collections.
+     * This significantly improves performance by reducing database round trips.
+     * Uses MongoDB bulk operations for efficient batch processing.
+     *
+     * @param sourcesToSaveByCollection Map of collection names to lists of sources to save
+     */
+    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
+        for (Map.Entry<String, List<Source>> entry : sourcesToSaveByCollection.entrySet()) {
+            String collectionName = entry.getKey();
+            List<Source> sources = entry.getValue();
 
-Spring will automatically:
-1. ✅ Discover the new processor via component scanning
-2. ✅ Register it in `MigrationProcessorFactory`
-3. ✅ Make it available through the API
-4. ✅ Include it in supported types list
+            if (!sources.isEmpty()) {
+                log.info("Performing bulk save of {} sources to collection: {}", sources.size(), collectionName);
 
-#### Step 3: Test the New Processor
+                try {
+                    // Use MongoDB's bulkOps for efficient batch operations
+                    var bulkOps = mongoTemplate.bulkOps(
+                        org.springframework.data.mongodb.core.BulkOperations.BulkMode.UNORDERED,
+                        collectionName
+                    );
 
-```bash
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload?type=clearinghouse" \
-  -F "file=@clearinghouse_data.xlsx"
-```
+                    for (Source source : sources) {
+                        // Create query to find existing document by _id
+                        Query query = new Query(Criteria.where("_id").is(source.getId()));
 
-### No Code Changes Required In:
+                        // Create update from source object
+                        org.springframework.data.mongodb.core.query.Update update =
+                            new org.springframework.data.mongodb.core.query.Update();
 
-- ❌ `DataMigrationApi`
-- ❌ `DataMigrationApiController`
-- ❌ `MigrationService`
-- ❌ `MigrationProcessorFactory`
+                        // Map all fields from source to update
+                        update.set("hon", source.getHon());
+                        update.set("organizationName", source.getOrganizationName());
+                        update.set("city", source.getCity());
+                        update.set("country", source.getCountry());
+                        update.set("state", source.getState());
+                        update.set("payload", source.getPayload());
+                        // Add other fields as needed
 
-**Only add the new processor class!**
+                        // Upsert: update if exists, insert if not
+                        bulkOps.upsert(query, update);
+                    }
 
----
+                    // Execute bulk operation
+                    var result = bulkOps.execute();
 
-## Testing
+                    log.info("Successfully saved {} sources to collection: {} (Modified: {}, Upserted: {})",
+                        sources.size(), collectionName, result.getModifiedCount(), result.getUpserts().size());
 
-### Unit Testing
+                } catch (Exception e) {
+                    log.error("Error during bulk save to collection: {}", collectionName, e);
 
-**Test the Factory:**
+                    // Fallback to individual saves if bulk operation fails
+                    log.warn("Falling back to individual saves for collection: {}", collectionName);
+                    for (Source source : sources) {
+                        try {
+                            mongoTemplate.save(source, collectionName);
+                        } catch (Exception saveEx) {
+                            log.error("Failed to save source: {} (HON: {})",
+                                source.getOrganizationName(), source.getHon(), saveEx);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-```java
-@ExtendWith(MockitoExtension.class)
-class MigrationProcessorFactoryTest {
-    
-    @Mock
-    private ParchmentMigrationProcessor parchmentProcessor;
-    
-    @InjectMocks
-    private MigrationProcessorFactory factory;
-    
-    @Test
-    void shouldReturnParchmentProcessor() {
-        when(parchmentProcessor.supports("parchment")).thenReturn(true);
+    /**
+     * Process a single institution record and return the updated source.
+     * Returns null if the institution is not found.
+     *
+     * @param record Institution record to process
+     * @param vendor Parchment vendor information
+     * @return Updated Source object, or null if not found
+     */
+    private Source processInstitutionRecord(InstitutionRecord record, Vendors vendor) {
+        String stateFullName = StateMapper.getFullName(record.getStateCountyRegion());
+        if (stateFullName.isEmpty() && !record.getStateCountyRegion().isEmpty()) {
+            stateFullName = record.getStateCountyRegion();
+        }
+
+        log.debug("Searching for institution: {}, City: {}, Country: {}, State: {}",
+            record.getInstitutionName(), record.getCity(), record.getCountry(), stateFullName);
+
+        // Search for source using MongoTemplate with regex for case-insensitive search
+        Query query = new Query();
+        query.addCriteria(Criteria.where("organizationName").regex("^" + record.getInstitutionName() + "$", "i")
+            .and("city").regex("^" + record.getCity() + "$", "i")
+            .and("country").regex("^" + record.getCountry() + "$", "i")
+            .and("state").is(stateFullName));
+
+        // Search across all education source collections
+        Source source = mongoTemplate.findOne(query, Source.class, "education_source");
+
+        if (source == null) {
+            log.warn("Institution not found: {}", record.getInstitutionName());
+            return null;
+        }
+
+        log.info("Found matching institution: {} (HON: {})", source.getOrganizationName(), source.getHon());
+
+        updateParchmentExchangeContact(source, record, vendor);
+
+        return source;
+    }
+
+    private void updateParchmentExchangeContact(Source source, InstitutionRecord record, Vendors vendor) {
+        BasicDBObject payload = (BasicDBObject) source.getPayload();
+        if (payload == null) {
+            payload = new BasicDBObject();
+            source.setPayload(payload);
+        }
+
+        BasicDBList contacts = (BasicDBList) payload.get("contacts");
+        if (contacts == null) {
+            contacts = new BasicDBList();
+            payload.put("contacts", contacts);
+        }
+
+        BasicDBObject contact;
+        if (contacts.isEmpty()) {
+            contact = new BasicDBObject();
+            contact.put("purpose", "");
+            contact.put("purposeRule", new BasicDBList());
+            contact.put("contactDetails", new BasicDBList());
+            contacts.add(contact);
+        } else {
+            contact = (BasicDBObject) contacts.get(0);
+        }
         
-        MigrationProcessor processor = factory.getProcessor("parchment");
-        
-        assertNotNull(processor);
-        assertEquals("parchment", processor.getMigrationType());
+        BasicDBList contactDetails = (BasicDBList) contact.get("contactDetails");
+        if (contactDetails == null) {
+            contactDetails = new BasicDBList();
+            contact.put("contactDetails", contactDetails);
+        }
+
+        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_TYPE_AUTOMATED_SERVICES);
+
+        if (automatedServicesContact == null) {
+            int maxPriority = getMaxPriority(contactDetails);
+            int newPriority = maxPriority + 1;
+
+            automatedServicesContact = createAutomatedServicesContact(newPriority);
+            contactDetails.add(automatedServicesContact);
+            log.debug("Created new contactAutomatedServices with priority: {}", newPriority);
+        }
+
+        updateParchmentExchangeCommunication(automatedServicesContact, record, vendor);
+    }
+
+    private BasicDBObject findContactDetailByType(BasicDBList contactDetails, String type) {
+        for (Object obj : contactDetails) {
+            BasicDBObject cd = (BasicDBObject) obj;
+            if (type.equals(cd.get("type"))) {
+                return cd;
+            }
+        }
+        return null;
+    }
+
+    private int getMaxPriority(BasicDBList contactDetails) {
+        int maxPriority = 0;
+        for (Object obj : contactDetails) {
+            BasicDBObject cd = (BasicDBObject) obj;
+            Object priority = cd.get("priority");
+            if (priority != null) {
+                int p = priority instanceof Integer ? (Integer) priority : Integer.parseInt(priority.toString());
+                maxPriority = Math.max(maxPriority, p);
+            }
+        }
+        return maxPriority;
+    }
+
+    private BasicDBObject createAutomatedServicesContact(int priority) {
+        BasicDBObject contact = new BasicDBObject();
+        contact.put("followUpAllowed", "");
+        contact.put("type", CONTACT_TYPE_AUTOMATED_SERVICES);
+        contact.put("priority", priority);
+        contact.put("version", "");
+        contact.put("turnAroundTime", "");
+        contact.put("surChargeAmount", "");
+        contact.put("name", "");
+        contact.put("paymentMethod", "");
+        contact.put("turnAroundTimeUnit", TIME_UNIT_DAYS);
+        contact.put("surChargeCurrency", "");
+        contact.put("communication", new BasicDBList());
+        contact.put("fromYear", "");
+        contact.put("toYear", "");
+        return contact;
     }
     
-    @Test
-    void shouldThrowExceptionForUnsupportedType() {
-        assertThrows(IllegalArgumentException.class, 
-            () -> factory.getProcessor("unknown"));
+    private void updateParchmentExchangeCommunication(BasicDBObject contactDetail, InstitutionRecord record, Vendors vendor) {
+        BasicDBList communications = (BasicDBList) contactDetail.get("communication");
+        if (communications == null) {
+            communications = new BasicDBList();
+            contactDetail.put("communication", communications);
+        }
+
+        BasicDBObject parchmentComm = null;
+        for (Object obj : communications) {
+            BasicDBObject comm = (BasicDBObject) obj;
+            if (PARCHMENT_EXCHANGE.equals(comm.get("name"))) {
+                parchmentComm = comm;
+                break;
+            }
+        }
+
+        if (parchmentComm == null) {
+            int maxPriority = getMaxPriority(communications);
+            int newPriority = maxPriority + 1;
+
+            parchmentComm = createParchmentExchangeCommunication(record, vendor, newPriority);
+            communications.add(parchmentComm);
+            log.debug("Added Parchment Exchange communication with priority: {}", newPriority);
+        } else {
+            updateCommunicationInfo((BasicDBList) parchmentComm.get("communicationInfo"), record, vendor);
+            log.debug("Updated existing Parchment Exchange communication");
+        }
+    }
+
+    private BasicDBObject createParchmentExchangeCommunication(InstitutionRecord record, Vendors vendor, int priority) {
+        BasicDBList communicationInfoList = createCommunicationInfoList(record, vendor);
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put("name", PARCHMENT_EXCHANGE);
+        communication.put("communicationInfo", communicationInfoList);
+        communication.put("providerID", String.valueOf(vendor.getProviderId()));
+        communication.put("priority", priority);
+        return communication;
+    }
+
+    private BasicDBList createCommunicationInfoList(InstitutionRecord record, Vendors vendor) {
+        BasicDBList infoList = new BasicDBList();
+
+        infoList.add(createCommunicationInfo("companyNames", record.getInstitutionName()));
+        infoList.add(createCommunicationInfo("codes", record.getCode()));
+        infoList.add(createCommunicationInfo("branch", ""));
+        infoList.add(createCommunicationInfo("uri", vendor.getWebsite()));
+        infoList.add(createCommunicationInfo("sourceType", SOURCE_TYPE_EDUCATION));
+
+        String surchargeAmount = record.getSurchargeAmount() != null ? record.getSurchargeAmount() : "";
+        String currency = "USA".equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : "";
+        infoList.add(createCommunicationInfo("surChargeAmount", surchargeAmount));
+        infoList.add(createCommunicationInfo("surChargeCurrency", currency));
+
+        String paymentMethod = record.getPaymentMethod() != null ? record.getPaymentMethod() : "";
+        infoList.add(createCommunicationInfo("paymentMethod", paymentMethod));
+
+        String followUpAllowed = record.getFollowUpAllowed() != null ? record.getFollowUpAllowed() : "";
+        infoList.add(createCommunicationInfo("followUpAllowed", followUpAllowed));
+        infoList.add(createCommunicationInfo("followUpAllowedAfter", ""));
+        infoList.add(createCommunicationInfo("followUpAllowedAfterTimeUnit", TIME_UNIT_DAYS));
+
+        String turnaroundTime = record.getTurnaroundTime() != null ? record.getTurnaroundTime() : "";
+        infoList.add(createCommunicationInfo("turnAroundTime", turnaroundTime));
+        infoList.add(createCommunicationInfo("turnAroundTimeUnit", TIME_UNIT_DAYS));
+
+        infoList.add(createCommunicationInfo("fromYear", ""));
+        infoList.add(createCommunicationInfo("toYear", ""));
+
+        return infoList;
+    }
+
+    private BasicDBObject createCommunicationInfo(String type, String value) {
+        BasicDBObject info = new BasicDBObject();
+        info.put("type", type);
+        info.put("value", value != null ? value : "");
+        return info;
+    }
+
+    private void updateCommunicationInfo(BasicDBList communicationInfoList, InstitutionRecord record, Vendors vendor) {
+        if (communicationInfoList == null) {
+            return;
+        }
+
+        updateInfoValue(communicationInfoList, "companyNames", record.getInstitutionName());
+        updateInfoValue(communicationInfoList, "codes", record.getCode());
+        updateInfoValue(communicationInfoList, "uri", vendor.getWebsite());
+
+        String surchargeAmount = record.getSurchargeAmount() != null ? record.getSurchargeAmount() : "";
+        String currency = "USA".equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : "";
+        updateInfoValue(communicationInfoList, "surChargeAmount", surchargeAmount);
+        updateInfoValue(communicationInfoList, "surChargeCurrency", currency);
+
+        String paymentMethod = record.getPaymentMethod() != null ? record.getPaymentMethod() : "";
+        updateInfoValue(communicationInfoList, "paymentMethod", paymentMethod);
+
+        String followUpAllowed = record.getFollowUpAllowed() != null ? record.getFollowUpAllowed() : "";
+        updateInfoValue(communicationInfoList, "followUpAllowed", followUpAllowed);
+
+        String turnaroundTime = record.getTurnaroundTime() != null ? record.getTurnaroundTime() : "";
+        updateInfoValue(communicationInfoList, "turnAroundTime", turnaroundTime);
+    }
+
+    private void updateInfoValue(BasicDBList communicationInfoList, String type, String value) {
+        for (Object obj : communicationInfoList) {
+            BasicDBObject info = (BasicDBObject) obj;
+            if (type.equals(info.get("type"))) {
+                info.put("value", value != null ? value : "");
+                break;
+            }
+        }
     }
 }
-```
-
-**Test the Controller:**
-
-```java
-@WebMvcTest(DataMigrationApiController.class)
-class DataMigrationApiControllerTest {
-    
-    @Autowired
-    private MockMvc mockMvc;
-    
-    @MockBean
-    private MigrationService migrationService;
-    
-    @MockBean
-    private ExcelParserService excelParserService;
-    
-    @Test
-    void shouldUploadFileSuccessfully() throws Exception {
-        MockMultipartFile file = new MockMultipartFile(
-            "file", "test.xlsx", 
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "test data".getBytes()
-        );
-        
-        when(migrationService.isMigrationTypeSupported("parchment"))
-            .thenReturn(true);
-        when(excelParserService.parseExcelFile(any()))
-            .thenReturn(List.of(new InstitutionRecord()));
-        
-        mockMvc.perform(multipart("/sourceintelligence-service/api/v1/migration/upload")
-                .file(file)
-                .param("type", "parchment"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.status").value("success"));
-    }
-}
-```
-
-### Integration Testing
-
-```bash
-# Test with actual Excel file
-curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/migration/upload?type=parchment" \
-  -F "file=@test_data.xlsx" \
-  -v
-```
-
----
-
-## Deployment Notes
-
-### Pre-Deployment Checklist
-
-- [ ] Update `application.properties` with file size limits
-- [ ] Verify Spring multipart configuration
-- [ ] Test with sample Excel files
-- [ ] Verify error handling in all scenarios
-- [ ] Check logging configuration
-- [ ] Review Swagger/OpenAPI documentation
-
-### Database Changes
-
-**None required** - This refactoring does not change database schema.
-
-### Backward Compatibility
-
-✅ **Fully backward compatible**
-- Default `type=parchment` maintains existing behavior
-- Existing API clients continue to work without changes
-
-### Rollback Plan
-
-If issues arise:
-1. Revert to previous version
-2. No database rollback needed
-3. No data migration required
-
----
-
-## Monitoring & Observability
-
-### Key Metrics to Monitor
-
-| Metric | Description | Alert Threshold |
-|--------|-------------|-----------------|
-| Processing Time | Time to process migration file | > 30 seconds |
-| Success Rate | % of successful migrations | < 95% |
-| File Size | Average file size uploaded | > 8 MB |
-| Error Rate | % of failed requests | > 5% |
-
-### Log Messages
-
-**Success:**
-```
-INFO - Received migration file upload request - filename: data.xlsx, size: 1024000 bytes, type: parchment
-INFO - Found 150 records in Excel file for migration type: parchment
-INFO - Migration completed successfully - type: parchment, total: 150, updated: 145, not found: 5, time: 2345ms
-```
-
-**Error:**
-```
-ERROR - Error processing migration file: data.xlsx
-ERROR - 109_40022 REST API EXCEPTION. Response Status: 400 Message: File size exceeds maximum allowed size of 10 MB.
-```
-
----
-
-## FAQ
-
-### Q: Can I upload files larger than 10MB?
-
-**A:** Yes, configure `migration.file.max-size-mb` in `application.properties`.
-
-### Q: What Excel formats are supported?
-
-**A:** Both `.xlsx` (Excel 2007+) and `.xls` (Excel 97-2003) formats are supported.
-
-### Q: How do I add a new migration type?
-
-**A:** Simply create a new class implementing `MigrationProcessor` and annotate it with `@Component`. Spring will auto-discover it.
-
-### Q: What happens if an institution is not found?
-
-**A:** It's logged in the `notFoundInstitutions` array in the response. The migration continues processing other records.
-
-### Q: Is the migration transactional?
-
-**A:** Yes, the `@Transactional` annotation ensures atomicity within each processor.
-
----
-
-## Related Documentation
-
-- [Source Intelligence API Documentation](link-to-api-docs)
-- [Excel File Format Specification](link-to-excel-spec)
-- [Error Handling Guide](link-to-error-guide)
-- [Deployment Guide](link-to-deployment)
-
----
-
-## Change History
-
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2026-03-23 | Development Team | Initial refactoring to Strategy Pattern |
-| 1.1 | 2026-03-23 | Development Team | Added error constants and response DTO |
-| 1.2 | 2026-03-23 | Development Team | Enhanced validation and logging |
-
----
-
-## Contact & Support
-
-For questions or issues:
-- **Team:** Source Intelligence Development Team
-- **Slack:** #source-intelligence-dev
-- **Email:** source-intelligence-team@company.com
-- **JIRA:** [SI Project](link-to-jira)
-
----
-
-*Last Updated: March 23, 2026*
 
