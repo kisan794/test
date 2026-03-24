@@ -1,87 +1,192 @@
-private void processAutomatedServiceInfo(String type, Object value, String contactType,
-                                             JSONObject communicationObj, ContactDetailsDTO contactDetailsDTO,
-                                             CommunicationInfoContext context) {
-        if (!CONTACT_AUTOMATED_SERVICES.equals(contactType) || contactDetailsDTO == null) {
-            return;
+Overview:
+Currently, researchers manually maintain and update license information using Excel (XL) sheets. This approach is time-consuming, error-prone, and inefficient when handling large volumes of data or performing frequent updates.
+
+To minimize manual effort and improve data accuracy, the proposed system automates the process of reading license information directly from Excel files and storing it in a centralized MongoDB collection (plv_source). This eliminates repetitive manual data entry and ensures consistency across records.
+
+The system is built using Spring Boot–based microservices that expose REST APIs for managing license data, including create, update, and delete operations. Additionally, smart search APIs are provided to enable users to efficiently retrieve license information by applying filters or entering search criteria.
+
+A React-based rich user interface (UI) is developed to consume these Spring Boot microservices. The UI offers an intuitive and user-friendly experience, allowing researchers to easily create, update, and manage license records.
+
+Overall, this solution enhances productivity, reduces human errors, and enables efficient data management and retrieval through automation.
+
+Objectives:
+
+
+Automate license data retrieval from excel sheet
+
+Store dynamic data in MongoDB (plv_source)
+
+Enable smart, flexible search capabilities
+
+Reduce manual effort and improve efficiency
+
+High-Level Architecture: 
+The system is designed to automate Excel-based license data ingestion and provide a user-friendly interface for managing and searching license records.
+
+Excel File (Maintained by Researchers)
+                ↓
+Spring Boot Microservice (Excel Processing & REST APIs)
+                ↓
+MongoDB (plv_source Collection)
+                ↑
+React UI (Create, Update, Delete, Smart Search)
+                ↑
+Spring Boot Microservices (REST APIs)
+
+Components
+Excel process Service
+
+Professional License Service Layer
+
+Mongo Repository Layer
+
+Elastic Search Layer
+
+Rest Controller Layer
+
+React UI components
+
+High-Level Architecture:
+Mongo Collection Schema (license_source):
+
+
+
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "/HRG/SIDB/2024-07/LicenseSource.json",
+  "title": "LicenseSource",
+  "description": "Schema for managing license source information",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "hon": {
+      "description": "Unique Number",
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "description": "Defines the level of the license",
+      "type": "string",
+      "enum": ["GLOBAL", "NATIONAL", "STATE"]
+    },
+    "country": {
+      "description": "Country where the license is applicable",
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "description": "State where the license is applicable (required when scope is STATE)",
+      "type": ["string", "null"]
+    },
+    "licenseType": {
+      "description": "Type of license",
+      "type": "string",
+      "minLength": 1
+    },
+    "webAddress": {
+      "description": "List of official web addresses",
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "phone": {
+      "description": "List of phone numbers",
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "email": {
+      "description": "List of email addresses",
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "fax": {
+      "description": "List of fax numbers",
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "governingAgency": {
+      "description": "Regulatory or governing authority",
+      "type": ["string", "null"]
+    },
+    "multiState": {
+      "description": "Indicates if license applies to multiple states",
+      "type": ["string", "null"]
+    },
+    "expiration": {
+      "description": "License expiration details",
+      "type": ["string", "null"]
+    },
+    "licenseStatus": {
+      "description": "Current status of the license",
+      "type": ["string", "null"]
+    },
+    "disciplinaryActions": {
+      "description": "Any disciplinary actions associated with the license",
+      "type": ["string", "null"]
+    },
+    "additionalInformation": {
+      "description": "Additional notes or metadata",
+      "type": ["string", "null"]
+    },
+    "createdDate": {
+      "description": "Creation timestamp",
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "updatedDate": {
+      "description": "Last updated timestamp",
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "active": {
+      "description": "Indicates if the license source is active",
+      "type": ["boolean", "null"]
+    }
+  },
+  "required": [
+    "hon",
+    "scope",
+    "licenseType",
+    "country"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "scope": { "const": "STATE" }
         }
-
-        setProviderIfPresent(communicationObj, contactDetailsDTO);
-        processAutomatedServiceField(type, value, contactDetailsDTO, context);
-    }
-
-    private void setProviderIfPresent(JSONObject communicationObj, ContactDetailsDTO contactDetailsDTO) {
-        if (communicationObj.has(NAME)) {
-            contactDetailsDTO.setProvider(communicationObj.getString(NAME));
+      },
+      "then": {
+        "required": ["state"],
+        "properties": {
+          "state": {
+            "type": "string",
+            "minLength": 1
+          }
         }
+      }
     }
+  ]
+}
+Indexes
+licenseSourceSchema.index({ hon: 1 }, { unique: true, name: "idx_hon_unique" });
+licenseSourceSchema.index({ scope: 1 }, { name: "idx_scope" });
+licenseSourceSchema.index({ country: 1 }, { name: "idx_country" });
+licenseSourceSchema.index({ state: 1 }, { name: "idx_state" });
+licenseSourceSchema.index({ licenseType: 1 }, { name: "idx_license_type" });
+licenseSourceSchema.index({ governingAgency: 1 }, { name: "idx_governing_agency" });
+licenseSourceSchema.index({ scope: 1, state: 1 }, { name: "idx_scope_state" });
+licenseSourceSchema.index({ active: 1 }, { name: "idx_active" });
 
-    private void processAutomatedServiceField(String type, Object value, ContactDetailsDTO contactDetailsDTO,
-                                              CommunicationInfoContext context) {
-        if (CODES.equals(type)) {
-            processCodeField(value, contactDetailsDTO);
-        } else if (BRANCH.equals(type)) {
-            processBranchField(value, contactDetailsDTO);
-        } else if (SUR_CHARGE_AMOUNT.equals(type)) {
-            processSurchargeAmountField(value, contactDetailsDTO);
-        } else if (SUR_CHARGE_CURRENCY.equals(type)) {
-            processSurchargeCurrencyField(value, contactDetailsDTO);
-        } else if (SUR_CHARGE_PAYMENT.equals(type)) {
-            processSurchargePaymentField(value, contactDetailsDTO);
-        } else if (TURN_AROUND_TIME.equals(type)) {
-            processTurnAroundTimeField(value, contactDetailsDTO);
-        } else if (FOLLOW_UP_ALLOWED.equals(type)) {
-            processFollowUpAllowedField(value, context);
-        } else if (FOLLOW_UP_ALLOWED_AFTER.equals(type)) {
-            processFollowUpAllowedAfterField(value, contactDetailsDTO, context);
-        }
-    }
+Excel Processing Design
+ 
 
-    private void processCodeField(Object value, ContactDetailsDTO contactDetailsDTO) {
-        contactDetailsDTO.setCode((String) value);
-    }
-
-    private void processBranchField(Object value, ContactDetailsDTO contactDetailsDTO) {
-        contactDetailsDTO.setBranch((String) value);
-    }
-
-    private void processSurchargeAmountField(Object value, ContactDetailsDTO contactDetailsDTO) {
-        if (!StringUtils.isBlank((String) value)) {
-            contactDetailsDTO.setSurcharge((String) value);
-        }
-    }
-
-    private void processSurchargeCurrencyField(Object value, ContactDetailsDTO contactDetailsDTO) {
-        if (hasSurchargeValue(contactDetailsDTO)) {
-            contactDetailsDTO.setSurcharge(contactDetailsDTO.getSurcharge() + " " + value);
-        }
-    }
-
-    private void processSurchargePaymentField(Object value, ContactDetailsDTO contactDetailsDTO) {
-        if (hasSurchargeValue(contactDetailsDTO)) {
-            contactDetailsDTO.setPaymentMethod((String) value);
-        }
-    }
-
-    private void processTurnAroundTimeField(Object value, ContactDetailsDTO contactDetailsDTO) {
-        if (value != null && !StringUtils.isBlank((String) value)) {
-            contactDetailsDTO.setTurnAroundTime(value + " days");
-        }
-    }
-
-    private void processFollowUpAllowedField(Object value, CommunicationInfoContext context) {
-        if (value != null && !StringUtils.isBlank((String) value)) {
-            context.isFollowUpAllowed = ((String) value).equalsIgnoreCase("true");
-        }
-    }
-
-    private void processFollowUpAllowedAfterField(Object value, ContactDetailsDTO contactDetailsDTO,
-                                                  CommunicationInfoContext context) {
-        if (context.isFollowUpAllowed && value != null) {
-            String followUpValue = StringUtils.isBlank((String) value) ? "0" : (String) value;
-            contactDetailsDTO.setFollowUpAllowedAfter(followUpValue + " days");
-        }
-    }
-
-    private boolean hasSurchargeValue(ContactDetailsDTO contactDetailsDTO) {
-        return contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank();
-    }
+API Design
+ 
