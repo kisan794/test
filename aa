@@ -1,742 +1,775 @@
-package com.hireright.sourceintelligence.service.migration;
+package com.hireright.sourceintelligence.domain.mapper;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
-/**
- * Unit tests for MigrationProcessorFactory.
- * Tests processor selection and discovery logic.
- */
-@ExtendWith(MockitoExtension.class)
-class MigrationProcessorFactoryTest {
-
-    @Mock
-    private MigrationProcessor parchmentProcessor;
-
-    @Mock
-    private MigrationProcessor clearinghouseProcessor;
-
-    private MigrationProcessorFactory factory;
-
-    @BeforeEach
-    void setUp() {
-        when(parchmentProcessor.getMigrationType()).thenReturn("parchment");
-        when(parchmentProcessor.supports("parchment")).thenReturn(true);
-        when(parchmentProcessor.supports(anyString())).thenCallRealMethod();
-
-        when(clearinghouseProcessor.getMigrationType()).thenReturn("clearinghouse");
-        when(clearinghouseProcessor.supports("clearinghouse")).thenReturn(true);
-        when(clearinghouseProcessor.supports(anyString())).thenCallRealMethod();
-    }
-
-    @Test
-    void testGetProcessor_Success() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        MigrationProcessor result = factory.getProcessor("parchment");
-
-        // Assert
-        assertNotNull(result);
-        assertEquals(parchmentProcessor, result);
-    }
-
-    @Test
-    void testGetProcessor_MultipleProcessors() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        MigrationProcessor parchment = factory.getProcessor("parchment");
-        MigrationProcessor clearinghouse = factory.getProcessor("clearinghouse");
-
-        // Assert
-        assertEquals(parchmentProcessor, parchment);
-        assertEquals(clearinghouseProcessor, clearinghouse);
-    }
-
-    @Test
-    void testGetProcessor_UnsupportedType() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act & Assert
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            factory.getProcessor("unknown");
-        });
-
-        assertTrue(exception.getMessage().contains("Unsupported migration type"));
-        assertTrue(exception.getMessage().contains("unknown"));
-    }
-
-    @Test
-    void testGetProcessor_NullType() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act & Assert
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            factory.getProcessor(null);
-        });
-
-        assertTrue(exception.getMessage().contains("Migration type cannot be null or empty"));
-    }
-
-    @Test
-    void testGetProcessor_EmptyType() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act & Assert
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            factory.getProcessor("");
-        });
-
-        assertTrue(exception.getMessage().contains("Migration type cannot be null or empty"));
-    }
-
-    @Test
-    void testGetProcessor_WhitespaceType() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act & Assert
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            factory.getProcessor("   ");
-        });
-
-        assertTrue(exception.getMessage().contains("Migration type cannot be null or empty"));
-    }
-
-    @Test
-    void testGetSupportedTypes_SingleProcessor() {
-        // Arrange
-        List<MigrationProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        String supportedTypes = factory.getSupportedTypes();
-
-        // Assert
-        assertEquals("parchment", supportedTypes);
-    }
-
-    @Test
-    void testGetSupportedTypes_MultipleProcessors() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        String supportedTypes = factory.getSupportedTypes();
-
-        // Assert
-        assertTrue(supportedTypes.contains("parchment"));
-        assertTrue(supportedTypes.contains("clearinghouse"));
-        assertTrue(supportedTypes.contains(", "));
-    }
-
-    @Test
-    void testGetSupportedTypes_NoProcessors() {
-        // Arrange
-        List<MigrationProcessor> processors = Collections.emptyList();
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        String supportedTypes = factory.getSupportedTypes();
-
-        // Assert
-        assertEquals("none", supportedTypes);
-    }
-
-    @Test
-    void testIsSupported_True() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        boolean isParchmentSupported = factory.isSupported("parchment");
-        boolean isClearinghouseSupported = factory.isSupported("clearinghouse");
-
-        // Assert
-        assertTrue(isParchmentSupported);
-        assertTrue(isClearinghouseSupported);
-    }
-
-    @Test
-    void testIsSupported_False() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        boolean isSupported = factory.isSupported("unknown");
-
-        // Assert
-        assertFalse(isSupported);
-    }
-
-    @Test
-    void testIsSupported_NullType() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        boolean isSupported = factory.isSupported(null);
-
-        // Assert
-        assertFalse(isSupported);
-    }
-
-    @Test
-    void testIsSupported_EmptyType() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act
-        boolean isSupported = factory.isSupported("");
-
-        // Assert
-        assertFalse(isSupported);
-    }
-
-    @Test
-    void testGetProcessor_CaseInsensitive() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor);
-        factory = new MigrationProcessorFactory(processors);
-        
-        // Mock case-insensitive support
-        when(parchmentProcessor.supports("PARCHMENT")).thenReturn(true);
-        when(parchmentProcessor.supports("Parchment")).thenReturn(true);
-
-        // Act
-        MigrationProcessor upperCase = factory.getProcessor("PARCHMENT");
-        MigrationProcessor mixedCase = factory.getProcessor("Parchment");
-
-        // Assert
-        assertEquals(parchmentProcessor, upperCase);
-        assertEquals(parchmentProcessor, mixedCase);
-    }
-
-    @Test
-    void testGetProcessor_ErrorMessageIncludesAvailableTypes() {
-        // Arrange
-        List<MigrationProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new MigrationProcessorFactory(processors);
-
-        // Act & Assert
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            factory.getProcessor("unknown");
-        });
-
-        String message = exception.getMessage();
-        assertTrue(message.contains("parchment"));
-        assertTrue(message.contains("clearinghouse"));
-    }
-}
-
-
-
-
-package com.hireright.sourceintelligence.service.migration;
-
-import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.api.dto.Alias;
+import com.hireright.sourceintelligence.api.dto.ContactDetailsDTO;
+import com.hireright.sourceintelligence.api.dto.SourceDTO;
+import com.hireright.sourceintelligence.domain.constants.Constants;
 import com.hireright.sourceintelligence.domain.entity.Source;
-import com.hireright.sourceintelligence.domain.entity.Vendors;
-import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
-import com.mongodb.BasicDBList;
-import com.mongodb.BasicDBObject;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Query;
+import org.apache.commons.lang3.StringUtils;
+import org.bson.types.ObjectId;
+import org.json.*;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 
-import java.util.*;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.StringJoiner;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
+import static com.hireright.sourceintelligence.domain.mapper.SourceMapper.mapToJSONObject;
+import static com.hireright.sourceintelligence.service.impl.SearchConstants.ReportActions.CREATE;
 
-/**
- * Unit tests for ParchmentMigrationProcessor.
- * Tests Parchment-specific migration logic.
- */
-@ExtendWith(MockitoExtension.class)
-class ParchmentMigrationProcessorTest {
+@Mapper(componentModel = "spring", imports = {JSONObject.class, JSONArray.class})
+public interface SourceDTOMapper {
 
-    @Mock
-    private VendorsRepository vendorsRepository;
-
-    @Mock
-    private MongoTemplate mongoTemplate;
-
-    @InjectMocks
-    private ParchmentMigrationProcessor processor;
-
-    private Vendors parchmentVendor;
-    private List<InstitutionRecord> sampleRecords;
-
-    @BeforeEach
-    void setUp() {
-        // Setup Parchment vendor
-        parchmentVendor = new Vendors();
-        parchmentVendor.setVendor("Parchment Exchange");
-        parchmentVendor.setProviderId(123);
-        parchmentVendor.setWebsite("https://www.parchment.com");
-
-        // Setup sample institution records
-        sampleRecords = Arrays.asList(
-                InstitutionRecord.builder()
-                        .institutionName("Harvard University")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .serviceProvider("Parchment Exchange")
-                        .surchargeAmount("5.00")
-                        .paymentMethod("Credit Card")
-                        .code("HARV001")
-                        .turnaroundTime("3")
-                        .followUpAllowed("Yes")
-                        .build(),
-                InstitutionRecord.builder()
-                        .institutionName("MIT")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .serviceProvider("Parchment Exchange")
-                        .surchargeAmount("5.00")
-                        .paymentMethod("Credit Card")
-                        .code("MIT001")
-                        .turnaroundTime("3")
-                        .followUpAllowed("Yes")
-                        .build()
-        );
+    // Helper Methods
+    default String getPayloadField(Source source, String key) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            return payload.has(key) ? payload.getString(key) : "";
+        }
+        return "";
     }
 
-    @Test
-    void testGetMigrationType() {
-        // Act
-        String migrationType = processor.getMigrationType();
-
-        // Assert
-        assertEquals("parchment", migrationType);
+    default String stripHtmlTags(String input) {
+        return input != null ? input.replaceAll("<[^>]*>", "").replace("&nbsp;", " ") : "";
     }
 
-    @Test
-    void testSupports_Parchment() {
-        // Act
-        boolean supports = processor.supports("parchment");
 
-        // Assert
-        assertTrue(supports);
+    default Instant getLastModifiedDate(Source source, String lastModifiedDate) {
+        if (source.getAction().equals(CREATE)) {
+            return null;
+        }
+        return source.getLastModifiedDate();
     }
 
-    @Test
-    void testSupports_OtherType() {
-        // Act
-        boolean supports = processor.supports("clearinghouse");
-
-        // Assert
-        assertFalse(supports);
+    default String getAddressLine(Source source) {
+        String line = "";
+        String postalCode = "";
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(ADDRESS)) {
+                JSONArray address = payload.getJSONArray(ADDRESS);
+                JSONObject addressJSONObject = address.getJSONObject(0);
+                if (addressJSONObject.has(LINE)) {
+                    line = addressJSONObject.getString(LINE);
+                }
+                if (addressJSONObject.has(POSTAL_CODE)) {
+                    postalCode = addressJSONObject.getString(POSTAL_CODE);
+                }
+            }
+        }
+        return Stream.of(line, source.getCity(), source.getState(), postalCode, source.getCountry())
+                .filter(value -> value != null && !value.isEmpty()) // Filter out null or empty values
+                .collect(Collectors.joining(", "));
     }
 
-    @Test
-    void testProcessInstitutionRecords_Success() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source1, source2);
-
-        // Mock bulk operations
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        // Assert
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(2, result.get("updatedRecords"));
-        assertEquals(0, result.get("notFoundRecords"));
-        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
-
-        verify(vendorsRepository).findAll();
-        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps, times(2)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
+    default String getRelationship(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(RELATIONSHIPS)) {
+                JSONArray relationships = payload.getJSONArray(RELATIONSHIPS);
+                if (!relationships.isEmpty()) {
+                    JSONObject relationship = relationships.getJSONObject(0);
+                    return relationship.has(RELATIONSHIP) ? relationship.getString(RELATIONSHIP) : "";
+                }
+            }
+        }
+        return "";
     }
 
-    @Test
-    void testProcessInstitutionRecords_InstitutionNotFound() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source1, null); // Second institution not found
-
-        // Mock bulk operations for the one found source
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        // Assert
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(1, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(1, notFoundInstitutions.size());
-        assertEquals("MIT", notFoundInstitutions.get(0));
-
-        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
+    default String getRelationshipName(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(RELATIONSHIPS)) {
+                JSONArray relationships = payload.getJSONArray(RELATIONSHIPS);
+                if (!relationships.isEmpty()) {
+                    JSONObject relationship = relationships.getJSONObject(0);
+                    return relationship.has(NAME) ? relationship.getString(NAME) : "";
+                }
+            }
+        }
+        return "";
     }
 
-    @Test
-    void testProcessInstitutionRecords_VendorNotFound() {
-        // Arrange
-        when(vendorsRepository.findAll()).thenReturn(Collections.emptyList());
-
-        // Act & Assert
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            processor.processInstitutionRecords(sampleRecords);
-        });
-
-        assertTrue(exception.getMessage().contains("Vendor 'Parchment Exchange' not found"));
-        verify(vendorsRepository).findAll();
-        verifyNoInteractions(mongoTemplate);
+    default String getAdditionalInfo(Source source, String fieldName) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(ADDITIONAL_INFO)) {
+                JSONArray additionalInfo = payload.getJSONArray(ADDITIONAL_INFO);
+                if (!additionalInfo.isEmpty()) {
+                    JSONObject additionalInfoJSONObject = additionalInfo.getJSONObject(0);
+                    return additionalInfoJSONObject.has(fieldName) ? additionalInfoJSONObject.getString(fieldName) : "";
+                }
+            }
+        }
+        return "";
     }
 
-    @Test
-    void testProcessInstitutionRecords_EmptyList() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
+    default void mapContactBaseDTO(JSONObject contactDetailJson, ContactDetailsDTO contactDTO) {
+        if (hasNonEmptyValue(contactDetailJson, TURN_AROUND_TIME)) {
+            String turnAroundTime = contactDetailJson.getString(TURN_AROUND_TIME);
 
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(Collections.emptyList());
+            if (hasNonEmptyValue(contactDetailJson, TURN_AROUND_TIME_UNIT)) {
+                turnAroundTime += " " + contactDetailJson.getString(TURN_AROUND_TIME_UNIT);
+            }
 
-        // Assert
-        assertNotNull(result);
-        assertEquals(0, result.get("totalRecords"));
-        assertEquals(0, result.get("updatedRecords"));
-        assertEquals(0, result.get("notFoundRecords"));
-        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
+            contactDTO.setTurnAroundTime(turnAroundTime);
+        }
+        if (contactDetailJson.has(FOLLOW_UP_ALLOWED) && !contactDetailJson.isNull(FOLLOW_UP_ALLOWED)) {
+            boolean isFollowUpAfter = getBooleanValue(contactDetailJson, FOLLOW_UP_ALLOWED);
 
-        verify(vendorsRepository).findAll();
-        verifyNoMoreInteractions(mongoTemplate);
+            if (isFollowUpAfter && contactDetailJson.has(FOLLOW_UP_ALLOWED_AFTER)) {
+                String followUp = contactDetailJson.optString(FOLLOW_UP_ALLOWED_AFTER);
+
+                if (contactDetailJson.has(FOLLOW_UP_ALLOWED_AFTER_UNITS)) {
+                    followUp += " " + contactDetailJson.optString(FOLLOW_UP_ALLOWED_AFTER_UNITS);
+                } else {
+                    followUp += " days";
+                }
+
+                contactDTO.setFollowUpAllowedAfter(followUp);
+            }
+        }
+        if (hasNonEmptyValue(contactDetailJson, SUR_CHARGE_AMOUNT)) {
+            String surcharge = contactDetailJson.optString(SUR_CHARGE_AMOUNT) + " "
+                    + contactDetailJson.optString(SUR_CHARGE_CURRENCY);
+            contactDTO.setSurcharge(surcharge.trim());
+        }
+        if (hasNonEmptyValue(contactDetailJson, SUR_CHARGE_PAYMENT)) {
+            contactDTO.setPaymentMethod(contactDetailJson.optString(SUR_CHARGE_PAYMENT));
+        }
     }
 
-    @Test
-    void testProcessInstitutionRecords_ProcessingError() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenThrow(new RuntimeException("Database connection failed"));
-
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        // Assert
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(0, result.get("updatedRecords"));
-        assertEquals(2, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(2, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("Error"));
-
-        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
-        // No bulk operations should be called since no sources were found
-        verify(mongoTemplate, never()).bulkOps(any(), anyString());
+    private static boolean hasNonEmptyValue(JSONObject json, String key) {
+        return json.has(key)
+                && !json.isNull(key)
+                && !StringUtils.isBlank(json.optString(key));
     }
 
-    @Test
-    void testProcessInstitutionRecords_PartialSuccess() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source1)
-                .thenThrow(new RuntimeException("Connection timeout"));
-
-        // Mock bulk operations for the one successful source
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        // Assert
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(1, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(1, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("MIT"));
-
-        verify(mongoTemplate, times(2)).findOne(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).execute();
+    private static boolean getBooleanValue(JSONObject json, String key) {
+        Object value = json.get(key);
+        if (value instanceof Boolean b) {
+            return b;
+        } else if (value instanceof String s) {
+            return Boolean.getBoolean(s);
+        }
+        return false;
     }
 
-    @Test
-    void testProcessInstitutionRecords_UpdatesPayload() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
+    default List<ContactDetailsDTO> mapContactDetails(Source source) {
+        if (source.getPayload() == null) {
+            return new ArrayList<>();
+        }
 
-        Source source = createMockSource("EDU123", "Harvard University");
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source);
+        JSONObject payload = mapToJSONObject(source.getPayload());
+        JSONArray contactDetails = extractContactDetails(payload);
 
-        // Mock bulk operations
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
+        if (contactDetails == null || contactDetails.isEmpty()) {
+            return new ArrayList<>();
+        }
 
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+        boolean isDoNotContact = isDoNotContact(payload);
+        ContactAccumulator accumulator = new ContactAccumulator(contactDetails.length());
 
-        // Act
-        processor.processInstitutionRecords(Collections.singletonList(sampleRecords.get(0)));
+        for (Object contactDetail : contactDetails) {
+            processContactDetail((JSONObject) contactDetail, isDoNotContact, accumulator);
+        }
 
-        // Assert - Verify bulk upsert was called with update containing payload
-        verify(mockBulkOps).upsert(any(Query.class), argThat(update -> {
-            // The update should contain the payload field
-            return true; // Simplified assertion since Update object is complex
-        }));
-        verify(mockBulkOps).execute();
+        return accumulator.buildFinalContactList();
     }
 
-    @Test
-    void testProcessInstitutionRecords_StateMapping() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
+    private JSONArray extractContactDetails(JSONObject payload) {
+        if (!payload.has(CONTACTS) || payload.get(CONTACTS) == null) {
+            return null;
+        }
 
-        InstitutionRecord recordWithStateAbbr = InstitutionRecord.builder()
-                .institutionName("Test University")
-                .country("USA")
-                .city("Boston")
-                .stateCountyRegion("MA") // Abbreviation
-                .build();
+        JSONArray contacts = (JSONArray) payload.get(CONTACTS);
+        if (contacts.isEmpty()) {
+            return null;
+        }
 
-        Source source = createMockSource("EDU125", "Test University");
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source);
-
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(
-                Collections.singletonList(recordWithStateAbbr)
-        );
-
-        // Assert
-        assertEquals(1, result.get("updatedRecords"));
-        verify(mongoTemplate).findOne(any(Query.class), eq(Source.class), eq("education_source"));
+        JSONObject firstContact = (JSONObject) contacts.get(0);
+        return firstContact.has(CONTACT_DETAILS)
+                ? (JSONArray) firstContact.get(CONTACT_DETAILS)
+                : new JSONArray();
     }
 
-    @Test
-    void testProcessInstitutionRecords_BulkSaveOptimization() {
-        // Arrange - Create multiple records to test bulk save
-        List<InstitutionRecord> multipleRecords = Arrays.asList(
-                sampleRecords.get(0),
-                sampleRecords.get(1),
-                InstitutionRecord.builder()
-                        .institutionName("Stanford University")
-                        .country("USA")
-                        .city("Stanford")
-                        .stateCountyRegion("CA")
-                        .build()
-        );
+    private boolean isDoNotContact(JSONObject payload) {
+        if (!payload.has(ADDITIONAL_INFO)) {
+            return false;
+        }
 
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
+        JSONArray additionalInfoList = payload.getJSONArray(ADDITIONAL_INFO);
+        if (additionalInfoList.isEmpty()) {
+            return false;
+        }
 
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-        Source source3 = createMockSource("EDU125", "Stanford University");
+        JSONObject additionalInfoJSONObject = additionalInfoList.getJSONObject(0);
+        String doNotContact = additionalInfoJSONObject.has(DO_NOT_CONTACT)
+                ? additionalInfoJSONObject.getString(DO_NOT_CONTACT) : "";
 
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source1, source2, source3);
-
-        // Mock bulk operations
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(multipleRecords);
-
-        // Assert
-        assertEquals(3, result.get("totalRecords"));
-        assertEquals(3, result.get("updatedRecords"));
-
-        // Verify bulk operations were used instead of individual saves
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps, times(1)).execute(); // Only one bulk execute call
-
-        // Verify individual save was NOT called
-        verify(mongoTemplate, never()).save(any(Source.class), anyString());
+        return !doNotContact.isEmpty() && !doNotContact.equalsIgnoreCase("false");
     }
 
-    @Test
-    void testProcessInstitutionRecords_BulkSaveFallback() {
-        // Arrange
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
+    private void processContactDetail(JSONObject contactDetailJson, boolean isDoNotContact,
+                                      ContactAccumulator accumulator) {
+        if (!contactDetailJson.has(TYPE) || contactDetailJson.isNull(TYPE)) {
+            return;
+        }
 
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
+        String contactType = contactDetailJson.getString(TYPE);
+        int priority = extractPriority(contactDetailJson);
 
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source1, source2);
+        if (!contactDetailJson.has(COMMUNICATION) || contactDetailJson.get(COMMUNICATION) == null) {
+            return;
+        }
 
-        // Mock bulk operations to fail
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-        when(mockBulkOps.execute()).thenThrow(new RuntimeException("Bulk operation failed"));
+        Object communObj = contactDetailJson.get(COMMUNICATION);
+        if (!(communObj instanceof JSONArray)) {
+            return;
+        }
 
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
+        JSONArray communication = (JSONArray) communObj;
+        if (communication.isEmpty()) {
+            return;
+        }
 
-        // Assert
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(2, result.get("updatedRecords"));
-
-        // Verify bulk operation was attempted
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).execute();
-
-        // Verify fallback to individual saves
-        verify(mongoTemplate, times(2)).save(any(Source.class), anyString());
+        processCommunicationArray(contactDetailJson, contactType, communication,
+                isDoNotContact, priority, accumulator);
     }
 
-    @Test
-    void testProcessInstitutionRecords_MultipleCollections() {
-        // Arrange - Create records that will go to different collections
-        InstitutionRecord record1 = sampleRecords.get(0);
-        InstitutionRecord record2 = sampleRecords.get(1);
+    private int extractPriority(JSONObject contactDetailJson) {
+        if (!contactDetailJson.has(PRIORITY)) {
+            return 0;
+        }
 
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        // Sources with different HON prefixes (different collections)
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.findOne(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(source1, source2);
-
-        // Mock bulk operations
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        // Act
-        Map<String, Object> result = processor.processInstitutionRecords(Arrays.asList(record1, record2));
-
-        // Assert
-        assertEquals(2, result.get("updatedRecords"));
-
-        // Verify bulk operations were called (grouped by collection)
-        verify(mongoTemplate, atLeastOnce()).bulkOps(any(), anyString());
-        verify(mockBulkOps, atLeastOnce()).execute();
+        Object priorityObj = contactDetailJson.get(PRIORITY);
+        if (priorityObj instanceof String) {
+            return Integer.parseInt((String) priorityObj);
+        }
+        return contactDetailJson.getInt(PRIORITY);
     }
 
-    private Source createMockSource(String hon, String organizationName) {
-        Source source = new Source();
-        source.setHon(hon);
-        source.setOrganizationName(organizationName);
-        source.setPayload(new BasicDBObject());
-        return source;
+    private void processCommunicationArray(JSONObject contactDetailJson, String contactType,
+                                           JSONArray communication, boolean isDoNotContact,
+                                           int priority, ContactAccumulator accumulator) {
+        ContactDetailsDTO contactDetailsDTO = createContactDTOIfNeeded(contactDetailJson, contactType, isDoNotContact);
+
+        for (Object commObj : communication) {
+            JSONObject communicationObj = (JSONObject) commObj;
+
+            if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType)) {
+                contactDetailsDTO = new ContactDetailsDTO();
+                mapContactBaseDTO(contactDetailJson, contactDetailsDTO);
+            }
+
+            processCommunicationObject(communicationObj, contactType, contactDetailsDTO,
+                    isDoNotContact, accumulator);
+        }
+
+        storeContactByType(contactDetailsDTO, contactType, priority, accumulator);
     }
+
+    private ContactDetailsDTO createContactDTOIfNeeded(JSONObject contactDetailJson,
+                                                       String contactType, boolean isDoNotContact) {
+        if (isDoNotContact && CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType)) {
+            return new ContactDetailsDTO();
+        }
+
+        if (!isDoNotContact && isStandardContactType(contactType)) {
+            ContactDetailsDTO dto = new ContactDetailsDTO();
+            mapContactBaseDTO(contactDetailJson, dto);
+            return dto;
+        }
+
+        return null;
+    }
+
+    private boolean isStandardContactType(String contactType) {
+        return CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType) ||
+                CONTACT_WEBSITES.equalsIgnoreCase(contactType) ||
+                CONTACT_EMAILS.equalsIgnoreCase(contactType) ||
+                CONTACT_FAXES.equalsIgnoreCase(contactType) ||
+                CONTACT_PHONES.equalsIgnoreCase(contactType) ||
+                CONTACT_MAILS.equalsIgnoreCase(contactType);
+    }
+
+    private void processCommunicationObject(JSONObject communicationObj, String contactType,
+                                            ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                            ContactAccumulator accumulator) {
+        if (!communicationObj.has(COMMUNICATION_INFO) || communicationObj.get(COMMUNICATION_INFO) == null) {
+            return;
+        }
+
+        JSONArray communicationInfoDetails = (JSONArray) communicationObj.get(COMMUNICATION_INFO);
+        if (communicationInfoDetails.isEmpty()) {
+            return;
+        }
+
+        CommunicationInfoContext context = new CommunicationInfoContext();
+
+        for (Object info : communicationInfoDetails) {
+            if (info instanceof JSONObject infoJson) {
+                processCommunicationInfo(infoJson, communicationObj, contactType, contactDetailsDTO,
+                        isDoNotContact, context, accumulator);
+            }
+        }
+
+        finalizePhoneFaxNumber(contactType, context, contactDetailsDTO, accumulator);
+
+        if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType) &&
+                contactDetailsDTO != null && !contactDetailsDTO.isEmpty()) {
+            contactDetailsDTO.setType(Constants.SmartSearchKeys.TYPE_AUTOMATED_SERVICES);
+            accumulator.addAutomatedService(contactDetailsDTO);
+        }
+    }
+
+    private void processCommunicationInfo(JSONObject infoJson, JSONObject communicationObj,
+                                          String contactType, ContactDetailsDTO contactDetailsDTO,
+                                          boolean isDoNotContact, CommunicationInfoContext context,
+                                          ContactAccumulator accumulator) {
+        if (!infoJson.has(TYPE)) {
+            return;
+        }
+
+        String type = infoJson.getString(TYPE);
+        Object value = !infoJson.isNull(VALUE) ? infoJson.get(VALUE) : "";
+
+        processPhoneFaxInfo(type, value, contactType, isDoNotContact, context);
+        processEmailInfo(type, value, contactType, contactDetailsDTO, isDoNotContact, accumulator);
+        processAutomatedServiceInfo(type, value, contactType, communicationObj, contactDetailsDTO, context);
+        processMailInfo(type, value, contactType, contactDetailsDTO, isDoNotContact, accumulator);
+        processWebsiteInfo(type, value, contactType, contactDetailsDTO, isDoNotContact, accumulator);
+    }
+
+    private void processPhoneFaxInfo(String type, Object value, String contactType,
+                                     boolean isDoNotContact, CommunicationInfoContext context) {
+        if (isDoNotContact || (!CONTACT_PHONES.equals(contactType) && !CONTACT_FAXES.equals(contactType))) {
+            return;
+        }
+
+        if (PHONE_NUMBER.equals(type)) {
+            context.number = (String) value;
+        } else if (EXTENSION.equals(type)) {
+            context.extension = (String) value;
+        } else if (PHONE_COUNTRY_CODE.equals(type)) {
+            context.countryCode = (String) value;
+            if (!StringUtils.isEmpty(context.countryCode) && !context.countryCode.contains("+")) {
+                context.countryCode = "+" + context.countryCode;
+            }
+        } else if (AREA_CODE.equals(type)) {
+            context.areaCode = (String) value;
+        }
+    }
+
+    private void processEmailInfo(String type, Object value, String contactType,
+                                  ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                  ContactAccumulator accumulator) {
+        if (isDoNotContact || !CONTACT_EMAILS.equals(contactType) || !ADDRESS.equals(type)) {
+            return;
+        }
+
+        String email = (String) value;
+        if (email != null && !email.isBlank()) {
+            accumulator.addEmail(email);
+            if (contactDetailsDTO != null) {
+                contactDetailsDTO.setEmail(email);
+            }
+        }
+    }
+
+    private void processAutomatedServiceInfo(String type, Object value, String contactType,
+                                             JSONObject communicationObj, ContactDetailsDTO contactDetailsDTO,
+                                             CommunicationInfoContext context) {
+        if (!CONTACT_AUTOMATED_SERVICES.equals(contactType) || contactDetailsDTO == null) {
+            return;
+        }
+
+        if (communicationObj.has(NAME)) {
+            contactDetailsDTO.setProvider(communicationObj.getString(NAME));
+        }
+
+        if (CODES.equals(type)) {
+            contactDetailsDTO.setCode((String) value);
+        } else if (BRANCH.equals(type)) {
+            contactDetailsDTO.setBranch((String) value);
+        } else if (SUR_CHARGE_AMOUNT.equals(type) && !StringUtils.isBlank((String) value)) {
+            contactDetailsDTO.setSurcharge((String) value);
+        } else if (SUR_CHARGE_CURRENCY.equals(type)) {
+            if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
+                contactDetailsDTO.setSurcharge(contactDetailsDTO.getSurcharge() + " " + value);
+            }
+        } else if (SUR_CHARGE_PAYMENT.equals(type)) {
+            if (contactDetailsDTO.getSurcharge() != null && !contactDetailsDTO.getSurcharge().isBlank()) {
+                contactDetailsDTO.setPaymentMethod((String) value);
+            }
+        } else if (TURN_AROUND_TIME.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
+            contactDetailsDTO.setTurnAroundTime(value + " days");
+        } else if (FOLLOW_UP_ALLOWED.equals(type) && value != null && !StringUtils.isBlank((String) value)) {
+            context.isFollowUpAllowed = ((String) value).equalsIgnoreCase("true");
+        } else if (context.isFollowUpAllowed && FOLLOW_UP_ALLOWED_AFTER.equals(type) && value != null) {
+            String followUpValue = StringUtils.isBlank((String) value) ? "0" : (String) value;
+            contactDetailsDTO.setFollowUpAllowedAfter(followUpValue + " days");
+        }
+    }
+
+    private void processMailInfo(String type, Object value, String contactType,
+                                 ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                 ContactAccumulator accumulator) {
+        if (isDoNotContact || !CONTACT_MAILS.equals(contactType) || !ADDRESS.equals(type)) {
+            return;
+        }
+
+        String address = (String) value;
+        if (address != null && !address.isBlank() && !address.equalsIgnoreCase("n/a")) {
+            accumulator.addMailAddress(address);
+            if (contactDetailsDTO != null) {
+                contactDetailsDTO.setMailAddresses(accumulator.getMailAddresses());
+            }
+        }
+    }
+
+    private void processWebsiteInfo(String type, Object value, String contactType,
+                                    ContactDetailsDTO contactDetailsDTO, boolean isDoNotContact,
+                                    ContactAccumulator accumulator) {
+        if (isDoNotContact || !CONTACT_WEBSITES.equals(contactType) || !ADDRESSES.equals(type)) {
+            return;
+        }
+
+        String link = (String) value;
+        if (link != null && !link.isBlank()) {
+            accumulator.addWebsite(link);
+            if (contactDetailsDTO != null) {
+                contactDetailsDTO.setWebsite(link);
+            }
+        }
+    }
+
+    private void finalizePhoneFaxNumber(String contactType, CommunicationInfoContext context,
+                                        ContactDetailsDTO contactDetailsDTO, ContactAccumulator accumulator) {
+        if (StringUtils.isEmpty(context.number)) {
+            return;
+        }
+
+        String formattedNumber = buildPhoneFaxNumber(context);
+
+        if (CONTACT_PHONES.equalsIgnoreCase(contactType)) {
+            accumulator.addPhoneNumber(formattedNumber);
+        } else if (CONTACT_FAXES.equalsIgnoreCase(contactType)) {
+            accumulator.addFaxNumber(formattedNumber);
+        }
+
+        if (contactDetailsDTO != null) {
+            contactDetailsDTO.setNumber(formattedNumber);
+        }
+    }
+
+    private String buildPhoneFaxNumber(CommunicationInfoContext context) {
+        StringJoiner joiner = new StringJoiner("");
+
+        if (!context.number.contains("+")) {
+            if (!StringUtils.isEmpty(context.countryCode)) {
+                joiner.add(context.countryCode);
+            }
+            if (!StringUtils.isEmpty(context.areaCode)) {
+                joiner.add(context.areaCode);
+            }
+        }
+
+        joiner.add(context.number);
+
+        if (!StringUtils.isEmpty(context.extension)) {
+            joiner.add(":" + context.extension);
+        }
+
+        return joiner.toString();
+    }
+
+    private void storeContactByType(ContactDetailsDTO contactDetailsDTO, String contactType,
+                                    int priority, ContactAccumulator accumulator) {
+        if (CONTACT_AUTOMATED_SERVICES.equalsIgnoreCase(contactType)) {
+            return;
+        }
+
+        if (contactDetailsDTO == null || contactDetailsDTO.isEmpty()) {
+            return;
+        }
+
+        contactDetailsDTO.setType(contactType.replace("contact", ""));
+
+        if (CONTACT_PHONES.equalsIgnoreCase(contactType)) {
+            accumulator.setPhoneContact(contactDetailsDTO, priority);
+        } else if (CONTACT_EMAILS.equalsIgnoreCase(contactType)) {
+            accumulator.setEmailContact(contactDetailsDTO, priority);
+        } else if (CONTACT_FAXES.equalsIgnoreCase(contactType)) {
+            accumulator.setFaxContact(contactDetailsDTO, priority);
+        } else if (CONTACT_MAILS.equalsIgnoreCase(contactType)) {
+            accumulator.setMailContact(contactDetailsDTO, priority);
+        } else if (CONTACT_WEBSITES.equalsIgnoreCase(contactType)) {
+            accumulator.setWebsiteContact(contactDetailsDTO, priority);
+        } else if (priority > 0) {
+            accumulator.setOtherContact(contactDetailsDTO, priority);
+        }
+    }
+
+    // Helper class to hold communication info context
+    class CommunicationInfoContext {
+        String number = "";
+        String extension = "";
+        String countryCode = "";
+        String areaCode = "";
+        boolean isFollowUpAllowed = false;
+    }
+
+    // Helper class to accumulate contacts during processing
+    class ContactAccumulator {
+        private final List<ContactDetailsDTO> automatedServices = new ArrayList<>();
+        private final ContactDetailsDTO[] contactList;
+
+        private ContactDetailsDTO phoneDetailsDTO;
+        private final List<String> phoneNumbers = new ArrayList<>();
+        private Integer phonePriority;
+
+        private ContactDetailsDTO emailDetailsDTO;
+        private final List<String> emailList = new ArrayList<>();
+        private Integer emailPriority;
+
+        private ContactDetailsDTO faxDetailsDTO;
+        private final List<String> faxNumbers = new ArrayList<>();
+        private Integer faxPriority;
+
+        private ContactDetailsDTO mailDetailsDTO;
+        private final List<String> mailAddresses = new ArrayList<>();
+        private Integer mailPriority;
+
+        private ContactDetailsDTO websiteDetailsDTO;
+        private final List<String> websiteList = new ArrayList<>();
+        private Integer websitePriority;
+
+        ContactAccumulator(int contactListSize) {
+            this.contactList = new ContactDetailsDTO[contactListSize];
+        }
+
+        void addAutomatedService(ContactDetailsDTO dto) {
+            automatedServices.add(dto);
+        }
+
+        void addPhoneNumber(String number) {
+            if (!number.isEmpty()) {
+                phoneNumbers.add(number);
+            }
+        }
+
+        void addFaxNumber(String number) {
+            if (!number.isEmpty()) {
+                faxNumbers.add(number);
+            }
+        }
+
+        void addEmail(String email) {
+            emailList.add(email);
+        }
+
+        void addMailAddress(String address) {
+            mailAddresses.add(address);
+        }
+
+        List<String> getMailAddresses() {
+            return mailAddresses;
+        }
+
+        void addWebsite(String website) {
+            websiteList.add(website);
+        }
+
+        void setPhoneContact(ContactDetailsDTO dto, int priority) {
+            if (phoneDetailsDTO == null) {
+                phoneDetailsDTO = dto;
+                if (priority > 0) {
+                    phonePriority = priority;
+                }
+            }
+        }
+
+        void setEmailContact(ContactDetailsDTO dto, int priority) {
+            if (emailDetailsDTO == null) {
+                emailDetailsDTO = dto;
+                if (priority > 0) {
+                    emailPriority = priority;
+                }
+            }
+        }
+
+        void setFaxContact(ContactDetailsDTO dto, int priority) {
+            if (faxDetailsDTO == null) {
+                faxDetailsDTO = dto;
+                if (priority > 0) {
+                    faxPriority = priority;
+                }
+            }
+        }
+
+        void setMailContact(ContactDetailsDTO dto, int priority) {
+            if (mailDetailsDTO == null) {
+                mailDetailsDTO = dto;
+                if (priority > 0) {
+                    mailPriority = priority;
+                }
+            }
+        }
+
+        void setWebsiteContact(ContactDetailsDTO dto, int priority) {
+            if (websiteDetailsDTO == null) {
+                websiteDetailsDTO = dto;
+                if (priority > 0) {
+                    websitePriority = priority;
+                }
+            }
+        }
+
+        void setOtherContact(ContactDetailsDTO dto, int priority) {
+            if (contactList.length >= priority && priority > 0) {
+                contactList[priority - 1] = dto;
+            }
+        }
+
+        List<ContactDetailsDTO> buildFinalContactList() {
+            List<ContactDetailsDTO> result = new ArrayList<>(automatedServices);
+
+            addGroupedContact(phoneDetailsDTO, phoneNumbers, phonePriority,
+                    Constants.SmartSearchKeys.TYPE_PHONES, result,
+                    (dto, numbers) -> {
+                        dto.setNumbers(numbers);
+                        dto.setNumber(null);
+                    });
+
+            addGroupedContact(emailDetailsDTO, emailList, emailPriority,
+                    Constants.SmartSearchKeys.TYPE_EMAILS, result,
+                    (dto, emails) -> {
+                        dto.setEmails(emails);
+                        dto.setEmail(null);
+                    });
+
+            addGroupedContact(faxDetailsDTO, faxNumbers, faxPriority,
+                    Constants.SmartSearchKeys.TYPE_FAXES, result,
+                    (dto, numbers) -> {
+                        dto.setNumbers(numbers);
+                        dto.setNumber(null);
+                    });
+
+            addGroupedContact(mailDetailsDTO, mailAddresses, mailPriority,
+                    Constants.SmartSearchKeys.TYPE_MAILS, result,
+                    (dto, addresses) -> {
+                        dto.setMailAddresses(addresses);
+                        dto.setMailAddress(null);
+                    });
+
+            addGroupedContact(websiteDetailsDTO, websiteList, websitePriority,
+                    Constants.SmartSearchKeys.TYPE_WEBSITES, result,
+                    (dto, websites) -> {
+                        dto.setWebsites(websites);
+                        dto.setWebsite(null);
+                    });
+
+            for (ContactDetailsDTO contact : contactList) {
+                if (contact != null) {
+                    result.add(contact);
+                }
+            }
+
+            return result;
+        }
+
+        private <T> void addGroupedContact(ContactDetailsDTO dto, List<T> items, Integer priority,
+                                           String type, List<ContactDetailsDTO> result,
+                                           java.util.function.BiConsumer<ContactDetailsDTO, List<T>> setter) {
+            if (dto != null && !items.isEmpty()) {
+                setter.accept(dto, items);
+                dto.setType(type);
+
+                if (priority != null && priority > 0 && contactList.length >= priority) {
+                    contactList[priority - 1] = dto;
+                } else {
+                    result.add(dto);
+                }
+            }
+        }
+    }
+
+    default String mapOrganizationAlias(Alias[] aliases) {
+        if (aliases != null && aliases.length > 0) {
+            List<String> aliasesList = new ArrayList<>();
+            String organizationAlias = "";
+            for (Alias alias : aliases) {
+                aliasesList.add(alias.getName());
+            }
+            organizationAlias = String.join("; ", aliasesList);
+            return organizationAlias;
+        }
+        return null;
+    }
+
+    default String mapDepartmentAlias(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(DEPARTMENT_ALIASES)) {
+                JSONArray aliases = payload.getJSONArray(DEPARTMENT_ALIASES);
+                if (!aliases.isEmpty()) {
+                    JSONObject alias = aliases.getJSONObject(0);
+                    return alias.has(NAME) ? alias.getString(NAME) : "";
+                }
+            }
+        }
+        return "";
+    }
+
+    default int mapUsedCount(Source source) {
+        if (source.getPayload() != null) {
+            JSONObject payload = mapToJSONObject(source.getPayload());
+            if (payload.has(USED_COUNT)) {
+                return (int) payload.get(USED_COUNT);
+            }
+        }
+        return 0;
+    }
+    default String map(ObjectId id){
+        return id.toHexString();
+    }
+
+    @Mapping(target = "organizationName", source = "organizationName")
+    @Mapping(target = "status", expression = "java(String.valueOf(source.getStatus()))")
+    @Mapping(target = "hon", source = "hon")
+    @Mapping(target = "country", source = "country")
+    @Mapping(target = "state", source = "state")
+    @Mapping(target = "postalCode", source = "postalCode")
+    @Mapping(target = "city", source = "city")
+    @Mapping(target = "region", source = "state")
+    @Mapping(target = "createdBy", source = "createdBy")
+    @Mapping(target = "flagPriority", source = "flagPriority")
+    @Mapping(target = "action", source = "action")
+    @Mapping(target = "lastModifiedBy", source = "lastModifiedBy")
+    @Mapping(target = "approvedBy", source = "approvedBy")
+    @Mapping(target = "lastApprovedDateTime", source = "lastApprovedDate")
+
+    @Mapping(target = "verificationValidationProcess", expression = "java(getAdditionalInfo(source, \"verificationValidationProcess\"))")
+    @Mapping(target = "doNotContact", expression = "java(getAdditionalInfo(source, \"doNotContact\"))")
+    @Mapping(target = "lastUsedDate", expression = "java(getPayloadField(source, \"lastUsedDateTime\"))")
+    @Mapping(target = "lastCleanUpDate", expression = "java(getPayloadField(source, \"lastCleanUpDate\"))")
+    @Mapping(target = "releaseType", expression = "java(getAdditionalInfo(source, \"releaseType\"))")
+    @Mapping(target = "departmentName", expression = "java(getPayloadField(source, \"departmentName\"))")
+    @Mapping(target = "notes", expression = "java(stripHtmlTags(getPayloadField(source, \"notes\")))")
+    @Mapping(target = "usedCount", expression = "java(mapUsedCount(source))")
+    @Mapping(target = "address", expression = "java(getAddressLine(source))")
+    @Mapping(target = "contactDetails", expression = "java(mapContactDetails(source))")
+    @Mapping(target = "organizationAlias", expression = "java(mapOrganizationAlias(source.getOrganizationAlias()))")
+    @Mapping(source = "id", target="id")
+    SourceDTO toSourceDTO(Source source);
+
+    List<SourceDTO> entityToSourceList(List<Source> source);
+
+
 }
-
