@@ -1,192 +1,3016 @@
-Overview:
-Currently, researchers manually maintain and update license information using Excel (XL) sheets. This approach is time-consuming, error-prone, and inefficient when handling large volumes of data or performing frequent updates.
+# Professional License Verification System - Technical Design Document
 
-To minimize manual effort and improve data accuracy, the proposed system automates the process of reading license information directly from Excel files and storing it in a centralized MongoDB collection (plv_source). This eliminates repetitive manual data entry and ensures consistency across records.
+## Table of Contents
+1. [Overview](#1-overview)
+2. [System Architecture](#2-system-architecture)
+3. [Database Schema](#3-database-schema)
+4. [API Contracts](#4-api-contracts)
+5. [Component Design](#5-component-design)
+6. [Excel Processing Design](#6-excel-processing-design)
+7. [Implementation Approach](#7-implementation-approach)
+8. [Testing Strategy](#8-testing-strategy)
+9. [Deployment & Monitoring](#9-deployment--monitoring)
 
-The system is built using Spring Boot–based microservices that expose REST APIs for managing license data, including create, update, and delete operations. Additionally, smart search APIs are provided to enable users to efficiently retrieve license information by applying filters or entering search criteria.
+---
 
-A React-based rich user interface (UI) is developed to consume these Spring Boot microservices. The UI offers an intuitive and user-friendly experience, allowing researchers to easily create, update, and manage license records.
+## 1. Overview
 
-Overall, this solution enhances productivity, reduces human errors, and enables efficient data management and retrieval through automation.
+### 1.1 Purpose
+The Professional License Verification System automates the process of managing professional license information by:
+- Reading license data from Excel files maintained by researchers
+- Storing data in a centralized MongoDB collection (`license_source`)
+- Providing REST APIs for CRUD operations
+- Enabling smart search capabilities through Elasticsearch integration
+- Offering a React-based UI for efficient data management
 
-Objectives:
+### 1.2 Current State
+Researchers manually maintain and update license information using Excel sheets. This approach is:
+- Time-consuming and error-prone
+- Inefficient for large volumes of data
+- Difficult to search and filter
+- Lacks centralized management
 
+### 1.3 Proposed Solution
+Implement an automated system following the **same architectural patterns as the Employee Source database**, including:
+- Automated Excel file processing
+- MongoDB storage with optimized indexes
+- Elasticsearch integration for smart search
+- RESTful APIs for all operations
+- React UI for user interaction
 
-Automate license data retrieval from excel sheet
+### 1.4 Key Benefits
+- ✅ Eliminates repetitive manual data entry
+- ✅ Reduces human errors
+- ✅ Enables efficient data retrieval with advanced filtering
+- ✅ Provides centralized license information management
+- ✅ Supports scalable architecture for future enhancements
 
-Store dynamic data in MongoDB (plv_source)
+---
 
-Enable smart, flexible search capabilities
+## 2. System Architecture
 
-Reduce manual effort and improve efficiency
+### 2.1 High-Level Architecture
 
-High-Level Architecture: 
-The system is designed to automate Excel-based license data ingestion and provide a user-friendly interface for managing and searching license records.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Excel File (Researchers)                      │
+│              Professional License Information                    │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│           Spring Boot Microservice Layer                         │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Excel Processing Service (Apache POI)                    │  │
+│  │  - Parse Excel files                                      │  │
+│  │  - Validate license data                                  │  │
+│  │  - Transform to domain objects                            │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  REST Controller Layer                                    │  │
+│  │  - License CRUD APIs                                      │  │
+│  │  - Smart Search APIs                                      │  │
+│  │  - File Upload APIs                                       │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Service Layer                                            │  │
+│  │  - Business logic                                         │  │
+│  │  - Validation rules (scope/state validation)              │  │
+│  │  - Data transformation                                    │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Repository Layer                                         │  │
+│  │  - MongoDB operations                                     │  │
+│  │  - Custom queries                                         │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Data Storage Layer                            │
+│  ┌──────────────────────┐      ┌──────────────────────┐        │
+│  │  MongoDB              │      │  Elasticsearch        │        │
+│  │  license_source       │◄────►│  license_index        │        │
+│  │  Collection           │      │  (Search Index)       │        │
+│  └──────────────────────┘      └──────────────────────┘        │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    React UI Layer                                │
+│  - License Management Dashboard                                  │
+│  - Create/Update/Delete License Records                          │
+│  - Smart Search Interface                                        │
+│  - Excel File Upload                                             │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Excel File (Maintained by Researchers)
-                ↓
-Spring Boot Microservice (Excel Processing & REST APIs)
-                ↓
-MongoDB (plv_source Collection)
-                ↑
-React UI (Create, Update, Delete, Smart Search)
-                ↑
-Spring Boot Microservices (REST APIs)
+### 2.2 Technology Stack
+- **Backend**: Spring Boot 3.x, Java 17+
+- **Database**: MongoDB 6.x
+- **Search Engine**: Elasticsearch 8.x
+- **Excel Processing**: Apache POI 5.2.3
+- **Object Mapping**: MapStruct 1.5.5
+- **API Documentation**: OpenAPI 3.0 (Swagger)
+- **Frontend**: React 18+
+- **Build Tool**: Gradle 8.x
 
-Components
-Excel process Service
+### 2.3 Architecture Patterns (Following Employee Source)
+- **Layered Architecture**: Controller → Service → Repository → Database
+- **Repository Pattern**: Standard + Custom repositories
+- **DTO Pattern**: Separate DTOs for API contracts
+- **Mapper Pattern**: MapStruct for entity-DTO conversion
+- **Bulk Operations**: Efficient batch processing using MongoTemplate
+- **Elasticsearch Sync**: Automatic indexing on create/update operations
 
-Professional License Service Layer
+### 2.4 Component Interaction Flow
 
-Mongo Repository Layer
+```
+User → React UI → REST API → Service Layer → Repository → MongoDB
+                                    ↓
+                              Elasticsearch (for search)
+```
 
-Elastic Search Layer
+---
 
-Rest Controller Layer
+## 3. Database Schema
 
-React UI components
+### 3.1 MongoDB Collection: `license_source`
 
-High-Level Architecture:
-Mongo Collection Schema (license_source):
+#### 3.1.1 Collection Overview
+- **Collection Name**: `license_source`
+- **Database**: `sidb` (Source Intelligence Database)
+- **Purpose**: Store professional license verification information
+- **Estimated Size**: 10,000+ documents initially
 
+#### 3.1.2 Document Structure
 
-
+```json
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "/HRG/SIDB/2024-07/LicenseSource.json",
-  "title": "LicenseSource",
-  "description": "Schema for managing license source information",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "hon": {
-      "description": "Unique Number",
-      "type": "string",
-      "minLength": 1
-    },
-    "scope": {
-      "description": "Defines the level of the license",
-      "type": "string",
-      "enum": ["GLOBAL", "NATIONAL", "STATE"]
-    },
-    "country": {
-      "description": "Country where the license is applicable",
-      "type": "string",
-      "minLength": 1
-    },
-    "state": {
-      "description": "State where the license is applicable (required when scope is STATE)",
-      "type": ["string", "null"]
-    },
-    "licenseType": {
-      "description": "Type of license",
-      "type": "string",
-      "minLength": 1
-    },
-    "webAddress": {
-      "description": "List of official web addresses",
-      "type": ["array", "null"],
-      "items": {
-        "type": "string"
-      }
-    },
-    "phone": {
-      "description": "List of phone numbers",
-      "type": ["array", "null"],
-      "items": {
-        "type": "string"
-      }
-    },
-    "email": {
-      "description": "List of email addresses",
-      "type": ["array", "null"],
-      "items": {
-        "type": "string"
-      }
-    },
-    "fax": {
-      "description": "List of fax numbers",
-      "type": ["array", "null"],
-      "items": {
-        "type": "string"
-      }
-    },
-    "governingAgency": {
-      "description": "Regulatory or governing authority",
-      "type": ["string", "null"]
-    },
-    "multiState": {
-      "description": "Indicates if license applies to multiple states",
-      "type": ["string", "null"]
-    },
-    "expiration": {
-      "description": "License expiration details",
-      "type": ["string", "null"]
-    },
-    "licenseStatus": {
-      "description": "Current status of the license",
-      "type": ["string", "null"]
-    },
-    "disciplinaryActions": {
-      "description": "Any disciplinary actions associated with the license",
-      "type": ["string", "null"]
-    },
-    "additionalInformation": {
-      "description": "Additional notes or metadata",
-      "type": ["string", "null"]
-    },
-    "createdDate": {
-      "description": "Creation timestamp",
-      "type": ["string", "null"],
-      "format": "date-time"
-    },
-    "updatedDate": {
-      "description": "Last updated timestamp",
-      "type": ["string", "null"],
-      "format": "date-time"
-    },
-    "active": {
-      "description": "Indicates if the license source is active",
-      "type": ["boolean", "null"]
-    }
-  },
-  "required": [
-    "hon",
-    "scope",
-    "licenseType",
-    "country"
+  "_id": ObjectId("..."),
+  "hon": "LIC-USA-CA-MED-001",
+  "scope": "STATE",
+  "country": "United States",
+  "state": "California",
+  "license_type": "Medical License",
+  "web_address": [
+    "https://www.mbc.ca.gov/",
+    "https://www.mbc.ca.gov/Licensees/"
   ],
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "scope": { "const": "STATE" }
+  "phone": [
+    "+1-800-633-2322",
+    "+1-916-263-2382"
+  ],
+  "email": [
+    "webmaster@mbc.ca.gov"
+  ],
+  "fax": [
+    "+1-916-263-2944"
+  ],
+  "governing_agency": "Medical Board of California",
+  "multi_state": "No",
+  "expiration": "Biennial renewal required",
+  "license_status": "Active",
+  "disciplinary_actions": "Public records available online",
+  "additional_information": "Online verification available 24/7",
+  "created_date": ISODate("2024-03-24T10:00:00Z"),
+  "updated_date": ISODate("2024-03-24T10:00:00Z"),
+  "created_by": "researcher_001",
+  "updated_by": "researcher_001",
+  "active": true
+}
+```
+
+#### 3.1.3 Field Definitions
+
+| Field Name | Type | Required | Description | Validation Rules |
+|------------|------|----------|-------------|------------------|
+| `_id` | ObjectId | Auto | MongoDB unique identifier | Auto-generated |
+| `hon` | String | Yes | Unique Number (Unique identifier) | Unique, non-empty |
+| `scope` | String | Yes | License scope | Enum: GLOBAL, NATIONAL, STATE |
+| `country` | String | Yes | Country name | Non-empty |
+| `state` | String | Conditional | State/Province name | Required if scope=STATE |
+| `license_type` | String | Yes | Type of professional license | Non-empty |
+| `web_address` | Array[String] | No | Official website URLs | Valid URLs |
+| `phone` | Array[String] | No | Contact phone numbers | Phone format |
+| `email` | Array[String] | No | Contact email addresses | Email format |
+| `fax` | Array[String] | No | Fax numbers | Phone format |
+| `governing_agency` | String | No | Governing/regulatory agency | - |
+| `multi_state` | String | No | Multi-state license indicator | - |
+| `expiration` | String | No | Expiration/renewal information | - |
+| `license_status` | String | No | Current status of license | - |
+| `disciplinary_actions` | String | No | Disciplinary action information | - |
+| `additional_information` | String | No | Additional notes/information | - |
+| `created_date` | ISODate | Auto | Record creation timestamp | Auto-generated |
+| `updated_date` | ISODate | Auto | Last update timestamp | Auto-updated |
+| `created_by` | String | Auto | User who created record | - |
+| `updated_by` | String | Auto | User who last updated record | - |
+| `active` | Boolean | Yes | Active/inactive flag | Default: true |
+
+#### 3.1.4 Validation Rules
+
+**Conditional Validation**:
+- If `scope` = "STATE", then `state` field is **required**
+- If `scope` = "NATIONAL" or "GLOBAL", then `state` field is **optional**
+
+**Enum Values**:
+- `scope`: Must be one of ["GLOBAL", "NATIONAL", "STATE"]
+
+#### 3.1.5 MongoDB Indexes
+
+To ensure optimal query performance, the following indexes are created:
+
+| Index Name | Fields | Type | Purpose |
+|------------|--------|------|---------|
+| `idx_hon_unique` | `hon: 1` | Unique | Primary key, ensure uniqueness |
+| `idx_scope` | `scope: 1` | Standard | Filter by scope (GLOBAL/NATIONAL/STATE) |
+| `idx_country` | `country: 1` | Standard | Filter by country |
+| `idx_state` | `state: 1` | Standard | Filter by state |
+| `idx_license_type` | `license_type: 1` | Standard | Filter by license type |
+| `idx_governing_agency` | `governing_agency: 1` | Standard | Filter by governing agency |
+| `idx_scope_state` | `scope: 1, state: 1` | Compound | Combined scope and state queries |
+| `idx_active` | `active: 1` | Standard | Filter active/inactive records |
+
+**Index Creation Commands**:
+```javascript
+db.license_source.createIndex({ hon: 1 }, { unique: true, name: "idx_hon_unique" });
+db.license_source.createIndex({ scope: 1 }, { name: "idx_scope" });
+db.license_source.createIndex({ country: 1 }, { name: "idx_country" });
+db.license_source.createIndex({ state: 1 }, { name: "idx_state" });
+db.license_source.createIndex({ license_type: 1 }, { name: "idx_license_type" });
+db.license_source.createIndex({ governing_agency: 1 }, { name: "idx_governing_agency" });
+db.license_source.createIndex({ scope: 1, state: 1 }, { name: "idx_scope_state" });
+db.license_source.createIndex({ active: 1 }, { name: "idx_active" });
+```
+
+### 3.2 Elasticsearch Index: `license_index`
+
+#### 3.2.1 Index Overview
+- **Index Name**: `license_index`
+- **Purpose**: Enable fast, full-text search across license sources
+- **Sync Strategy**: Real-time sync on create/update operations
+
+#### 3.2.2 Index Mapping
+
+```json
+{
+  "mappings": {
+    "properties": {
+      "hon": { "type": "keyword" },
+      "scope": { "type": "keyword" },
+      "country": { "type": "keyword" },
+      "state": { "type": "keyword" },
+      "licenseType": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" }
         }
       },
-      "then": {
-        "required": ["state"],
-        "properties": {
-          "state": {
-            "type": "string",
-            "minLength": 1
-          }
+      "webAddress": { "type": "keyword" },
+      "phone": { "type": "keyword" },
+      "email": { "type": "keyword" },
+      "governingAgency": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" }
         }
-      }
+      },
+      "licenseStatus": { "type": "keyword" },
+      "active": { "type": "boolean" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 3,
+    "number_of_replicas": 2
+  }
+}
+```
+
+---
+
+## 4. API Contracts
+
+### 4.1 Base URL
+```
+/sourceintelligence-service/api/v1
+```
+
+### 4.2 API Endpoints Overview
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| POST | `/license-source` | Create new license source | Yes |
+| PUT | `/license-source/{hon}` | Update existing license source | Yes |
+| GET | `/license-source/{hon}` | Get license source by HON | Yes |
+| DELETE | `/license-source/{hon}` | Delete license source (soft delete) | Yes |
+| POST | `/license-source/batch` | Get multiple license sources by HON list | Yes |
+| POST | `/license-source/search/smart` | Smart search using Elasticsearch | Yes |
+| GET | `/license-source/search` | Filter-based search | Yes |
+| GET | `/license-source/autocomplete` | Get autocomplete suggestions | Yes |
+| POST | `/license-migration/upload` | Upload Excel file for batch import | Yes |
+
+### 4.3 API Details
+
+#### 4.3.1 Create License Source
+
+**Endpoint**: `POST /license-source`
+
+**Request Body**:
+```json
+{
+  "licenseSourceDTO": {
+    "hon": "LIC-USA-CA-MED-001",
+    "scope": "STATE",
+    "country": "United States",
+    "state": "California",
+    "licenseType": "Medical License",
+    "webAddress": ["https://www.mbc.ca.gov/"],
+    "phone": ["+1-800-633-2322"],
+    "email": ["webmaster@mbc.ca.gov"],
+    "fax": ["+1-916-263-2944"],
+    "governingAgency": "Medical Board of California",
+    "multiState": "No",
+    "expiration": "Biennial renewal required",
+    "licenseStatus": "Active",
+    "disciplinaryActions": "Public records available online",
+    "additionalInformation": "Online verification available 24/7",
+    "active": true
+  },
+  "uiActionsDTO": {
+    "userAction": "CREATE",
+    "userId": "researcher_001",
+    "comments": "Initial license source creation"
+  }
+}
+```
+
+**Response** (201 Created):
+```json
+{
+  "hon": "LIC-USA-CA-MED-001",
+  "scope": "STATE",
+  "country": "United States",
+  "state": "California",
+  "licenseType": "Medical License",
+  "webAddress": ["https://www.mbc.ca.gov/"],
+  "phone": ["+1-800-633-2322"],
+  "email": ["webmaster@mbc.ca.gov"],
+  "fax": ["+1-916-263-2944"],
+  "governingAgency": "Medical Board of California",
+  "multiState": "No",
+  "expiration": "Biennial renewal required",
+  "licenseStatus": "Active",
+  "disciplinaryActions": "Public records available online",
+  "additionalInformation": "Online verification available 24/7",
+  "createdDate": "2024-03-24T10:00:00Z",
+  "updatedDate": "2024-03-24T10:00:00Z",
+  "createdBy": "researcher_001",
+  "active": true
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Invalid input data or validation failure
+- `409 Conflict`: License source with HON already exists
+- `500 Internal Server Error`: Server error
+
+#### 4.3.2 Update License Source
+
+**Endpoint**: `PUT /license-source/{hon}`
+
+**Path Parameters**:
+- `hon` (string, required): Unique identifier of the license source
+
+**Request Body**: Same as Create License Source
+
+**Response** (200 OK): Updated license source DTO
+
+**Error Responses**:
+- `400 Bad Request`: Invalid input data
+- `404 Not Found`: License source not found
+- `500 Internal Server Error`: Server error
+
+#### 4.3.3 Get License Source by HON
+
+**Endpoint**: `GET /license-source/{hon}`
+
+**Path Parameters**:
+- `hon` (string, required): Unique identifier
+
+**Query Parameters**:
+- `mode` (string, optional): VIEW or EDIT (default: VIEW)
+- `includeInactive` (boolean, optional): Include inactive records (default: false)
+
+**Response** (200 OK): License source DTO
+
+**Error Responses**:
+- `404 Not Found`: License source not found
+- `500 Internal Server Error`: Server error
+
+#### 4.3.4 Delete License Source
+
+**Endpoint**: `DELETE /license-source/{hon}`
+
+**Path Parameters**:
+- `hon` (string, required): Unique identifier
+
+**Request Body**:
+```json
+{
+  "userAction": "DELETE",
+  "userId": "researcher_001",
+  "comments": "Obsolete license source"
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "status": "SUCCESS",
+  "message": "License source deleted successfully",
+  "hon": "LIC-USA-CA-MED-001"
+}
+```
+
+**Error Responses**:
+- `404 Not Found`: License source not found
+- `500 Internal Server Error`: Server error
+
+#### 4.3.5 Batch Get License Sources
+
+**Endpoint**: `POST /license-source/batch`
+
+**Request Body**:
+```json
+{
+  "honList": [
+    "LIC-USA-CA-MED-001",
+    "LIC-USA-NY-LAW-002",
+    "LIC-CAN-ON-ENG-003"
+  ],
+  "includeInactive": false
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "totalRecords": 3,
+  "licenses": [
+    { /* License Source DTO 1 */ },
+    { /* License Source DTO 2 */ },
+    { /* License Source DTO 3 */ }
+  ]
+}
+```
+
+**Constraints**:
+- Maximum 100 HONs per request
+- Returns only found records (no error for missing HONs)
+
+#### 4.3.6 Smart Search (Elasticsearch)
+
+**Endpoint**: `POST /license-source/search/smart`
+
+**Request Body**:
+```json
+{
+  "scope": "STATE",
+  "country": "United States",
+  "state": "California",
+  "licenseType": "Medical",
+  "governingAgency": "Medical Board",
+  "active": true,
+  "startPage": 1,
+  "pageSize": 20,
+  "sortField": "hon",
+  "sortOrder": "ASC"
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "totalRecords": 150,
+  "currentPage": 1,
+  "pageSize": 20,
+  "totalPages": 8,
+  "licenses": [
+    { /* License Source DTO 1 */ },
+    { /* License Source DTO 2 */ }
+  ],
+  "facets": {
+    "scopes": {
+      "STATE": 120,
+      "NATIONAL": 20,
+      "GLOBAL": 10
+    },
+    "countries": {
+      "United States": 140,
+      "Canada": 10
+    }
+  }
+}
+```
+
+**Search Features**:
+- Full-text search on `licenseType` and `governingAgency`
+- Exact match on `scope`, `country`, `state`
+- Pagination support
+- Sorting by any field
+- Faceted search results
+
+#### 4.3.7 Filter-Based Search
+
+**Endpoint**: `GET /license-source/search`
+
+**Query Parameters**:
+- `scope` (string, optional): Filter by scope
+- `country` (string, optional): Filter by country
+- `state` (string, optional): Filter by state
+- `licenseType` (string, optional): Filter by license type
+- `governingAgency` (string, optional): Filter by governing agency
+- `active` (boolean, optional): Filter by active status
+- `page` (integer, optional): Page number (default: 1)
+- `size` (integer, optional): Page size (default: 20, max: 100)
+- `sort` (string, optional): Sort field (default: hon)
+- `order` (string, optional): Sort order ASC/DESC (default: ASC)
+
+**Example**:
+```
+GET /license-source/search?scope=STATE&country=United%20States&state=California&page=1&size=20
+```
+
+**Response** (200 OK): Same as Smart Search response
+
+#### 4.3.8 Autocomplete Suggestions
+
+**Endpoint**: `GET /license-source/autocomplete`
+
+**Query Parameters**:
+- `keyword` (string, required): Search keyword (min 2 characters)
+- `scope` (string, optional): Filter by scope
+- `country` (string, optional): Filter by country
+
+**Example**:
+```
+GET /license-source/autocomplete?keyword=med&scope=STATE&country=United%20States
+```
+
+**Response** (200 OK):
+```json
+{
+  "suggestions": [
+    {
+      "value": "Medical License",
+      "type": "licenseType",
+      "count": 45
+    },
+    {
+      "value": "Medical Board of California",
+      "type": "governingAgency",
+      "count": 12
+    },
+    {
+      "value": "Medical Technician License",
+      "type": "licenseType",
+      "count": 8
     }
   ]
 }
-Indexes
-licenseSourceSchema.index({ hon: 1 }, { unique: true, name: "idx_hon_unique" });
-licenseSourceSchema.index({ scope: 1 }, { name: "idx_scope" });
-licenseSourceSchema.index({ country: 1 }, { name: "idx_country" });
-licenseSourceSchema.index({ state: 1 }, { name: "idx_state" });
-licenseSourceSchema.index({ licenseType: 1 }, { name: "idx_license_type" });
-licenseSourceSchema.index({ governingAgency: 1 }, { name: "idx_governing_agency" });
-licenseSourceSchema.index({ scope: 1, state: 1 }, { name: "idx_scope_state" });
-licenseSourceSchema.index({ active: 1 }, { name: "idx_active" });
+```
 
-Excel Processing Design
- 
+#### 4.3.9 Excel File Upload
 
-API Design
- 
+**Endpoint**: `POST /license-migration/upload`
+
+**Request**:
+- Content-Type: `multipart/form-data`
+- Form Fields:
+  - `file` (file, required): Excel file (.xlsx)
+  - `type` (string, optional): Migration type (default: "license")
+
+**Example**:
+```bash
+curl -X POST "http://localhost:8080/sourceintelligence-service/api/v1/license-migration/upload" \
+  -F "file=@license_data.xlsx" \
+  -F "type=license"
+```
+
+**Response** (200 OK):
+```json
+{
+  "status": "SUCCESS",
+  "filename": "license_data.xlsx",
+  "migrationType": "license",
+  "totalRecords": 1000,
+  "processedRecords": 980,
+  "createdRecords": 850,
+  "updatedRecords": 130,
+  "failedRecords": 20,
+  "processingTimeMs": 25000,
+  "errors": [
+    {
+      "row": 15,
+      "hon": "LIC-INVALID",
+      "error": "State is required when scope is STATE"
+    },
+    {
+      "row": 42,
+      "hon": "",
+      "error": "HON is required"
+    }
+  ]
+}
+```
+
+**File Constraints**:
+- Maximum file size: 10 MB
+- Supported format: .xlsx only
+- Maximum rows: 10,000 per file
+
+---
+
+## 5. Component Design
+
+### 5.1 Component Overview
+
+Following the **Employee Source architecture pattern**, the system is organized into the following layers:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Presentation Layer                       │
+│  - LicenseSourceApiController (REST endpoints)              │
+│  - LicenseMigrationApiController (Excel upload)             │
+│  - API DTOs (Request/Response objects)                      │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                      Service Layer                           │
+│  - LicenseSourceService (Business logic)                    │
+│  - LicenseExcelParserService (Excel parsing)                │
+│  - LicenseMigrationProcessor (Batch processing)             │
+│  - Validation Service (Scope/State validation)              │
+│  - ElasticsearchService (Search operations)                 │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                    Repository Layer                          │
+│  - LicenseSourceRepository (Standard CRUD)                  │
+│  - CustomLicenseSourceRepository (Complex queries)          │
+│  - LicenseSourceMapper (MapStruct DTO-Entity mapping)       │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                      Data Layer                              │
+│  - MongoDB (license_source collection)                      │
+│  - Elasticsearch (license_index)                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Domain Model
+
+#### 5.2.1 Core Entities
+
+**LicenseSource Entity**:
+- Represents a professional license source record
+- Maps to MongoDB `license_source` collection
+- Contains all fields defined in database schema
+- Uses `@Document` annotation for MongoDB mapping
+- Uses `@Field` annotations for field mapping
+
+**LicenseScope Enum**:
+- Values: GLOBAL, NATIONAL, STATE
+- Used for scope field validation
+
+#### 5.2.2 Data Transfer Objects (DTOs)
+
+**LicenseSourceDTO**:
+- API representation of license source
+- Used in request/response payloads
+- Includes validation annotations
+
+**LicenseSourceRequestDTO**:
+- Wrapper for create/update requests
+- Contains: `licenseSourceDTO` + `uiActionsDTO`
+
+**LicenseSearchDTO**:
+- Search criteria for filter-based search
+- Includes pagination and sorting parameters
+
+**LicenseSmartSearchDTO**:
+- Search criteria for Elasticsearch smart search
+- Supports full-text search and facets
+
+**LicenseRecord**:
+- Represents a single row from Excel file
+- Used during Excel parsing and migration
+
+**MigrationResponseDTO**:
+- Response for Excel upload operation
+- Contains statistics and error details
+
+### 5.3 Service Layer Components
+
+#### 5.3.1 LicenseSourceService
+**Responsibilities**:
+- CRUD operations for license sources
+- Business logic and validation
+- Elasticsearch synchronization
+- Transaction management
+
+**Key Methods**:
+- `createLicenseSource(dto, uiActions)`: Create new license
+- `updateLicenseSource(hon, dto, uiActions)`: Update existing license
+- `getLicenseSourceByHon(hon)`: Retrieve by HON
+- `getLicenseSourcesByHonList(honList)`: Batch retrieval
+- `deleteLicenseSource(hon, uiActions)`: Soft delete
+- `searchLicenseSources(searchDTO)`: Filter-based search
+- `smartSearchLicenseSources(searchDTO)`: Elasticsearch search
+- `getAutocompleteSuggestions(keyword, filters)`: Autocomplete
+
+**Validation Logic**:
+- HON uniqueness check
+- Scope-based state requirement validation
+- Required field validation
+- Data format validation
+
+#### 5.3.2 LicenseExcelParserService
+**Responsibilities**:
+- Parse Excel files using Apache POI
+- Extract data from rows
+- Handle delimited strings (semicolon-separated)
+- Convert to LicenseRecord objects
+
+**Key Methods**:
+- `parseExcelFile(multipartFile)`: Parse Excel and return list of records
+- `getCellValueAsString(cell)`: Extract cell value
+- `parseDelimitedString(value)`: Split semicolon-separated values
+- `isRowEmpty(row)`: Check if row is empty
+
+#### 5.3.3 LicenseMigrationProcessor
+**Responsibilities**:
+- Process batch records from Excel
+- Validate each record
+- Perform bulk upsert to MongoDB
+- Sync with Elasticsearch
+- Error handling and reporting
+
+**Key Methods**:
+- `processLicenseRecords(records)`: Process batch of records
+- `validateLicenseRecord(record)`: Validate single record
+- `performBulkSave(licenseSources)`: Bulk upsert operation
+
+**Processing Strategy**:
+- Validate all records first
+- Separate valid and invalid records
+- Perform bulk upsert for valid records
+- Return detailed error report for invalid records
+
+### 5.4 Repository Layer Components
+
+#### 5.4.1 LicenseSourceRepository
+**Type**: Spring Data MongoDB Repository
+
+**Standard Methods**:
+- `findByHon(hon)`: Find by unique identifier
+- `findByHonIn(honList)`: Find multiple by HON list
+- `findByScope(scope)`: Find by scope
+- `findByCountry(country)`: Find by country
+- `findByState(state)`: Find by state
+- `findByLicenseType(licenseType)`: Find by license type
+- `existsByHon(hon)`: Check if HON exists
+- `deleteByHon(hon)`: Delete by HON
+
+#### 5.4.2 CustomLicenseSourceRepository
+**Type**: Custom repository interface
+
+**Custom Methods**:
+- `findOneByHon(hon)`: Find single record with custom projection
+- `findByQuery(query, pageable)`: Dynamic query execution
+- `create(licenseSource)`: Create with audit fields
+- `update(licenseSource)`: Update with audit fields
+- `deleteByQuery(query)`: Soft delete by query
+- `bulkUpsert(licenseSources)`: Bulk upsert operation
+
+**Implementation**: Uses MongoTemplate for complex queries
+
+### 5.5 Controller Layer Components
+
+#### 5.5.1 LicenseSourceApiController
+**Responsibilities**:
+- Handle HTTP requests for license CRUD operations
+- Request validation
+- Response formatting
+- Exception handling
+
+**Endpoints**: See Section 4.3 (API Contracts)
+
+#### 5.5.2 LicenseMigrationApiController
+**Responsibilities**:
+- Handle Excel file uploads
+- Coordinate parsing and processing
+- Return migration statistics
+
+**Endpoints**: See Section 4.3.9 (Excel File Upload)
+
+### 5.6 Integration Components
+
+#### 5.6.1 Elasticsearch Integration
+**Components**:
+- ElasticsearchService: Manages Elasticsearch operations
+- ElasticsearchLicenseSource: Search index entity
+- LicenseElasticsearchMapper: Maps between entities
+
+**Operations**:
+- Index license source on create
+- Update index on update
+- Remove from index on delete
+- Smart search queries
+- Autocomplete queries
+- Faceted search
+
+---
+
+## 6. Excel Processing Design
+
+### 6.1 Excel File Format
+
+#### 6.1.1 Column Structure (15 columns)
+
+| Column | Field Name | Required | Type | Format/Notes |
+|--------|------------|----------|------|--------------|
+| A | HON | Yes | String | Unique identifier |
+| B | Scope | Yes | Enum | GLOBAL, NATIONAL, or STATE |
+| C | Country | Yes | String | Country name |
+| D | State | Conditional | String | Required if Scope=STATE |
+| E | License Type | Yes | String | Type of license |
+| F | Web Address | No | String | Semicolon-separated URLs |
+| G | Phone | No | String | Semicolon-separated numbers |
+| H | Email | No | String | Semicolon-separated emails |
+| I | Fax | No | String | Semicolon-separated fax numbers |
+| J | Governing Agency | No | String | Agency name |
+| K | Multi State | No | String | Yes/No or description |
+| L | Expiration | No | String | Expiration/renewal info |
+| M | License Status | No | String | Status information |
+| N | Disciplinary Actions | No | String | Disciplinary information |
+| O | Additional Information | No | String | Additional notes |
+
+#### 6.1.2 Sample Excel Data
+
+| HON | Scope | Country | State | License Type | Web Address | Phone | ... |
+|-----|-------|---------|-------|--------------|-------------|-------|-----|
+| LIC-USA-CA-MED-001 | STATE | United States | California | Medical License | https://www.mbc.ca.gov/ | +1-800-633-2322 | ... |
+| LIC-USA-NY-LAW-002 | STATE | United States | New York | Law License | https://www.nycourts.gov/ | +1-518-474-3843 | ... |
+| LIC-CAN-ON-ENG-003 | STATE | Canada | Ontario | Engineering License | https://www.peo.on.ca/ | +1-416-224-1100 | ... |
+
+### 6.2 Processing Workflow
+
+```
+1. File Upload
+   ↓
+2. File Validation (format, size)
+   ↓
+3. Excel Parsing (Apache POI)
+   ↓
+4. Row-by-Row Processing
+   ├─ Extract cell values
+   ├─ Parse delimited strings
+   └─ Create LicenseRecord objects
+   ↓
+5. Record Validation
+   ├─ Required field check
+   ├─ Scope/State validation
+   ├─ Format validation
+   └─ Collect errors
+   ↓
+6. Database Operations
+   ├─ Check existing records (by HON)
+   ├─ Separate create vs update
+   └─ Bulk upsert to MongoDB
+   ↓
+7. Elasticsearch Sync
+   ↓
+8. Response Generation
+   └─ Statistics + Error Report
+```
+
+### 6.3 Validation Rules
+
+**File-Level Validation**:
+- File format must be .xlsx
+- File size must be ≤ 10 MB
+- Maximum 10,000 rows per file
+- First row must be header row
+
+**Record-Level Validation**:
+- HON: Required, non-empty, unique
+- Scope: Required, must be GLOBAL/NATIONAL/STATE
+- Country: Required, non-empty
+- State: Required if Scope=STATE
+- License Type: Required, non-empty
+- Email: Valid email format (if provided)
+- Web Address: Valid URL format (if provided)
+
+### 6.4 Error Handling
+
+**Error Types**:
+1. **File Errors**: Invalid format, size exceeded, corrupted file
+2. **Validation Errors**: Missing required fields, invalid formats
+3. **Business Logic Errors**: Scope/state mismatch
+4. **Database Errors**: Duplicate HON, connection issues
+
+**Error Reporting**:
+- Each error includes: row number, HON, error message
+- Errors are collected and returned in response
+- Processing continues for valid records even if some fail
+
+### 6.5 Performance Optimization
+
+**Strategies**:
+- Bulk upsert operations (batch size: 500 records)
+- Parallel processing for large files
+- Elasticsearch bulk indexing
+- Connection pooling for database operations
+- Streaming for large Excel files
+
+**Expected Performance**:
+- 100 records: < 5 seconds
+- 1,000 records: < 30 seconds
+- 10,000 records: < 5 minutes
+
+---
+
+## 7. Implementation Approach
+
+### 7.1 Reusable Components from Employee Source
+
+The implementation will **reuse the following patterns and components** from the existing Employee Source system:
+
+#### 7.1.1 Directly Reusable
+1. **Repository Pattern**: CustomSourceRepositoryImpl structure
+2. **Elasticsearch Service**: ElasticsearchService base implementation
+3. **Excel Parser**: ExcelParserService base logic
+4. **Migration Processor**: MigrationProcessor interface
+5. **Exception Handling**: Exception utilities and custom exceptions
+6. **Bulk Operations**: MongoTemplate bulk upsert pattern
+7. **API Response DTOs**: ResponseObject, SearchResponseDTO, etc.
+8. **Pagination Logic**: Page calculation and response formatting
+9. **Audit Fields**: createdDate, updatedDate, createdBy, updatedBy handling
+10. **Soft Delete**: Active flag-based deletion
+
+#### 7.1.2 Requires Modification
+1. **Entity Classes**: Different schema (LicenseSource vs Source)
+2. **DTOs**: Different field structure
+3. **Validation Logic**: Scope/state conditional validation
+4. **Excel Column Mapping**: Different column structure
+5. **Elasticsearch Mapping**: Different fields and analyzers
+6. **Search Query Builders**: License-specific search criteria
+
+### 7.2 Implementation Phases
+
+#### Phase 1: Database Setup (Week 1)
+**Tasks**:
+- Create MongoDB collection `license_source`
+- Create all 8 indexes
+- Create Elasticsearch index `license_index`
+- Test database connectivity
+- Set up monitoring
+
+**Deliverables**:
+- Database schema created
+- Indexes verified
+- Connection tests passed
+
+#### Phase 2: Domain & Repository (Week 2)
+**Tasks**:
+- Create domain entities (LicenseSource, LicenseScope)
+- Create DTOs (LicenseSourceDTO, LicenseRecord, etc.)
+- Implement LicenseSourceRepository
+- Implement CustomLicenseSourceRepository
+- Write unit tests for repositories
+
+**Deliverables**:
+- All entities and DTOs created
+- Repository layer complete
+- Unit tests passing (>80% coverage)
+
+#### Phase 3: Service Layer (Week 3)
+**Tasks**:
+- Implement LicenseSourceService
+- Implement LicenseExcelParserService
+- Implement LicenseMigrationProcessor
+- Add validation logic (scope/state)
+- Integrate Elasticsearch
+- Write unit tests for services
+
+**Deliverables**:
+- Service layer complete
+- Validation working
+- Elasticsearch integration tested
+- Unit tests passing (>80% coverage)
+
+#### Phase 4: Controller Layer (Week 4)
+**Tasks**:
+- Create API interfaces with OpenAPI annotations
+- Implement LicenseSourceApiController
+- Implement LicenseMigrationApiController
+- Add exception handling
+- Write integration tests
+- Generate API documentation
+
+**Deliverables**:
+- All REST endpoints implemented
+- Swagger documentation generated
+- Integration tests passing
+- Postman collection created
+
+#### Phase 5: Testing & Documentation (Week 5)
+**Tasks**:
+- Complete unit test coverage (>80%)
+- Complete integration tests
+- Performance testing (load, stress)
+- Security testing
+- API documentation review
+- User guide for Excel upload
+
+**Deliverables**:
+- Test coverage >80%
+- Performance benchmarks met
+- Documentation complete
+- User guide published
+
+#### Phase 6: Deployment (Week 6)
+**Tasks**:
+- Deploy to staging environment
+- User acceptance testing (UAT)
+- Fix bugs and issues
+- Deploy to production
+- Monitor and support
+- Knowledge transfer
+
+**Deliverables**:
+- Production deployment complete
+- UAT sign-off
+- Monitoring dashboards configured
+- Team trained
+
+### 7.3 Technology Dependencies
+
+**Required Libraries**:
+```gradle
+dependencies {
+    // Spring Boot
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // MongoDB
+    implementation 'org.mongodb:mongodb-driver-sync:4.11.0'
+
+    // Elasticsearch
+    implementation 'co.elastic.clients:elasticsearch-java:8.10.0'
+
+    // Apache POI for Excel
+    implementation 'org.apache.poi:poi:5.2.3'
+    implementation 'org.apache.poi:poi-ooxml:5.2.3'
+
+    // MapStruct
+    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // OpenAPI/Swagger
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.mockito:mockito-core'
+}
+```
+
+### 7.4 Configuration Requirements
+
+**application.properties**:
+```properties
+# MongoDB Configuration
+spring.data.mongodb.uri=mongodb://${mongoUser}:${mongoPass}@${mongoUrl}/${mongoDatabase:sidb}
+spring.data.mongodb.database=${mongoDatabase:sidb}
+
+# Elasticsearch Configuration
+spring.elasticsearch.uris=${elasticsearchUri:http://localhost:9200}
+spring.elasticsearch.username=${esUserName:elastic}
+spring.elasticsearch.password=${esPassword:changeme}
+
+# File Upload Configuration
+spring.servlet.multipart.max-file-size=10MB
+spring.servlet.multipart.max-request-size=10MB
+
+# Server Configuration
+server.port=8080
+server.servlet.context-path=/sourceintelligence-service
+
+# OpenAPI Configuration
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.api-docs.path=/api-docs
+
+# Logging
+logging.level.com.hireright.sourceintelligence=INFO
+logging.level.org.springframework.data.mongodb=DEBUG
+```
+
+---
+
+## 8. Error Handling & Validation
+
+### 8.1 Error Handling Strategy
+
+#### 8.1.1 Exception Hierarchy
+
+Following the existing pattern, the system uses a centralized exception handling approach:
+
+```
+Exception (Java Root)
+    └── RuntimeException
+        ├── ServiceException (500 Internal Server Error)
+        ├── InvalidRequestException (400 Bad Request)
+        ├── ResourceNotFoundException (404 Not Found)
+        ├── UnauthorizedException (401 Unauthorized)
+        ├── AccessDeniedException (403 Forbidden)
+        └── ConflictException (409 Conflict)
+```
+
+**Custom Exceptions**:
+
+| Exception Class | HTTP Status | Use Case | Example |
+|----------------|-------------|----------|---------|
+| `ServiceException` | 500 | Internal server errors, database failures | Database connection lost |
+| `InvalidRequestException` | 400 | Invalid input, validation failures | Missing required field |
+| `ResourceNotFoundException` | 404 | Resource not found | License source with HON not found |
+| `UnauthorizedException` | 401 | Authentication failures | Invalid or missing token |
+| `AccessDeniedException` | 403 | Authorization failures | User lacks permission |
+| `ConflictException` | 409 | Resource conflicts | Duplicate HON |
+
+#### 8.1.2 Global Exception Handler
+
+**GlobalApiExceptionHandler** (extends ResponseEntityExceptionHandler):
+
+**Responsibilities**:
+- Centralized exception handling for all REST endpoints
+- Consistent error response format
+- Logging of all exceptions
+- Mapping exceptions to appropriate HTTP status codes
+
+**Handled Exceptions**:
+1. **Spring MVC Exceptions**:
+   - `MethodArgumentNotValidException`: Bean validation failures
+   - `MethodArgumentTypeMismatchException`: Type conversion errors
+   - `HttpMessageNotReadableException`: Malformed JSON
+   - `NoHandlerFoundException`: Invalid endpoint
+
+2. **Custom Application Exceptions**:
+   - All custom exceptions listed above
+
+3. **Data Access Exceptions**:
+   - `DataIntegrityViolationException`: Constraint violations
+   - `DataAccessException`: Database errors
+
+4. **Generic Exceptions**:
+   - `Exception`: Catch-all for unexpected errors
+
+#### 8.1.3 Error Response Format
+
+**Standard Error Response (ApiError)**:
+
+```json
+{
+  "errorCode": "LIC-005",
+  "status": "CONFLICT",
+  "timestamp": "2024-03-24T10:30:00Z",
+  "message": "License source with HON already exists",
+  "traceId": "abc123-def456-ghi789",
+  "errors": [
+    {
+      "name": "hon",
+      "message": "Duplicate HON: LIC-USA-CA-MED-001"
+    }
+  ],
+  "validationErrors": [
+    {
+      "object": "licenseSourceDTO",
+      "field": "state",
+      "rejectedValue": null,
+      "message": "State is required when scope is STATE"
+    }
+  ]
+}
+```
+
+**Error Response Fields**:
+- `errorCode`: Application-specific error code (e.g., LIC-001)
+- `status`: HTTP status code
+- `timestamp`: Error occurrence time (ISO 8601)
+- `message`: Human-readable error message
+- `traceId`: Correlation ID for log tracking
+- `errors`: List of error details
+- `validationErrors`: List of validation failures
+
+#### 8.1.4 License-Specific Error Codes
+
+| Error Code | HTTP Status | Description | Example Scenario |
+|------------|-------------|-------------|------------------|
+| LIC-001 | 400 | Invalid license scope | Scope value not in [GLOBAL, NATIONAL, STATE] |
+| LIC-002 | 400 | Missing required field | HON, scope, country, or licenseType is null |
+| LIC-003 | 400 | State required for STATE scope | Scope=STATE but state field is empty |
+| LIC-004 | 404 | License source not found | GET request for non-existent HON |
+| LIC-005 | 409 | Duplicate HON | Creating license with existing HON |
+| LIC-006 | 413 | File size exceeds limit | Excel file > 10MB |
+| LIC-007 | 500 | Database error | MongoDB connection failure |
+| LIC-008 | 500 | Elasticsearch error | Elasticsearch indexing failure |
+| LIC-009 | 400 | Invalid file format | File is not .xlsx format |
+| LIC-010 | 400 | Too many records in batch | Batch request with > 100 HONs |
+| LIC-011 | 400 | Invalid email format | Email field contains invalid email |
+| LIC-012 | 400 | Invalid URL format | Web address contains invalid URL |
+| LIC-013 | 422 | Excel parsing error | Corrupted or malformed Excel file |
+| LIC-014 | 400 | Invalid phone format | Phone number format validation failed |
+| LIC-015 | 500 | Bulk operation failed | Bulk upsert operation failed |
+
+#### 8.1.5 Error Logging Strategy
+
+**Log Levels**:
+- **ERROR**: System errors, exceptions, database failures
+- **WARN**: Validation failures, business rule violations, recoverable errors
+- **INFO**: Successful operations, API requests, business events
+- **DEBUG**: Detailed execution flow (dev/staging only)
+
+**Logging Pattern**:
+```
+[timestamp] [level] [thread] [class] - [message] trace_id=[traceId] span_id=[spanId]
+```
+
+**Example Logs**:
+```
+2024-03-24 10:00:00 ERROR [http-nio-8080-exec-1] LicenseSourceService - Failed to create license source: Duplicate HON trace_id=abc123
+2024-03-24 10:00:01 WARN [http-nio-8080-exec-2] LicenseValidator - Validation failed: State required for STATE scope trace_id=def456
+2024-03-24 10:00:02 INFO [http-nio-8080-exec-3] LicenseSourceController - License source created successfully: LIC-USA-CA-MED-001 trace_id=ghi789
+```
+
+**Logging Utility (LoggingThrowable)**:
+
+**Methods**:
+- `logAndThrowServiceException()`: Log and throw ServiceException
+- `logAndThrowInvalidRequest()`: Log and throw InvalidRequestException
+- `logAndThrowResourceNotFound()`: Log and throw ResourceNotFoundException
+- `logAndThrowUnauthorizedException()`: Log and throw UnauthorizedException
+- `logAndThrowAlreadyExistsException()`: Log and throw ConflictException
+
+**Usage Pattern**:
+```java
+if (licenseSourceRepository.existsByHon(hon)) {
+    LoggingThrowable.logAndThrowAlreadyExistsException(
+        ErrorConstants.DUPLICATE_HON,
+        null,
+        hon
+    );
+}
+```
+
+### 8.2 Validation Strategy
+
+#### 8.2.1 Validation Layers
+
+**Multi-Layer Validation Approach**:
+
+```
+1. Controller Layer (Request Validation)
+   ├─ @Valid annotation on request body
+   ├─ @NotNull, @NotEmpty on path/query parameters
+   └─ Bean Validation (JSR-303)
+
+2. Service Layer (Business Logic Validation)
+   ├─ Scope-state conditional validation
+   ├─ HON uniqueness check
+   ├─ Data format validation
+   └─ Business rule validation
+
+3. Repository Layer (Data Integrity)
+   ├─ MongoDB schema validation
+   ├─ Unique index constraints
+   └─ Required field constraints
+```
+
+#### 8.2.2 Bean Validation Annotations
+
+**LicenseSourceDTO Validation**:
+
+| Field | Validation Annotations | Rules |
+|-------|----------------------|-------|
+| `hon` | `@NotNull`, `@NotBlank`, `@Size(max=100)` | Required, non-empty, max 100 chars |
+| `scope` | `@NotNull`, `@Pattern(regexp="GLOBAL|NATIONAL|STATE")` | Required, must be valid enum |
+| `country` | `@NotNull`, `@NotBlank`, `@Size(max=100)` | Required, non-empty, max 100 chars |
+| `state` | `@Size(max=100)` | Optional, max 100 chars (conditional) |
+| `licenseType` | `@NotNull`, `@NotBlank`, `@Size(max=200)` | Required, non-empty, max 200 chars |
+| `webAddress` | `@Valid`, `@URL` (each element) | Valid URL format |
+| `phone` | `@Pattern(regexp="^\\+?[0-9\\-\\s()]+$")` | Valid phone format |
+| `email` | `@Email` (each element) | Valid email format |
+| `active` | `@NotNull` | Required boolean |
+
+**Custom Validators**:
+
+1. **@ValidLicenseScope**: Custom annotation for scope validation
+   - Validates scope is one of: GLOBAL, NATIONAL, STATE
+   - Case-insensitive validation
+
+2. **@ConditionalStateRequired**: Custom annotation for state validation
+   - Validates state is present when scope = STATE
+   - Validates state is valid state/province name
+
+3. **@ValidHON**: Custom annotation for HON format validation
+   - Validates HON format: LIC-{COUNTRY}-{STATE}-{TYPE}-{NUMBER}
+   - Example: LIC-USA-CA-MED-001
+
+#### 8.2.3 Business Logic Validation
+
+**LicenseSourceService Validation Methods**:
+
+1. **validateScopeAndState()**:
+   ```
+   - If scope = STATE, state must be provided
+   - If scope = NATIONAL or GLOBAL, state is optional
+   - Throw InvalidRequestException if validation fails
+   ```
+
+2. **validateHonUniqueness()**:
+   ```
+   - Check if HON already exists in database
+   - Throw ConflictException if duplicate found
+   ```
+
+3. **validateRequiredFields()**:
+   ```
+   - Validate all required fields are present
+   - Validate field lengths and formats
+   - Throw InvalidRequestException if validation fails
+   ```
+
+4. **validateDataFormats()**:
+   ```
+   - Validate email format (RFC 5322)
+   - Validate URL format (RFC 3986)
+   - Validate phone number format (E.164)
+   - Throw InvalidRequestException if validation fails
+   ```
+
+5. **validateExcelData()**:
+   ```
+   - Validate Excel file format (.xlsx)
+   - Validate file size (< 10MB)
+   - Validate row count (< 10,000)
+   - Validate header row matches expected format
+   - Throw InvalidRequestException if validation fails
+   ```
+
+#### 8.2.4 Excel Validation Rules
+
+**File-Level Validation**:
+- File extension must be `.xlsx`
+- File size must be ≤ 10 MB
+- Maximum 10,000 rows per file
+- First row must contain expected headers
+- File must not be corrupted or password-protected
+
+**Row-Level Validation**:
+- HON: Required, non-empty, unique, max 100 chars
+- Scope: Required, must be GLOBAL/NATIONAL/STATE
+- Country: Required, non-empty, max 100 chars
+- State: Required if Scope=STATE, max 100 chars
+- License Type: Required, non-empty, max 200 chars
+- Web Address: Valid URL format (if provided)
+- Email: Valid email format (if provided)
+- Phone: Valid phone format (if provided)
+
+**Validation Error Handling**:
+- Collect all validation errors per row
+- Continue processing valid rows
+- Return detailed error report with:
+  - Row number
+  - HON (if available)
+  - Field name
+  - Error message
+  - Rejected value
+
+#### 8.2.5 Validation Error Response
+
+**Validation Error Example**:
+
+```json
+{
+  "errorCode": "LIC-002",
+  "status": "BAD_REQUEST",
+  "timestamp": "2024-03-24T10:30:00Z",
+  "message": "Validation failed for license source",
+  "validationErrors": [
+    {
+      "object": "licenseSourceDTO",
+      "field": "hon",
+      "rejectedValue": null,
+      "message": "HON is required"
+    },
+    {
+      "object": "licenseSourceDTO",
+      "field": "state",
+      "rejectedValue": null,
+      "message": "State is required when scope is STATE"
+    },
+    {
+      "object": "licenseSourceDTO",
+      "field": "email[0]",
+      "rejectedValue": "invalid-email",
+      "message": "Invalid email format"
+    }
+  ]
+}
+```
+
+---
+
+## 9. Security Considerations
+
+### 9.1 Authentication & Authorization
+
+#### 9.1.1 Authentication Strategy
+
+**Authentication Mechanism**:
+- **OAuth 2.0 / JWT**: Token-based authentication
+- **Integration**: Okta or similar identity provider
+- **Token Validation**: Spring Security with JWT validation
+
+**Authentication Flow**:
+```
+1. User authenticates with identity provider (Okta)
+2. Identity provider issues JWT token
+3. Client includes token in Authorization header
+4. Spring Security validates token
+5. Request proceeds if token is valid
+6. Return 401 Unauthorized if token is invalid/expired
+```
+
+**Required Headers**:
+```
+Authorization: Bearer <JWT_TOKEN>
+Content-Type: application/json
+```
+
+#### 9.1.2 Authorization Strategy
+
+**Role-Based Access Control (RBAC)**:
+
+| Role | Permissions | Endpoints |
+|------|------------|-----------|
+| `RESEARCHER` | Read, Create, Update | GET, POST, PUT /license-source |
+| `ADMIN` | Full access | All endpoints including DELETE |
+| `VIEWER` | Read-only | GET /license-source, GET /license-source/search |
+| `SYSTEM` | Excel upload, Batch operations | POST /license-migration/upload |
+
+**Authorization Rules**:
+- All endpoints require authentication
+- DELETE operations require ADMIN role
+- Excel upload requires RESEARCHER or ADMIN role
+- Search operations available to all authenticated users
+- Batch operations (>50 records) require ADMIN role
+
+**Spring Security Configuration**:
+```
+- All /api/v1/** endpoints require authentication
+- /actuator/health endpoints are public (for health checks)
+- /swagger-ui/** endpoints require authentication
+- CORS enabled for allowed origins only
+```
+
+### 9.2 Input Validation & Sanitization
+
+#### 9.2.1 Input Sanitization
+
+**Sanitization Rules**:
+1. **HTML/Script Injection Prevention**:
+   - Strip HTML tags from all text inputs
+   - Escape special characters (<, >, &, ", ')
+   - Reject inputs containing <script> tags
+
+2. **SQL/NoSQL Injection Prevention**:
+   - Use parameterized queries (Spring Data)
+   - Validate input against whitelist patterns
+   - Reject inputs with MongoDB operators ($, {, })
+
+3. **Path Traversal Prevention**:
+   - Validate file names (no ../, ..\, etc.)
+   - Restrict file uploads to specific directory
+   - Validate file extensions against whitelist
+
+4. **XSS Prevention**:
+   - Encode output data
+   - Set Content-Security-Policy headers
+   - Use OWASP Java Encoder for output encoding
+
+**Sanitization Implementation**:
+- Use OWASP Java HTML Sanitizer library
+- Apply sanitization in service layer before persistence
+- Log sanitization events for security monitoring
+
+#### 9.2.2 File Upload Security
+
+**Excel Upload Security**:
+1. **File Type Validation**:
+   - Verify file extension (.xlsx only)
+   - Verify MIME type (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+   - Verify file magic bytes (ZIP signature: 50 4B 03 04)
+
+2. **File Size Limits**:
+   - Maximum file size: 10 MB
+   - Reject files exceeding limit with 413 Payload Too Large
+
+3. **Virus Scanning**:
+   - Integrate with antivirus scanner (ClamAV)
+   - Scan all uploaded files before processing
+   - Quarantine suspicious files
+
+4. **File Storage Security**:
+   - Store uploaded files in secure, isolated directory
+   - Use unique file names (UUID-based)
+   - Set restrictive file permissions (read-only for application)
+   - Delete files after processing (retention: 24 hours)
+
+5. **Content Validation**:
+   - Validate Excel structure (no macros, no external links)
+   - Limit number of sheets (1 sheet only)
+   - Limit number of rows (10,000 max)
+   - Validate cell data types
+
+### 9.3 Data Protection
+
+#### 9.3.1 Data Encryption
+
+**Encryption at Rest**:
+- **MongoDB**: Enable encryption at rest using MongoDB Enterprise
+- **Elasticsearch**: Enable encryption at rest using Elasticsearch security features
+- **File Storage**: Encrypt uploaded files using AES-256
+
+**Encryption in Transit**:
+- **HTTPS/TLS**: All API endpoints use HTTPS (TLS 1.2+)
+- **MongoDB**: Use TLS for database connections
+- **Elasticsearch**: Use HTTPS for Elasticsearch connections
+
+**Sensitive Data Handling**:
+- **PII Data**: Encrypt email, phone, fax fields
+- **Audit Data**: Encrypt createdBy, updatedBy fields
+- **Logs**: Mask sensitive data in logs (email, phone)
+
+#### 9.3.2 Data Masking
+
+**Log Masking**:
+```
+Original: Creating license with email: john.doe@example.com
+Masked:   Creating license with email: j***@e***.com
+```
+
+**API Response Masking** (for non-admin users):
+```json
+{
+  "email": ["j***@e***.com"],
+  "phone": ["+1-***-***-2322"]
+}
+```
+
+### 9.4 API Security
+
+#### 9.4.1 Rate Limiting
+
+**Rate Limit Configuration**:
+
+| Endpoint Type | Rate Limit | Window | Action on Exceed |
+|--------------|------------|--------|------------------|
+| Search APIs | 100 req/min | 1 minute | 429 Too Many Requests |
+| CRUD APIs | 50 req/min | 1 minute | 429 Too Many Requests |
+| Excel Upload | 10 req/hour | 1 hour | 429 Too Many Requests |
+| Batch APIs | 20 req/min | 1 minute | 429 Too Many Requests |
+
+**Rate Limiting Implementation**:
+- Use Spring Cloud Gateway or API Gateway
+- Use Redis for distributed rate limiting
+- Return `Retry-After` header with wait time
+
+**Rate Limit Response**:
+```json
+{
+  "errorCode": "RATE_LIMIT_EXCEEDED",
+  "status": "TOO_MANY_REQUESTS",
+  "message": "Rate limit exceeded. Please try again later.",
+  "retryAfter": 60
+}
+```
+
+#### 9.4.2 CORS Configuration
+
+**Allowed Origins**:
+```
+- https://sources-dev.hireright.com
+- https://sources-test.hireright.com
+- https://sources-stg.hireright.com
+- https://sources.hireright.com
+- http://localhost:3000 (development only)
+```
+
+**Allowed Methods**:
+```
+GET, POST, PUT, DELETE, OPTIONS
+```
+
+**Allowed Headers**:
+```
+Authorization, Content-Type, X-Requested-With
+```
+
+**CORS Configuration** (WebConfig):
+```
+- allowCredentials: true
+- maxAge: 3600 seconds
+- exposedHeaders: X-Total-Count, X-Page-Number
+```
+
+#### 9.4.3 Security Headers
+
+**Required Security Headers**:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Force HTTPS |
+| `X-Content-Type-Options` | `nosniff` | Prevent MIME sniffing |
+| `X-Frame-Options` | `DENY` | Prevent clickjacking |
+| `X-XSS-Protection` | `1; mode=block` | Enable XSS filter |
+| `Content-Security-Policy` | `default-src 'self'` | Restrict resource loading |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer info |
+
+### 9.5 Audit Logging
+
+#### 9.5.1 Audit Trail
+
+**Audited Events**:
+- License source creation (who, when, what)
+- License source updates (who, when, what changed)
+- License source deletion (who, when)
+- Excel file uploads (who, when, file name, record count)
+- Search queries (who, when, search criteria)
+- Failed authentication attempts
+- Authorization failures
+
+**Audit Log Format**:
+```json
+{
+  "eventType": "LICENSE_CREATED",
+  "timestamp": "2024-03-24T10:00:00Z",
+  "userId": "researcher_001",
+  "userRole": "RESEARCHER",
+  "action": "CREATE",
+  "resourceType": "LICENSE_SOURCE",
+  "resourceId": "LIC-USA-CA-MED-001",
+  "ipAddress": "192.168.1.100",
+  "userAgent": "Mozilla/5.0...",
+  "changes": {
+    "before": null,
+    "after": { /* license source data */ }
+  },
+  "status": "SUCCESS"
+}
+```
+
+#### 9.5.2 Audit Storage
+
+**Audit Log Storage**:
+- **Primary**: MongoDB collection `audit_logs`
+- **Backup**: Elasticsearch index `audit_index`
+- **Retention**: 7 years (compliance requirement)
+- **Access**: Admin-only, read-only
+
+**Audit Log Indexes**:
+```
+- userId (for user activity tracking)
+- timestamp (for time-based queries)
+- resourceId (for resource history)
+- eventType (for event filtering)
+```
+
+### 9.6 Compliance & Privacy
+
+#### 9.6.1 GDPR Compliance
+
+**Data Subject Rights**:
+- **Right to Access**: API to retrieve all data for a user
+- **Right to Rectification**: Update APIs for data correction
+- **Right to Erasure**: Soft delete with data anonymization
+- **Right to Data Portability**: Export API for data download
+
+**Data Minimization**:
+- Collect only necessary fields
+- Optional fields are truly optional
+- No unnecessary PII collection
+
+**Consent Management**:
+- Track consent for data processing
+- Allow consent withdrawal
+- Audit consent changes
+
+#### 9.6.2 Data Retention
+
+**Retention Policies**:
+- **Active Records**: Indefinite (until marked inactive)
+- **Inactive Records**: 7 years
+- **Audit Logs**: 7 years
+- **Uploaded Files**: 24 hours (then deleted)
+- **Search Logs**: 90 days
+
+**Data Deletion**:
+- Soft delete (set active=false)
+- Hard delete after retention period
+- Anonymize PII data on deletion
+- Maintain audit trail of deletions
+
+---
+
+## 10. Performance Considerations
+
+### 10.1 Database Performance
+
+#### 10.1.1 MongoDB Optimization
+
+**Index Strategy**:
+- **8 Indexes** for optimal query performance
+- **Compound Index** (scope + state) for common queries
+- **Unique Index** on HON for fast lookups
+- **Covered Queries**: Indexes cover most query patterns
+
+**Query Optimization**:
+1. **Use Projection**: Fetch only required fields
+   ```
+   db.license_source.find({scope: "STATE"}, {hon: 1, licenseType: 1})
+   ```
+
+2. **Use Limit**: Limit result set size
+   ```
+   db.license_source.find({country: "United States"}).limit(20)
+   ```
+
+3. **Use Explain**: Analyze query performance
+   ```
+   db.license_source.find({scope: "STATE"}).explain("executionStats")
+   ```
+
+4. **Avoid Full Collection Scans**: Always use indexed fields
+
+**Connection Pooling**:
+```
+- Min Pool Size: 10
+- Max Pool Size: 100
+- Max Idle Time: 60 seconds
+- Max Wait Time: 10 seconds
+```
+
+**Read Preference**:
+- **Primary**: For write operations
+- **Secondary Preferred**: For read-heavy operations (search)
+- **Nearest**: For low-latency reads
+
+**Write Concern**:
+- **w: majority**: Ensure data durability
+- **j: true**: Wait for journal commit
+- **wtimeout: 5000**: 5-second timeout
+
+#### 10.1.2 Elasticsearch Optimization
+
+**Index Settings**:
+```
+- number_of_shards: 3 (for scalability)
+- number_of_replicas: 2 (for high availability)
+- refresh_interval: 30s (balance between freshness and performance)
+```
+
+**Query Optimization**:
+1. **Use Filters**: Filters are cached
+   ```
+   {
+     "query": {
+       "bool": {
+         "filter": [
+           {"term": {"scope": "STATE"}},
+           {"term": {"active": true}}
+         ]
+       }
+     }
+   }
+   ```
+
+2. **Use Pagination**: Avoid deep pagination
+   ```
+   - Use from/size for < 10,000 results
+   - Use search_after for > 10,000 results
+   ```
+
+3. **Use Source Filtering**: Fetch only required fields
+   ```
+   "_source": ["hon", "licenseType", "country"]
+   ```
+
+4. **Use Aggregations**: For faceted search
+   ```
+   "aggs": {
+     "scopes": {"terms": {"field": "scope"}},
+     "countries": {"terms": {"field": "country"}}
+   }
+   ```
+
+**Bulk Indexing**:
+- Batch size: 500 documents
+- Refresh: false (during bulk operations)
+- Retry on conflict: 3 times
+
+### 10.2 Application Performance
+
+#### 10.2.1 Caching Strategy
+
+**Cache Layers**:
+
+1. **Application-Level Cache** (Spring Cache):
+   - **Cache Provider**: Caffeine or Redis
+   - **TTL**: 5 minutes for frequently accessed data
+   - **Eviction**: LRU (Least Recently Used)
+
+2. **Cached Data**:
+   - License source by HON (most frequently accessed)
+   - Search results (with cache key based on search criteria)
+   - Autocomplete suggestions
+   - Facet counts
+
+3. **Cache Configuration**:
+   ```
+   - Max Size: 10,000 entries
+   - TTL: 5 minutes
+   - Eviction Policy: LRU
+   - Cache Warming: On application startup
+   ```
+
+**Cache Invalidation**:
+- Invalidate on create/update/delete operations
+- Invalidate related caches (e.g., search results)
+- Use cache tags for bulk invalidation
+
+**Caching Annotations**:
+```java
+@Cacheable(value = "licenseSource", key = "#hon")
+public LicenseSourceDTO getLicenseSourceByHon(String hon)
+
+@CacheEvict(value = "licenseSource", key = "#hon")
+public void updateLicenseSource(String hon, LicenseSourceDTO dto)
+
+@CacheEvict(value = "licenseSource", allEntries = true)
+public void clearAllCache()
+```
+
+#### 10.2.2 Async Processing
+
+**Asynchronous Operations**:
+
+1. **Excel Processing**:
+   - Process Excel files asynchronously
+   - Return immediate response with job ID
+   - Client polls for job status
+   - Notification on completion
+
+2. **Elasticsearch Indexing**:
+   - Index documents asynchronously
+   - Use message queue (RabbitMQ/Kafka) for reliability
+   - Retry failed indexing operations
+
+3. **Bulk Operations**:
+   - Process large batches asynchronously
+   - Split into smaller chunks (500 records each)
+   - Parallel processing with thread pool
+
+**Thread Pool Configuration**:
+```
+- Core Pool Size: 10
+- Max Pool Size: 50
+- Queue Capacity: 100
+- Keep Alive Time: 60 seconds
+```
+
+**Async Annotations**:
+```java
+@Async("licenseTaskExecutor")
+public CompletableFuture<MigrationResult> processExcelAsync(MultipartFile file)
+
+@Async("elasticsearchTaskExecutor")
+public void indexLicenseSourceAsync(LicenseSource licenseSource)
+```
+
+#### 10.2.3 Pagination & Lazy Loading
+
+**Pagination Strategy**:
+- **Default Page Size**: 20 records
+- **Max Page Size**: 100 records
+- **Offset-Based Pagination**: For < 10,000 results
+- **Cursor-Based Pagination**: For > 10,000 results
+
+**Pagination Response**:
+```json
+{
+  "totalRecords": 1500,
+  "currentPage": 1,
+  "pageSize": 20,
+  "totalPages": 75,
+  "hasNext": true,
+  "hasPrevious": false,
+  "licenses": [ /* ... */ ]
+}
+```
+
+**Lazy Loading**:
+- Load related data on demand
+- Use DTOs to control data exposure
+- Avoid N+1 query problem
+
+### 10.3 Network Performance
+
+#### 10.3.1 Response Compression
+
+**Compression Configuration**:
+```
+- Enable GZIP compression
+- Minimum response size: 1 KB
+- Compression level: 6 (balance between speed and size)
+- Compressed MIME types: application/json, text/plain
+```
+
+**Expected Compression Ratio**:
+- JSON responses: 70-80% size reduction
+- Large search results: 80-90% size reduction
+
+#### 10.3.2 HTTP/2 Support
+
+**HTTP/2 Benefits**:
+- Multiplexing: Multiple requests over single connection
+- Header compression: Reduced overhead
+- Server push: Proactive resource delivery
+
+**Configuration**:
+```
+- Enable HTTP/2 in Spring Boot
+- Use TLS 1.2+ (required for HTTP/2)
+- Configure connection pool for HTTP/2
+```
+
+#### 10.3.3 CDN Integration
+
+**CDN Strategy** (for static assets):
+- Cache static resources (images, CSS, JS)
+- Edge caching for frequently accessed data
+- Reduce latency for global users
+
+### 10.4 Monitoring & Profiling
+
+#### 10.4.1 Performance Metrics
+
+**Key Performance Indicators (KPIs)**:
+
+| Metric | Target | Alert Threshold |
+|--------|--------|-----------------|
+| API Response Time (p95) | < 500ms | > 1000ms |
+| API Response Time (p99) | < 1000ms | > 2000ms |
+| Database Query Time | < 100ms | > 500ms |
+| Elasticsearch Query Time | < 200ms | > 1000ms |
+| Excel Processing (1K records) | < 30s | > 60s |
+| Throughput | > 100 req/s | < 50 req/s |
+| Error Rate | < 1% | > 5% |
+| CPU Usage | < 70% | > 85% |
+| Memory Usage | < 80% | > 90% |
+| Database Connections | < 80 | > 95 |
+
+#### 10.4.2 Application Performance Monitoring (APM)
+
+**APM Tools**:
+- **New Relic** or **Datadog** or **Dynatrace**
+- **Spring Boot Actuator**: Built-in metrics
+- **Micrometer**: Metrics collection
+- **Prometheus**: Metrics storage
+- **Grafana**: Metrics visualization
+
+**Monitored Metrics**:
+- Request/response times
+- Database query performance
+- JVM metrics (heap, GC, threads)
+- Custom business metrics
+- Error rates and exceptions
+
+**Distributed Tracing**:
+- **OpenTelemetry**: Distributed tracing
+- **Trace ID**: Correlation across services
+- **Span ID**: Individual operation tracking
+
+#### 10.4.3 Performance Testing
+
+**Load Testing**:
+- **Tool**: JMeter or Gatling
+- **Scenarios**:
+  - 100 concurrent users (sustained)
+  - 500 concurrent users (peak)
+  - 1000 concurrent users (stress test)
+- **Duration**: 30 minutes per scenario
+- **Ramp-up**: 5 minutes
+
+**Performance Test Scenarios**:
+
+1. **Search Performance**:
+   - 100 concurrent search requests
+   - Mix of filter and smart search
+   - Target: < 500ms response time (p95)
+
+2. **CRUD Performance**:
+   - 50 concurrent create/update requests
+   - Target: < 300ms response time (p95)
+
+3. **Excel Upload Performance**:
+   - 10 concurrent uploads (1K records each)
+   - Target: < 30 seconds per upload
+
+4. **Batch Operations**:
+   - 20 concurrent batch requests (50 HONs each)
+   - Target: < 1 second response time (p95)
+
+**Performance Benchmarks**:
+```
+- Single record retrieval: < 50ms
+- Search (20 results): < 200ms
+- Create operation: < 100ms
+- Update operation: < 150ms
+- Delete operation: < 100ms
+- Excel upload (100 records): < 5s
+- Excel upload (1K records): < 30s
+- Excel upload (10K records): < 5min
+```
+
+### 10.5 Scalability Considerations
+
+#### 10.5.1 Horizontal Scaling
+
+**Application Scaling**:
+- **Stateless Design**: No session state in application
+- **Load Balancer**: Distribute traffic across instances
+- **Auto-Scaling**: Scale based on CPU/memory/request rate
+- **Min Instances**: 2 (for high availability)
+- **Max Instances**: 10 (based on load)
+
+**Database Scaling**:
+- **MongoDB Sharding**: Horizontal partitioning
+- **Shard Key**: `scope` + `country` (for even distribution)
+- **Replica Sets**: 3 nodes per shard (1 primary, 2 secondaries)
+
+**Elasticsearch Scaling**:
+- **Horizontal Scaling**: Add more nodes
+- **Shard Distribution**: 3 shards across nodes
+- **Replica Distribution**: 2 replicas per shard
+
+#### 10.5.2 Vertical Scaling
+
+**Resource Allocation**:
+
+| Component | CPU | Memory | Disk |
+|-----------|-----|--------|------|
+| Application | 4 cores | 8 GB | 50 GB |
+| MongoDB | 8 cores | 16 GB | 500 GB SSD |
+| Elasticsearch | 8 cores | 32 GB | 1 TB SSD |
+
+**JVM Configuration**:
+```
+- Heap Size: 4 GB (-Xms4g -Xmx4g)
+- GC: G1GC (for low latency)
+- GC Threads: 4
+- Max Direct Memory: 2 GB
+```
+
+#### 10.5.3 Database Partitioning
+
+**Partitioning Strategy**:
+- **Partition Key**: `scope` + `country`
+- **Partitions**:
+  - STATE-USA (largest partition)
+  - STATE-CAN
+  - NATIONAL-*
+  - GLOBAL-*
+
+**Benefits**:
+- Improved query performance
+- Better resource utilization
+- Easier maintenance and backup
+
+---
+
+## 11. Detailed Layer Design
+
+### 11.1 Controller Layer (Presentation Layer)
+
+#### 11.1.1 Responsibilities
+- Handle HTTP requests and responses
+- Request validation (basic)
+- Response formatting
+- Exception handling delegation
+- API documentation (OpenAPI/Swagger)
+- CORS handling
+- Request logging
+
+#### 11.1.2 Controller Components
+
+**LicenseSourceApiController**:
+
+**Endpoints**:
+1. `POST /license-source` - Create license source
+2. `PUT /license-source/{hon}` - Update license source
+3. `GET /license-source/{hon}` - Get by HON
+4. `DELETE /license-source/{hon}` - Delete (soft)
+5. `POST /license-source/batch` - Batch get
+6. `POST /license-source/search/smart` - Smart search
+7. `GET /license-source/search` - Filter search
+8. `GET /license-source/autocomplete` - Autocomplete
+
+**Annotations**:
+- `@RestController`: Mark as REST controller
+- `@RequestMapping`: Base path mapping
+- `@CrossOrigin`: CORS configuration
+- `@Validated`: Enable validation
+- `@Tag`: OpenAPI documentation
+- `@Operation`: Endpoint documentation
+
+**Request Handling Pattern**:
+```
+1. Receive HTTP request
+2. Validate request parameters (@Valid, @NotNull)
+3. Extract request body/parameters
+4. Call service layer method
+5. Handle service response
+6. Format response (DTO)
+7. Return ResponseEntity with status code
+8. Exception handling (delegated to GlobalExceptionHandler)
+```
+
+**Response Patterns**:
+- `201 Created`: Successful creation
+- `200 OK`: Successful retrieval/update/delete
+- `400 Bad Request`: Validation failure
+- `404 Not Found`: Resource not found
+- `409 Conflict`: Duplicate resource
+- `500 Internal Server Error`: Server error
+
+**LicenseMigrationApiController**:
+
+**Endpoints**:
+1. `POST /license-migration/upload` - Upload Excel file
+
+**File Upload Handling**:
+```
+1. Receive multipart file
+2. Validate file (type, size)
+3. Call Excel parser service
+4. Call migration processor
+5. Return migration statistics
+6. Handle errors with detailed report
+```
+
+#### 11.1.3 Request/Response DTOs
+
+**Request DTOs**:
+- `LicenseSourceRequestDTO`: Wrapper for create/update
+  - `licenseSourceDTO`: License data
+  - `uiActionsDTO`: User action metadata
+
+- `LicenseSearchDTO`: Search criteria
+  - Filter fields (scope, country, state, etc.)
+  - Pagination (page, size)
+  - Sorting (field, order)
+
+- `LicenseSmartSearchDTO`: Elasticsearch search criteria
+  - Search text
+  - Filters
+  - Facets
+  - Pagination
+
+- `LicenseBatchRequestDTO`: Batch request
+  - `honList`: List of HONs
+  - `includeInactive`: Boolean flag
+
+**Response DTOs**:
+- `LicenseSourceDTO`: License source data
+- `SearchResponseDTO`: Search results with pagination
+- `MigrationResponseDTO`: Excel upload statistics
+- `AutocompleteResponseDTO`: Autocomplete suggestions
+- `ResponseObject`: Generic success response
+- `ApiError`: Error response
+
+#### 11.1.4 Controller Best Practices
+
+**Best Practices**:
+1. Keep controllers thin (delegate to service layer)
+2. Use DTOs for request/response (never expose entities)
+3. Validate all inputs (@Valid, @NotNull, @NotBlank)
+4. Use appropriate HTTP status codes
+5. Document all endpoints (OpenAPI annotations)
+6. Handle exceptions gracefully
+7. Log all requests (INFO level)
+8. Use consistent naming conventions
+9. Version APIs (/api/v1)
+10. Enable CORS for allowed origins only
+
+**Logging Pattern**:
+```java
+log.info("Creating license source with HON: {}", request.getLicenseSourceDTO().getHon());
+log.info("License source created successfully: {}", result.getHon());
+log.error("Failed to create license source", exception);
+```
+
+### 11.2 Service Layer (Business Logic Layer)
+
+#### 11.2.1 Responsibilities
+- Business logic implementation
+- Data validation (business rules)
+- Transaction management
+- Data transformation (Entity ↔ DTO)
+- Elasticsearch synchronization
+- Audit logging
+- Error handling and logging
+
+#### 11.2.2 Service Components
+
+**LicenseSourceService** (Interface):
+
+**Methods**:
+```java
+LicenseSourceDTO createLicenseSource(LicenseSourceDTO dto, UIActionsDTO uiActions);
+LicenseSourceDTO updateLicenseSource(String hon, LicenseSourceDTO dto, UIActionsDTO uiActions);
+LicenseSourceDTO getLicenseSourceByHon(String hon);
+List<LicenseSourceDTO> getLicenseSourcesByHonList(List<String> honList);
+ResponseObject deleteLicenseSource(String hon, UIActionsDTO uiActions);
+SearchResponseDTO searchLicenseSources(LicenseSearchDTO searchDTO);
+SearchResponseDTO smartSearchLicenseSources(LicenseSmartSearchDTO searchDTO);
+List<AutocompleteSearchDTO> getAutocompleteSuggestions(String keyword, String scope, String country);
+```
+
+**LicenseSourceServiceImpl** (Implementation):
+
+**Key Responsibilities**:
+
+1. **Create License Source**:
+   ```
+   - Validate input (scope/state, required fields)
+   - Check HON uniqueness
+   - Transform DTO to Entity (using mapper)
+   - Set audit fields (createdBy, createdDate)
+   - Save to MongoDB (via repository)
+   - Index in Elasticsearch
+   - Transform Entity to DTO
+   - Return DTO
+   ```
+
+2. **Update License Source**:
+   ```
+   - Validate input
+   - Check if license exists
+   - Transform DTO to Entity
+   - Update audit fields (updatedBy, updatedDate)
+   - Update in MongoDB
+   - Update Elasticsearch index
+   - Transform Entity to DTO
+   - Return DTO
+   ```
+
+3. **Get License Source**:
+   ```
+   - Fetch from MongoDB by HON
+   - Check if exists (throw 404 if not)
+   - Transform Entity to DTO
+   - Return DTO
+   ```
+
+4. **Delete License Source**:
+   ```
+   - Check if exists
+   - Soft delete (set active=false)
+   - Update audit fields
+   - Update in MongoDB
+   - Remove from Elasticsearch index
+   - Return success response
+   ```
+
+5. **Search License Sources**:
+   ```
+   - Build MongoDB query from search criteria
+   - Execute query with pagination
+   - Transform results to DTOs
+   - Return search response with pagination info
+   ```
+
+6. **Smart Search**:
+   ```
+   - Build Elasticsearch query
+   - Execute search with facets
+   - Get HONs from Elasticsearch
+   - Fetch full records from MongoDB
+   - Transform to DTOs
+   - Return search response with facets
+   ```
+
+**LicenseExcelParserService**:
+
+**Responsibilities**:
+- Parse Excel files using Apache POI
+- Extract cell values
+- Handle different cell types (string, numeric, date)
+- Parse delimited strings (semicolon-separated)
+- Convert rows to LicenseRecord objects
+- Handle parsing errors
+
+**Methods**:
+```java
+List<LicenseRecord> parseExcelFile(MultipartFile file);
+String getCellValueAsString(Cell cell);
+List<String> parseDelimitedString(String value);
+boolean isRowEmpty(Row row);
+```
+
+**Parsing Logic**:
+```
+1. Open Excel file (XSSFWorkbook)
+2. Get first sheet
+3. Skip header row (row 0)
+4. For each data row:
+   - Extract cell values (columns A-O)
+   - Handle null/empty cells
+   - Parse delimited strings (web address, phone, email, fax)
+   - Create LicenseRecord object
+   - Add to list
+5. Return list of LicenseRecord objects
+```
+
+**LicenseMigrationProcessor**:
+
+**Responsibilities**:
+- Process batch of LicenseRecord objects
+- Validate each record
+- Determine create vs update
+- Perform bulk upsert to MongoDB
+- Sync with Elasticsearch
+- Collect and report errors
+
+**Methods**:
+```java
+Map<String, Object> processLicenseRecords(List<LicenseRecord> records);
+void validateLicenseRecord(LicenseRecord record);
+LicenseSource createLicenseSourceFromRecord(LicenseRecord record);
+void updateLicenseSourceFromRecord(LicenseSource entity, LicenseRecord record);
+void performBulkSave(List<LicenseSource> licenseSources);
+```
+
+**Processing Logic**:
+```
+1. Initialize counters (total, created, updated, failed)
+2. For each record:
+   - Validate record (required fields, scope/state, formats)
+   - Check if HON exists in database
+   - If exists: update existing entity
+   - If not exists: create new entity
+   - Add to batch list
+   - Catch and log errors
+3. Perform bulk upsert (MongoTemplate)
+4. Bulk index in Elasticsearch
+5. Return statistics and errors
+```
+
+#### 11.2.3 Service Layer Best Practices
+
+**Best Practices**:
+1. Use interfaces for service contracts
+2. Implement business logic in service layer (not controller)
+3. Use transactions for multi-step operations
+4. Validate all business rules
+5. Log all business operations (INFO level)
+6. Log all errors (ERROR level)
+7. Use DTOs for external communication
+8. Use entities for internal processing
+9. Handle exceptions and convert to custom exceptions
+10. Use dependency injection (@Autowired, @RequiredArgsConstructor)
+
+**Transaction Management**:
+```java
+@Transactional
+public LicenseSourceDTO createLicenseSource(LicenseSourceDTO dto, UIActionsDTO uiActions) {
+    // All operations in single transaction
+    // Rollback on exception
+}
+```
+
+**Error Handling Pattern**:
+```java
+try {
+    // Business logic
+} catch (DataAccessException ex) {
+    LoggingThrowable.logAndThrowServiceException(ErrorConstants.DATABASE_ERROR, ex);
+} catch (Exception ex) {
+    LoggingThrowable.logAndThrowInternalServiceException(ErrorConstants.INTERNAL_ERROR, ex);
+}
+```
+
+### 11.3 Repository Layer (Data Access Layer)
+
+#### 11.3.1 Responsibilities
+- Data persistence operations
+- Database queries
+- Custom query implementation
+- Bulk operations
+- Index management
+
+#### 11.3.2 Repository Components
+
+**LicenseSourceRepository** (Interface):
+
+**Type**: Spring Data MongoDB Repository
+
+**Methods**:
+```java
+// Standard CRUD (inherited from MongoRepository)
+LicenseSource save(LicenseSource entity);
+Optional<LicenseSource> findById(String id);
+List<LicenseSource> findAll();
+void deleteById(String id);
+
+// Custom finder methods
+Optional<LicenseSource> findByHon(String hon);
+List<LicenseSource> findByHonIn(List<String> honList);
+List<LicenseSource> findByScope(String scope);
+List<LicenseSource> findByCountry(String country);
+List<LicenseSource> findByState(String state);
+List<LicenseSource> findByLicenseType(String licenseType);
+List<LicenseSource> findByGoverningAgency(String governingAgency);
+List<LicenseSource> findByActive(Boolean active);
+boolean existsByHon(String hon);
+```
+
+**Query Derivation**:
+- Spring Data automatically generates queries from method names
+- Uses MongoDB indexes for optimal performance
+
+**CustomLicenseSourceRepository** (Interface):
+
+**Custom Methods**:
+```java
+LicenseSource findOneByHon(String hon);
+List<LicenseSource> findByQuery(Query query, Pageable pageable);
+long countByQuery(Query query);
+LicenseSource create(LicenseSource licenseSource);
+LicenseSource update(LicenseSource licenseSource);
+void deleteByQuery(Query query);
+BulkWriteResult bulkUpsert(List<LicenseSource> licenseSources);
+```
+
+**CustomLicenseSourceRepositoryImpl** (Implementation):
+
+**Uses**: MongoTemplate for complex operations
+
+**Implementation Patterns**:
+
+1. **Dynamic Query Building**:
+   ```java
+   Query query = new Query();
+   if (scope != null) {
+       query.addCriteria(Criteria.where("scope").is(scope));
+   }
+   if (country != null) {
+       query.addCriteria(Criteria.where("country").is(country));
+   }
+   // Add pagination
+   query.with(pageable);
+   ```
+
+2. **Bulk Upsert**:
+   ```java
+   BulkOperations bulkOps = mongoTemplate.bulkOps(
+       BulkOperations.BulkMode.UNORDERED,
+       "license_source"
+   );
+
+   for (LicenseSource license : licenseSources) {
+       Query query = new Query(Criteria.where("hon").is(license.getHon()));
+       Update update = new Update()
+           .set("scope", license.getScope())
+           .set("country", license.getCountry())
+           // ... other fields
+           .set("updated_date", Instant.now());
+
+       bulkOps.upsert(query, update);
+   }
+
+   BulkWriteResult result = bulkOps.execute();
+   ```
+
+3. **Soft Delete**:
+   ```java
+   Query query = new Query(Criteria.where("hon").is(hon));
+   Update update = new Update()
+       .set("active", false)
+       .set("updated_date", Instant.now())
+       .set("updated_by", userId);
+
+   mongoTemplate.updateFirst(query, update, LicenseSource.class);
+   ```
+
+#### 11.3.3 Repository Best Practices
+
+**Best Practices**:
+1. Use Spring Data repositories for standard CRUD
+2. Use custom repositories for complex queries
+3. Use MongoTemplate for bulk operations
+4. Always use indexed fields in queries
+5. Use projection to fetch only required fields
+6. Use pagination for large result sets
+7. Handle exceptions (DataAccessException)
+8. Log slow queries (> 100ms)
+9. Use connection pooling
+10. Monitor query performance
+
+**Query Performance Tips**:
+```java
+// Good: Uses index
+repository.findByHon("LIC-USA-CA-MED-001");
+
+// Bad: Full collection scan
+repository.findByAdditionalInformation("some text");
+
+// Good: Projection
+Query query = new Query(Criteria.where("hon").is(hon));
+query.fields().include("hon", "licenseType", "country");
+
+// Good: Pagination
+Pageable pageable = PageRequest.of(page, size);
+repository.findByCountry("United States", pageable);
+```
+
+### 11.4 Data Layer (Persistence Layer)
+
+#### 11.4.1 MongoDB Configuration
+
+**Connection Configuration**:
+```properties
+spring.data.mongodb.uri=mongodb://user:pass@host:27017/sidb
+spring.data.mongodb.database=sidb
+spring.data.mongodb.auto-index-creation=true
+```
+
+**Connection Pool**:
+```
+- minPoolSize: 10
+- maxPoolSize: 100
+- maxIdleTimeMS: 60000
+- maxWaitTimeMS: 10000
+```
+
+**Write Concern**:
+```
+- w: majority (ensure replication)
+- j: true (journal commit)
+- wtimeout: 5000ms
+```
+
+**Read Preference**:
+```
+- primary: For writes and critical reads
+- secondaryPreferred: For search operations
+```
+
+#### 11.4.2 Elasticsearch Configuration
+
+**Connection Configuration**:
+```properties
+spring.elasticsearch.uris=http://localhost:9200
+spring.elasticsearch.username=elastic
+spring.elasticsearch.password=changeme
+```
+
+**Index Configuration**:
+```
+- Index Name: license_index
+- Shards: 3
+- Replicas: 2
+- Refresh Interval: 30s
+```
+
+**Client Configuration**:
+```
+- Connection Timeout: 10s
+- Socket Timeout: 30s
+- Max Retry Timeout: 60s
+```
+
+#### 11.4.3 Data Consistency
+
+**Consistency Strategy**:
+
+1. **MongoDB as Source of Truth**:
+   - All writes go to MongoDB first
+   - Elasticsearch is secondary index
+
+2. **Eventual Consistency**:
+   - Elasticsearch sync is asynchronous
+   - Retry failed indexing operations
+   - Periodic reconciliation job
+
+3. **Consistency Checks**:
+   - Compare MongoDB count vs Elasticsearch count
+   - Alert on significant discrepancies
+   - Manual reconciliation tool
+
+**Reconciliation Process**:
+```
+1. Fetch all HONs from MongoDB
+2. Fetch all HONs from Elasticsearch
+3. Find missing HONs in Elasticsearch
+4. Re-index missing documents
+5. Find extra HONs in Elasticsearch
+6. Remove extra documents
+7. Log reconciliation results
+```
+
+---
+
+## 12. Testing Strategy
+
+### 12.1 Testing Levels
+
+#### 8.1.1 Unit Testing
+**Scope**: Individual components in isolation
+
+**Components to Test**:
+- Service layer methods
+- Repository custom queries
+- Excel parser logic
+- Validation logic
+- Mapper transformations
+
+**Tools**: JUnit 5, Mockito, AssertJ
+
+**Coverage Target**: >80%
+
+**Sample Test Cases**:
+- Create license source with valid data → Success
+- Create license source with duplicate HON → Conflict error
+- Create license source with STATE scope but no state → Validation error
+- Parse valid Excel file → List of records
+- Parse Excel with invalid data → Error list
+- Bulk upsert 1000 records → Success with statistics
+
+#### 8.1.2 Integration Testing
+**Scope**: Component interactions
+
+**Test Scenarios**:
+- API endpoint tests (all CRUD operations)
+- Database integration tests
+- Elasticsearch integration tests
+- End-to-end Excel upload tests
+- Search functionality tests
+
+**Tools**: Spring Boot Test, MockMvc, Testcontainers
+
+**Sample Test Cases**:
+- POST /license-source with valid data → 201 Created
+- GET /license-source/{hon} for existing record → 200 OK
+- GET /license-source/{hon} for non-existent record → 404 Not Found
+- POST /license-source/search/smart with filters → Filtered results
+- POST /license-migration/upload with valid Excel → Success response
+
+#### 8.1.3 Performance Testing
+**Scope**: System performance under load
+
+**Test Scenarios**:
+- Load testing: 100+ concurrent users
+- Bulk upload testing: 100, 1K, 10K records
+- Search performance: Large datasets
+- API response time testing
+
+**Tools**: JMeter, Gatling
+
+**Performance Targets**:
+- API response time: < 500ms (95th percentile)
+- Excel upload (1K records): < 30 seconds
+- Search query: < 200ms
+- Concurrent users: 100+ without degradation
+
+#### 8.1.4 Security Testing
+**Scope**: Security vulnerabilities
+
+**Test Areas**:
+- Authentication and authorization
+- Input validation and sanitization
+- SQL/NoSQL injection prevention
+- File upload security
+- API rate limiting
+
+**Tools**: OWASP ZAP, SonarQube
+
+### 8.2 Test Data Management
+
+**Test Data Sets**:
+1. **Small Dataset**: 10 records (for quick tests)
+2. **Medium Dataset**: 100 records (for integration tests)
+3. **Large Dataset**: 10,000 records (for performance tests)
+
+**Test Excel Files**:
+- Valid file with all fields populated
+- File with missing optional fields
+- File with validation errors
+- File with duplicate HONs
+- File with scope/state mismatches
+
+### 8.3 Continuous Integration
+
+**CI/CD Pipeline**:
+1. Code commit → Trigger build
+2. Run unit tests
+3. Run integration tests
+4. Code quality analysis (SonarQube)
+5. Build Docker image
+6. Deploy to staging
+7. Run smoke tests
+8. Manual approval for production
+
+---
+
+## 9. Deployment & Monitoring
+
+### 9.1 Deployment Checklist
+
+#### Pre-Deployment
+- [ ] All unit tests passing (>80% coverage)
+- [ ] All integration tests passing
+- [ ] Code review completed and approved
+- [ ] API documentation updated
+- [ ] MongoDB indexes created in target environment
+- [ ] Elasticsearch index created in target environment
+- [ ] Environment variables configured
+- [ ] Security review completed
+- [ ] Performance testing completed
+- [ ] User acceptance testing (UAT) sign-off
+
+#### Deployment Steps
+1. **Build Application**: `./gradlew clean build`
+2. **Database Setup**: Run MongoDB index creation scripts
+3. **Elasticsearch Setup**: Create index with mappings
+4. **Deploy to Staging**: Deploy application to staging environment
+5. **Run Smoke Tests**: Verify basic functionality
+6. **Deploy to Production**: Deploy to production environment
+7. **Verify Deployment**: Check health endpoints
+8. **Monitor Logs**: Watch for errors or warnings
+
+#### Post-Deployment
+- [ ] Verify all API endpoints are accessible
+- [ ] Test Excel upload functionality
+- [ ] Verify search functionality (filter and smart search)
+- [ ] Check Elasticsearch indexing
+- [ ] Monitor application logs for errors
+- [ ] Verify database connections
+- [ ] Test rollback procedure
+- [ ] Update documentation with deployment notes
+
+### 9.2 Monitoring Strategy
+
+#### 9.2.1 Key Metrics
+
+**Application Metrics**:
+- API response times (avg, p50, p95, p99)
+- Request throughput (requests/second)
+- Error rates by endpoint
+- Active connections
+- JVM memory usage
+- Thread pool utilization
+
+**Database Metrics**:
+- MongoDB query performance
+- Connection pool usage
+- Index usage statistics
+- Document count
+- Storage size
+
+**Elasticsearch Metrics**:
+- Query performance
+- Index size
+- Shard health
+- Search latency
+
+**Business Metrics**:
+- Total license sources count
+- Active vs inactive records
+- Excel uploads per day
+- Search queries per day
+- Top searched license types
+
+#### 9.2.2 Logging Strategy
+
+**Log Levels**:
+- **ERROR**: System errors, exceptions
+- **WARN**: Validation failures, business rule violations
+- **INFO**: API requests, business operations
+- **DEBUG**: Detailed execution flow (dev/staging only)
+
+**Log Format**:
+```
+[timestamp] [level] [thread] [class] - [message] [context]
+```
+
+**Sample Logs**:
+```
+2024-03-24 10:00:00 INFO [http-nio-8080-exec-1] LicenseSourceService - Creating license source with HON: LIC-USA-CA-MED-001
+2024-03-24 10:00:01 ERROR [http-nio-8080-exec-1] LicenseSourceService - Failed to create license source: Duplicate HON
+2024-03-24 10:05:00 INFO [http-nio-8080-exec-2] LicenseMigrationController - Excel upload started: license_data.xlsx, size: 1000 records
+2024-03-24 10:05:25 INFO [http-nio-8080-exec-2] LicenseMigrationProcessor - Excel processing complete: 980 success, 20 failed
+```
+
+#### 9.2.3 Alerting
+
+**Alert Conditions**:
+- API response time > 1 second (sustained for 5 minutes)
+- Error rate > 5% (in last 10 minutes)
+- Database connection failures
+- Elasticsearch indexing failures
+- Disk space < 20%
+- Memory usage > 85%
+- Application downtime
+
+**Alert Channels**:
+- Email notifications
+- Slack/Teams messages
+- PagerDuty (for critical alerts)
+
+#### 9.2.4 Monitoring Tools
+
+**Recommended Tools**:
+- **Application Monitoring**: Spring Boot Actuator, Prometheus, Grafana
+- **Log Aggregation**: ELK Stack (Elasticsearch, Logstash, Kibana)
+- **APM**: New Relic, Datadog, or Dynatrace
+- **Database Monitoring**: MongoDB Atlas monitoring or Ops Manager
+- **Uptime Monitoring**: Pingdom, UptimeRobot
+
+### 9.3 Maintenance
+
+#### Regular Maintenance Tasks
+
+**Daily**:
+- Review error logs
+- Check system health dashboards
+- Monitor disk space
+
+**Weekly**:
+- Review performance metrics
+- Analyze slow queries
+- Check index usage
+
+**Monthly**:
+- Database optimization (index rebuild if needed)
+- Elasticsearch index optimization
+- Security patches review
+- Dependency updates review
+
+**Quarterly**:
+- Performance tuning
+- Capacity planning
+- Disaster recovery testing
+- Security audit
+
+---
+
+## 10. Success Criteria
+
+### 10.1 Functional Requirements
+- ✅ Create, read, update, delete license sources via API
+- ✅ Upload Excel files with license data
+- ✅ Smart search with Elasticsearch (full-text, filters, facets)
+- ✅ Filter-based search with pagination
+- ✅ Autocomplete functionality
+- ✅ Batch operations (max 100 records per request)
+- ✅ Scope-based state validation
+- ✅ Soft delete functionality
+
+### 10.2 Non-Functional Requirements
+- ✅ API response time < 500ms (95th percentile)
+- ✅ Excel upload: 1,000 records in < 30 seconds
+- ✅ Support 100+ concurrent users
+- ✅ Search results in < 200ms
+- ✅ 99.9% uptime SLA
+- ✅ Zero data loss during migration
+- ✅ Comprehensive error handling
+
+### 10.3 Quality Requirements
+- ✅ Unit test coverage > 80%
+- ✅ All integration tests passing
+- ✅ Code review approval
+- ✅ Security scan passed
+- ✅ Performance benchmarks met
+- ✅ Complete API documentation (Swagger)
+- ✅ User guide for Excel upload
+
+### 10.4 Acceptance Criteria
+- ✅ All API endpoints functional and tested
+- ✅ Excel upload working with error reporting
+- ✅ Search functionality (both filter and smart search) working
+- ✅ Elasticsearch indexing automatic and reliable
+- ✅ Validation rules enforced correctly
+- ✅ UAT sign-off received
+- ✅ Production deployment successful
+- ✅ Monitoring and alerting configured
+
+---
+
+## 11. Future Enhancements
+
+### 11.1 Planned Features
+1. **Batch Operations API**: Bulk create/update/delete operations
+2. **Audit Trail**: Complete change history for all records
+3. **Advanced Filtering**: More filter options and saved searches
+4. **Export Functionality**: Export search results to Excel/CSV/PDF
+5. **Scheduled Sync**: Automatic sync with external license databases
+6. **Notification System**: Email notifications for license expiration
+7. **Multi-language Support**: Support for international licenses
+8. **API Rate Limiting**: Implement rate limiting for API endpoints
+9. **Versioning**: API versioning for backward compatibility
+10. **Webhooks**: Event-driven notifications for integrations
+
+### 11.2 Technical Improvements
+1. **Caching**: Implement Redis caching for frequently accessed data
+2. **Async Processing**: Use message queues (RabbitMQ/Kafka) for Excel processing
+3. **GraphQL API**: Add GraphQL support alongside REST
+4. **Microservices**: Split into separate microservices if needed
+5. **Event Sourcing**: Implement event sourcing for complete audit trail
+6. **Read Replicas**: MongoDB read replicas for improved read performance
+7. **CDN**: Content delivery network for static assets
+8. **Auto-scaling**: Kubernetes-based auto-scaling
+
+---
+
+## Appendix A: Sample Excel Template
+
+| HON | Scope | Country | State | License Type | Web Address | Phone | Email | Fax | Governing Agency | Multi State | Expiration | License Status | Disciplinary Actions | Additional Information |
+|-----|-------|---------|-------|--------------|-------------|-------|-------|-----|------------------|-------------|------------|----------------|---------------------|------------------------|
+| LIC-USA-CA-MED-001 | STATE | United States | California | Medical License | https://www.mbc.ca.gov/ | +1-800-633-2322 | webmaster@mbc.ca.gov | +1-916-263-2944 | Medical Board of California | No | Biennial renewal | Active | Public records available | Online verification 24/7 |
+| LIC-USA-NY-LAW-002 | STATE | United States | New York | Law License | https://www.nycourts.gov/ | +1-518-474-3843 | info@nycourts.gov | +1-518-474-3845 | New York State Bar | No | Annual renewal | Active | Disciplinary records public | Online lookup available |
+| LIC-CAN-ON-ENG-003 | STATE | Canada | Ontario | Engineering License | https://www.peo.on.ca/ | +1-416-224-1100 | registrar@peo.on.ca | +1-416-224-8168 | Professional Engineers Ontario | No | Annual renewal | Active | Public register available | Online verification |
+
+---
+
+## Appendix B: Error Codes
+
+| Error Code | HTTP Status | Description | Resolution |
+|------------|-------------|-------------|------------|
+| LIC-001 | 400 | Invalid license scope | Use GLOBAL, NATIONAL, or STATE |
+| LIC-002 | 400 | Missing required field | Provide all required fields |
+| LIC-003 | 400 | State required for STATE scope | Provide state when scope is STATE |
+| LIC-004 | 404 | License source not found | Verify HON exists |
+| LIC-005 | 409 | Duplicate HON | Use unique HON identifier |
+| LIC-006 | 413 | File size exceeds limit | Reduce file size to < 10MB |
+| LIC-007 | 500 | Database error | Contact support |
+| LIC-008 | 500 | Elasticsearch error | Contact support |
+| LIC-009 | 400 | Invalid file format | Use .xlsx format only |
+| LIC-010 | 400 | Too many records in batch | Limit to 100 records per request |
+
+---
+
+## Appendix C: Glossary
+
+| Term | Definition |
+|------|------------|
+| **HON** | Unique Number - Unique identifier for each license source |
+| **Scope** | Geographic scope of license (GLOBAL, NATIONAL, STATE) |
+| **License Type** | Category of professional license (e.g., Medical, Legal, Engineering) |
+| **Governing Agency** | Regulatory body that issues/manages the license |
+| **Smart Search** | Elasticsearch-powered full-text search with facets |
+| **Filter Search** | MongoDB-based exact match search with filters |
+| **Soft Delete** | Marking record as inactive instead of physical deletion |
+| **Bulk Upsert** | Batch operation that inserts new or updates existing records |
+| **MapStruct** | Java library for type-safe bean mapping |
+| **Apache POI** | Java library for reading/writing Microsoft Office files |
+
+---
+
+**Document Version**: 1.0
+**Last Updated**: 2024-03-24
+**Author**: HireRight Development Team
+**Status**: Ready for Implementation
+**Approvals Required**: Technical Lead, Product Owner, Security Team
+
+---
+
+**End of Document**
+
