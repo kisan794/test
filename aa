@@ -1,7 +1,40 @@
-    executionData(fileTree(dir: "${project.buildDir}", includes: ["jacoco/test.exec"]))
-        property "sonar.coverage.jacoco.xmlReportPaths", "${project.buildDir}/reports/jacoco/test/jacocoTestReport.xml"
-
-
-./gradlew clean test jacocoTestReport
-ls -la build/reports/jacoco/test/
-./gradlew sonarqube
+Execution failed for task ':jacocoTestCoverageVerification'.
+> Rule violated for class com.hireright.sourceintelligence.api.model.Error: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.mapper.ReportMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.mapper.ReportMapper: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.service.exception.BusinessException: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.service.exception.FileEmptyException: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.service.impl.ReportConstants.SortFields: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.api.v2.dto.SourceDTO.SourceDTOBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.api.v2.dto.RegionThresholdDTO.RegionThresholdDTOBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.api.v2.dto.PermissionsDTO.PermissionsDTOBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.api.exception.ApiException: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.Reports: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ResponseReport.ResponseReportBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ReportSearchResult.ReportSearchResultBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ContactReport: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ContactReport.ContactReportBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.TATReport.TATReportBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.service.impl.SearchConstants.CommonText: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.config.RequestInProgressCache: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.util.ObjectDiff: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.util.JwtUtil: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.dto.PerformanceDTO: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.dto.SourceInformationDTO: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.reports.dto.AutoMatchDTO: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchConstants.Regions: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchConstants: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchConstants.EsFields: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.AutoMatchMapper: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.CountryMapper: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.AutoMatchMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.SourceV2MapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.LanguageMapper: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.LanguageMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.RDSMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.mapper.CountryMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.api.util.Util: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.AutoMatchConstants: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.RelationShipConstants: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.VENDORS: lines covered ratio is 0.0, but expected minimum is 0.1
+  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys: lines covered ratio is 0.0, but expected minimum is 0.1
