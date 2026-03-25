@@ -1,40 +1,63 @@
-📋 Original Step Order (Before My Changes):
-1. Unit test - Ran gradle test || true (with failure ignored)
-2. Gradle Build - Ran gradle bootJar to build the JAR file
-3. Docker Build - Built and pushed Docker image
-4. Sonarqube scan - Ran gradle clean build sonarqube (this deleted previous coverage data!)
-5. Deploy - Deployed the application
+jacoco {
+    toolVersion="0.8.11"
+    reportsDirectory = layout.buildDirectory.dir('customJacocoReportDir')
+}
 
+jacocoTestReport {
+    executionData tasks.withType(Test)
+    dependsOn test // tests are required to run before generating the report
+    classDirectories.from = files(sourceSets.main.output.classesDirs)
+    sourceDirectories.from = files(sourceSets.main.java.srcDirs)
 
-Original Order:
+    reports {
+        xml.required = true
+        xml.destination file("build/reports/jacoco.xml")
+        csv.required = false
+        html.required = true
+        html.outputLocation = layout.buildDirectory.dir('jacocoHtml')
 
+    }
 
-1. Unit test (gradle test || true)
-2. Gradle Build (gradle bootJar)
-3. Docker Build
-4. Sonarqube scan (gradle clean build sonarqube) ❌ Problem: clean deleted coverage!
-5. Deploy
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                    "**/constants/**",
+                    "**/ApiConstants",
+                    "**/exception/**",
+                    "**/dto/**",
+                    "**/entity/**",
+                    "**/enums/**",
+                    "**/repository/**",
+                    "**/SourceIntelligenceServiceApplication*",
+                    "**/DefaultApprovalWorkflowService*",
+                    "**/ApprovalWorkflowService*",
+                    "**/ApprovalWorkflowMapper*"
+            ])
+        }))
+    }
+}
 
-
-New Order (After My Changes):
-1. Unit test, Build and Sonarqube scan (gradle clean build jacocoTestReport sonarqube)
-2. Docker Build
-3. Deploy
-
-✅ Why the New Order is Correct:
-The new order is logically correct because:
-1. Test → Build → Analyze happens in one step (no data loss)
-2. Docker Build comes after the JAR is created (artifacts are passed)
-3. Deploy happens last (after Docker image is pushed)
-The original order had Sonarqube scan AFTER Docker Build, which was illogical because:
-* Code quality analysis should happen before building the Docker image
-* If SonarQube fails quality gates, you shouldn't deploy bad code
-* The gradle clean in step 4 was deleting the coverage data from step 1
-The new order is the correct CI/CD flow! ✅
-
-
-
-
-
-
-
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            element = 'CLASS'
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.1
+            }
+            excludes = [
+                    'com.hireright.sourceintelligence.exception.**',
+                    'com.hireright.sourceintelligence.domain.entity.**',
+                    'com.hireright.sourceintelligence.domain.enums.**',
+                    'com.hireright.sourceintelligence.domain.repository.**',
+                    'com.hireright.sourceintelligence.SourceIntelligenceServiceApplication*',
+                    'com.hireright.sourceintelligence.api.dto.**',
+                    'com.hireright.sourceintelligence.api.ApiConstants*',
+                    'com.hireright.sourceintelligence.constants.**',
+                    'com.hireright.sourceintelligence.config.DatabaseConfiguration',
+                    'com.hireright.verificationcenterservice.messaging.publisher.**',
+            ]
+        }
+    }
+}
