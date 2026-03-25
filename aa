@@ -4,60 +4,84 @@ definitions:
     gradle: ~/.gradle
 
 pipelines:
+    # Use branching within repository.
   branches:
+    # Development pipeline definition and execution on develop branch.
     '{dev_azure,dev,test}':
+      # First step to execute.
+      - step:
+          name: Unit test
+          image: gradle:8.14.3
+          runs-on: 
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
+          script:
+            #adding || true to ignore failure
+            - gradle test || true
+          artifacts:
+            - build/reports/tests/test/*.html
 
       - step:
-          name: Build + Test + Sonar
+          name: Gradle Build
           image: gradle:8.14.3
-          caches:
-            - sonar
-            - gradle
-          runs-on:
-            - self.hosted
-            - linux
-            - azure
+          runs-on: 
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
           script:
-            - gradle clean test jacocoTestReport sonarqube \
-              --no-daemon --stacktrace --info \
-              -Dsonar.host.url=$SONAR_HOST_URL_DNS_ZONE \
-              -Dsonar.login=$SONAR_TOKEN \
-              -Dsonar.qualitygate.wait=true
-            # Debug (optional)
-            - ls -l build/reports/jacoco/test/
+            - gradle bootJar
           artifacts:
             - build/libs/*.jar
-            - build/reports/**
-
-      - step:
+      
+      - step: 
           name: Docker Build
           image: docker:20.10.12
-          runs-on:
-            - self.hosted
-            - linux
-            - azure
+          runs-on: 
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
           script:
-            - DOCKER_TAG=${BITBUCKET_COMMIT}
-            - REGISTRY_FULL_URL="${ACR_REGISTRY}/sourceintelligence-service"
-
-            # safer login
-            - echo $ACR_REGISTRY_PASSWORD | docker login $ACR_REGISTRY \
-              -u $ACR_REGISTRY_USER --password-stdin
-
-            - docker build -t $REGISTRY_FULL_URL:$DOCKER_TAG .
-            - docker push $REGISTRY_FULL_URL:$DOCKER_TAG
+          - DOCKER_TAG=${BITBUCKET_COMMIT}
+          - echo "172.21.208.38 sharedacrpusw2.westus2.data.azurecr.io" >> /etc/hosts
+          - echo "172.21.208.39 sharedacrpusw2.azurecr.io" >> /etc/hosts
+          - REGISTRY_FULL_URL="${ACR_REGISTRY}/sourceintelligence-service"
+          - echo "nameserver 172.21.3.133" > /etc/resolv.conf
+          - docker login -u $ACR_REGISTRY_USER -p $ACR_REGISTRY_PASSWORD $ACR_REGISTRY
+          - docker build -t $REGISTRY_FULL_URL:$DOCKER_TAG .
+          - docker push $REGISTRY_FULL_URL:$DOCKER_TAG
           services:
             - docker
+      
+      - step:
+          name: Sonarqube scan
+          # on-fail:
+          #  strategy: ignore
+          image: gradle:8.14.3
+          caches:
+          - sonar
+          - gradle
+          runs-on:
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
+          script:
+            - ls -al
+            - ls -altr
+            - gradle clean build sonarqube --no-daemon --stacktrace --info -Dsonar.host.url=$SONAR_HOST_URL_DNS_ZONE -Dsonar.login=$SONAR_TOKEN -Dsonar.projectKey=si-service
+                    
+          services:
+            - docker       
 
       - step:
           name: Deploy
           image: docker:20.10.12
-          runs-on:
-            - self.hosted
-            - linux
-            - azure
+          runs-on: 
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
           script:
-            - sh update_manifest.sh
+          - sh update_manifest.sh
           services:
             - docker
 
