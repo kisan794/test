@@ -1,0 +1,61 @@
+definitions:
+  caches:
+    sonar: ~/.sonar/cache
+    gradle: ~/.gradle
+
+pipelines:
+  # Use branching within repository.
+  branches:
+    # Development pipeline definition and execution on develop branch.
+    '{dev_azure,dev,test}':
+      # First step to execute - Combined Unit test, Build and Sonarqube scan
+      - step:
+          name: Unit test, Build and Sonarqube scan
+          image: gradle:8.14.3
+          caches:
+            - sonar
+            - gradle
+          runs-on:
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
+          script:
+            # Run tests, generate coverage report, build jar, and run sonarqube scan
+            - gradle clean build jacocoTestReport sonarqube --no-daemon --stacktrace --info -Dsonar.host.url=$SONAR_HOST_URL_DNS_ZONE -Dsonar.login=$SONAR_TOKEN -Dsonar.projectKey=si-service
+          artifacts:
+            - build/reports/tests/test/*.html
+            - build/reports/jacoco/**
+            - build/libs/*.jar
+          services:
+            - docker
+
+      - step:
+          name: Docker Build
+          image: docker:20.10.12
+          runs-on:
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
+          script:
+            - DOCKER_TAG=${BITBUCKET_COMMIT}
+            - echo "172.21.208.38 sharedacrpusw2.westus2.data.azurecr.io" >> /etc/hosts
+            - echo "172.21.208.39 sharedacrpusw2.azurecr.io" >> /etc/hosts
+            - REGISTRY_FULL_URL="${ACR_REGISTRY}/sourceintelligence-service"
+            - echo "nameserver 172.21.3.133" > /etc/resolv.conf
+            - docker login -u $ACR_REGISTRY_USER -p $ACR_REGISTRY_PASSWORD $ACR_REGISTRY
+            - docker build -t $REGISTRY_FULL_URL:$DOCKER_TAG .
+            - docker push $REGISTRY_FULL_URL:$DOCKER_TAG
+          services:
+            - docker
+
+      - step:
+          name: Deploy
+          image: docker:20.10.12
+          runs-on:
+            - 'self.hosted'
+            - 'linux'
+            - 'azure'
+          script:
+            - sh update_manifest.sh
+          services:
+            - docker
