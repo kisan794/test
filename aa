@@ -1,235 +1,40 @@
-package com.hireright.sourceintelligence.service.impl;
+📋 Original Step Order (Before My Changes):
+1. Unit test - Ran gradle test || true (with failure ignored)
+2. Gradle Build - Ran gradle bootJar to build the JAR file
+3. Docker Build - Built and pushed Docker image
+4. Sonarqube scan - Ran gradle clean build sonarqube (this deleted previous coverage data!)
+5. Deploy - Deployed the application
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hireright.sourceintelligence.api.ApiConstants;
-import com.hireright.sourceintelligence.api.dto.ExternalResponse;
-import com.hireright.sourceintelligence.exception.InvalidJsonException;
-import com.hireright.sourceintelligence.exception.ServiceException;
-import com.hireright.sourceintelligence.service.ExternalService;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Primary;
-import org.springframework.core.io.*;
-import org.springframework.http.*;
-import org.springframework.retry.RetryContext;
-import org.springframework.retry.support.RetrySynchronizationManager;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.*;
-import org.springframework.web.client.*;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.util.UriComponentsBuilder;
-import java.net.http.HttpRequest;
-import java.io.*;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpResponse;
-import java.util.List;
-import java.util.Objects;
 
-import static com.hireright.sourceintelligence.api.ApiConstants.DOCUMENT_META;
-import static com.hireright.sourceintelligence.api.ApiConstants.FILE;
-import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
-import static com.hireright.sourceintelligence.service.impl.SearchConstants.ExternalConstants.*;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.*;
-import static org.springframework.http.HttpHeaders.*;
+Original Order:
 
-@Getter
-@Primary
-@Slf4j
-@RequiredArgsConstructor
-@Transactional
-@Service
-public class ExternalServiceImpl implements ExternalService {
 
-    @Value("${hrg1.api.url}")
-    private String hrg1ApiUrl;
-    @Value("${hrg1.permission.url}")
-    private String hrg1PermissionApiUrl;
-    @Value("${hrg1.approvers.url}")
-    private String hrg1ApproversApiUrl;
+1. Unit test (gradle test || true)
+2. Gradle Build (gradle bootJar)
+3. Docker Build
+4. Sonarqube scan (gradle clean build sonarqube) ❌ Problem: clean deleted coverage!
+5. Deploy
 
-    private final RestTemplate restTemplate;
-    @Value("${dms.url}")
-    private String dmsUrl;
 
-    @Override
-    public ExternalResponse getExternalApiResponse(String externalApiUrl) {
-        ObjectMapper objectMapper = new ObjectMapper();
-        try {
-            String response = callHRGApi(externalApiUrl);
-            return objectMapper.readValue(response, ExternalResponse.class);
-        }   catch (RestClientException ex) {
-            log.error("RestClientException for URL {}: {}", externalApiUrl, ex.getMessage());
-            throw new RestClientException("Failed to call Access point API: ", ex);
-        }  catch (JsonProcessingException ex) {
-            throw new InvalidJsonException("Failed to parse API response: ", ex);
-        }
-    }
+New Order (After My Changes):
+1. Unit test, Build and Sonarqube scan (gradle clean build jacocoTestReport sonarqube)
+2. Docker Build
+3. Deploy
 
-    @Override
-    public JsonNode getHRGPermissions(String hrgPermissionApi) {
-        ObjectMapper objectMapper = new ObjectMapper();
-        try {
-            String response = callHRGApi(hrgPermissionApi);
-            return objectMapper.readTree(response);
-        } catch (RestClientException e) {
-            throw new ServiceException("Failed to call HRG Permissions API", e);
-        } catch (JsonProcessingException e) {
-            throw new ServiceException("Failed to parse API response", e);
-        }
-    }
+✅ Why the New Order is Correct:
+The new order is logically correct because:
+1. Test → Build → Analyze happens in one step (no data loss)
+2. Docker Build comes after the JAR is created (artifacts are passed)
+3. Deploy happens last (after Docker image is pushed)
+The original order had Sonarqube scan AFTER Docker Build, which was illogical because:
+* Code quality analysis should happen before building the Docker image
+* If SonarQube fails quality gates, you shouldn't deploy bad code
+* The gradle clean in step 4 was deleting the coverage data from step 1
+The new order is the correct CI/CD flow! ✅
 
-    @Override
-    public JsonNode getApproversList(String hrgApproversApi) {
-        ObjectMapper objectMapper = new ObjectMapper();
-        try {
-            String response = callHRGApi(hrgApproversApi);
-            return objectMapper.readTree(response);
-        } catch (RestClientException e) {
-            throw new ServiceException("Failed to call HRG Approvers List API", e);
-        } catch (JsonProcessingException e) {
-            throw new ServiceException("Failed to parse API response", e);
-        }
-    }
 
-    private String callHRGApi(String url) {
-        try {
-            long start = System.currentTimeMillis();
-            String response = restTemplate.getForObject(url, String.class);
-            long end = System.currentTimeMillis();
 
-            log.info("API call to {} took {} ms", url, (end - start));
-            log.debug("API raw response: {}", response);
 
-            return response;
-        } catch (RestClientException e) {
-            RetryContext context = RetrySynchronizationManager.getContext();
-            int retryCount = (context != null) ? context.getRetryCount() : 0;
 
-            log.warn("RestClientException (retry #{}) for url {}: {}", retryCount, url, e.getMessage());
-            throw e;
-        }
-    }
 
-    @Override
-    public String retryUploadService(MultipartFile file, String documentMeta) {
-        try {
-            log.info("Document meta data: {}",documentMeta);
-           // RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-            ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
-                @Override
-                public String getFilename() {
-                    return file.getOriginalFilename();
-                }
-            };
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add(FILE, fileResource);
-            body.add(DOCUMENT_META, documentMeta);
 
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-            log.info("Upload document request: {}", requestEntity.getBody());
-            ResponseEntity<String> response = restTemplate.exchange(dmsUrl+ ApiConstants.DMSApiPath.UPLOAD_DOCUMENT, HttpMethod.POST, requestEntity, String.class);
-            log.info("Upload document response: {}", response.getBody());
-            return response.getBody();
-        } catch (IOException e) {
-            logAndThrowInvalidRequest(FAILED_TO_UPLOAD_DOCUMENT, e, documentMeta);
-        } catch (RestClientException e) {
-            RetryContext context = RetrySynchronizationManager.getContext();
-            int retryCount = (context != null) ? context.getRetryCount() : 0;
-            log.info("RestClientException Retry Number: {}", retryCount);
-            log.info("RestClientException throw RuntimeException in method retryService()");
-            throw new RestClientException(Objects.requireNonNull("DMS upload " + e.getMessage()));
-        }
-
-        return null;
-    }
-
-    @Override
-    public ResponseEntity<InputStreamResource> getAttachmentByUrl(String documentId) {
-       // RestTemplate restTemplate = new RestTemplate();
-        log.info("Get attachment by documentId: {}", documentId);
-        try{
-            RequestCallback requestCallback = request -> request.getHeaders().add(HttpHeaders.ACCEPT, ACCEPT_VALUE);
-            ResponseExtractor<ResponseEntity<InputStreamResource>> responseExtractor = response -> {
-                HttpHeaders headers = response.getHeaders();
-                String contentType = headers.getContentType() != null ? headers.getContentType().toString() : APPLICATION_OCTET_STREAM;
-                List<String> contentDispositionHeader = headers.get(CONTENT_DISPOSITION);
-                String fileName = null;
-                if (contentDispositionHeader != null && !contentDispositionHeader.isEmpty()) {
-                    String disposition = contentDispositionHeader.get(0);
-                    if (disposition.contains(FILENAME)) {
-                        fileName = disposition.split(FILENAME)[1].replace("\"", "");
-
-                    }
-                }
-//            if (fileName == null) {
-//                fileName = url.substring(url.lastIndexOf('/') + 1);
-//            }
-                byte[] fileBytes = response.getBody().readAllBytes();
-                InputStream inputStream = new ByteArrayInputStream(fileBytes);
-                InputStreamResource resource = new InputStreamResource(inputStream);
-
-                HttpHeaders returnHeaders = new HttpHeaders();
-                returnHeaders.setContentType(MediaType.parseMediaType(contentType));
-                returnHeaders.setContentDispositionFormData(ATTACHMENT, fileName);
-                return new ResponseEntity<>(resource, returnHeaders, response.getStatusCode());
-            };
-            //url: http://iapi.test01.dev-ee.hireright.com/document_repository_api/v1/documents/caebdf06-8b81-4a82-85ab-e8bb7d2461f4/body
-            String url = UriComponentsBuilder.fromUriString(dmsUrl)
-                    .path(ApiConstants.DMSApiPath.DOCUMENTS)
-                    .path(documentId)
-                    .path(ApiConstants.DMSApiPath.BODY)
-                    .build()
-                    .toUriString();
-            var response = restTemplate.execute(url, HttpMethod.GET, requestCallback, responseExtractor);
-            assert response != null;
-            if (response.getStatusCode() == HttpStatus.OK) {
-                return response;
-            }
-        }catch (Exception e){
-            logAndThrowResourceNotFound(FAILED_TO_DOWNLOAD_DOCUMENT, e, documentId);
-        }
-        return null;
-    }
-
-    @Override
-    public String deleteAttachment(String documentId) throws InterruptedException, IOException {
-        log.info("Delete attachment by documentId: {}", documentId);
-        try (HttpClient client = HttpClient.newHttpClient()) {
-            String url = UriComponentsBuilder.fromUriString(dmsUrl)
-                    .path(ApiConstants.DMSApiPath.DOCUMENTS)
-                    .path(documentId)
-                    .build()
-                    .toUriString();
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header(CONTENT_TYPE, APPLICATION_JSON)
-                    .DELETE()
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            log.info("Response status code: {}", response.statusCode());
-            log.info("Response body: {}", response.body());
-            return response.body();
-
-        } catch (IOException | InterruptedException e) {
-            log.error("Error deleting attachment for documentId {}: {}", documentId, e.getMessage(), e);
-            throw e;
-        }
-    }
-
-    @Override
-    public String getHtmlResponseByHon(String hon) {
-        return "<html><body><h2>Rendering Html response</h2></body></html>";
-    }
-
-}
