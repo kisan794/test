@@ -1,1 +1,481 @@
-java.lang.ClassCastException: class java.util.ArrayList cannot be cast to class com.mongodb.BasicDBList (java.util.ArrayList is in module java.base of loader 'bootstrap'; com.mongodb.BasicDBList is in unnamed module of loader 'app')
+package com.hireright.sourceintelligence.service.migration;
+
+import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.entity.Vendors;
+import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
+import com.hireright.sourceintelligence.util.Helper;
+import com.hireright.sourceintelligence.util.StateMapper;
+import org.bson.Document;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+
+import java.util.*;
+import java.util.function.Consumer;
+
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.EDUCATION_COLLECTION_PREFIX;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
+import static com.hireright.sourceintelligence.domain.constants.Constants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.MigrationConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class ParchmentMigrationProcessor implements MigrationProcessor {
+
+    private final VendorsRepository vendorsRepository;
+    private final MongoTemplate mongoTemplate;
+
+    @Override
+    public String getMigrationType() {
+        return MIGRATION_TYPE_PARCHMENT;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> processInstitutionRecords(List<InstitutionRecord> institutionRecordList) {
+        Vendors vendor = findParchmentVendor();
+        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
+        List<String> notFoundInstitutions = new ArrayList<>();
+
+        int updatedRecords = 0;
+        int totalSourcesUpdated = 0;
+
+        for (InstitutionRecord institutionRecord : institutionRecordList) {
+            try {
+                String stateFullName = resolveStateName(institutionRecord.getStateCountyRegion());
+                List<Source> matchingSources = findMatchingInstitutions(institutionRecord, stateFullName);
+
+                if (matchingSources != null && !matchingSources.isEmpty()) {
+                    updatedRecords++;
+                    totalSourcesUpdated += processMatchingSources(matchingSources, institutionRecord, vendor, sourcesToSaveByCollection);
+
+                    if (matchingSources.size() > 1) {
+                        log.info("Multiple matches for '{}': {} institutionRecordList updated",
+                                institutionRecord.getInstitutionName(), matchingSources.size());
+                    }
+                } else {
+                    notFoundInstitutions.add(formatNotFoundEntry(institutionRecord, stateFullName));
+                    log.warn("No match found for: {}", institutionRecord.getInstitutionName());
+                }
+            } catch (Exception e) {
+                log.error("Error processing institutionRecord: {}", institutionRecord.getInstitutionName(), e);
+                notFoundInstitutions.add(institutionRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
+            }
+        }
+
+        performBulkSave(sourcesToSaveByCollection);
+
+        return buildProcessingResult(institutionRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions);
+    }
+
+    private Vendors findParchmentVendor() {
+        return vendorsRepository.findAll().stream()
+                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException(
+                        String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
+    }
+
+    private String resolveStateName(String stateInput) {
+        String stateFullName = StateMapper.getFullName(stateInput);
+        return stateFullName.isEmpty() && !stateInput.isEmpty() ? stateInput : stateFullName;
+    }
+
+    private int processMatchingSources(List<Source> sources, InstitutionRecord institutionRecord,
+                                       Vendors vendor, Map<String, List<Source>> sourcesToSaveByCollection) {
+        int count = 0;
+        for (Source source : sources) {
+            updateParchmentExchangeContact(source, institutionRecord, vendor);
+            String collectionName = Helper.getCollectionName(source.getHon(), SOURCE_COLLECTION_SUFFIX);
+            sourcesToSaveByCollection.computeIfAbsent(collectionName, k -> new ArrayList<>()).add(source);
+            count++;
+        }
+        return count;
+    }
+
+    private String formatNotFoundEntry(InstitutionRecord institutionRecord, String stateFullName) {
+        return String.format(LOG_NOT_FOUND_TEMPLATE,
+                institutionRecord.getInstitutionName(), institutionRecord.getCity(), stateFullName, institutionRecord.getCountry());
+    }
+
+    private Map<String, Object> buildProcessingResult(int totalRecords, int updatedRecords,
+                                                      int totalSourcesUpdated, List<String> notFoundInstitutions) {
+        Map<String, Object> result = new HashMap<>();
+        result.put(RESULT_KEY_TOTAL_RECORDS, totalRecords);
+        result.put(RESULT_KEY_UPDATED_RECORDS, updatedRecords);
+        result.put(RESULT_KEY_TOTAL_SOURCES_UPDATED, totalSourcesUpdated);
+        result.put(RESULT_KEY_NOT_FOUND_RECORDS, notFoundInstitutions.size());
+        result.put(RESULT_KEY_NOT_FOUND_INSTITUTIONS, notFoundInstitutions);
+
+        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, notFound: {}",
+                totalRecords, updatedRecords, totalSourcesUpdated, notFoundInstitutions.size());
+
+        return result;
+    }
+
+    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
+        sourcesToSaveByCollection.forEach((collectionName, sources) -> {
+            if (!sources.isEmpty()) {
+                log.info("Bulk saving {} sources to collection: {}", sources.size(), collectionName);
+                try {
+                    executeBulkUpdate(collectionName, sources);
+                } catch (Exception e) {
+                    log.error("Bulk save failed for collection: {}, falling back to individual saves", collectionName, e);
+                    fallbackToIndividualSaves(collectionName, sources);
+                }
+            }
+        });
+    }
+
+    private void executeBulkUpdate(String collectionName, List<Source> sources) {
+        BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName);
+
+        sources.forEach(source -> {
+            Query query = new Query(Criteria.where(MONGO_FIELD_ID).is(source.getId()));
+            Update update = new Update()
+                    .set(FIELD_HON, source.getHon())
+                    .set(FIELD_NAME, source.getOrganizationName())
+                    .set(FIELD_CITY, source.getCity())
+                    .set(FIELD_COUNTRY, source.getCountry())
+                    .set(FIELD_STATE, source.getState())
+                    .set("payload", source.getPayload());
+            bulkOps.upsert(query, update);
+        });
+
+        var result = bulkOps.execute();
+        log.info("Bulk save completed - collection: {}, modified: {}, upserted: {}",
+                collectionName, result.getModifiedCount(), result.getUpserts().size());
+    }
+
+    private void fallbackToIndividualSaves(String collectionName, List<Source> sources) {
+        sources.forEach(source -> {
+            try {
+                mongoTemplate.save(source, collectionName);
+            } catch (Exception e) {
+                log.error("Failed to save source: {} (HON: {})", source.getOrganizationName(), source.getHon(), e);
+            }
+        });
+    }
+
+    private List<Source> findMatchingInstitutions(InstitutionRecord institutionRecord, String stateFullName) {
+        Criteria locationCriteria = buildLocationCriteria(institutionRecord, stateFullName);
+        Criteria nameCriteria = buildNameCriteria(institutionRecord.getInstitutionName());
+
+        Query query = new Query(new Criteria().andOperator(nameCriteria, locationCriteria));
+        List<Source> sources = mongoTemplate.find(query, Source.class, "education_source_parchment_test");
+        //List<Source> sources = mongoTemplate.find(query, Source.class, EDUCATION_COLLECTION_PREFIX + SOURCE_COLLECTION_SUFFIX);
+
+        if (!CollectionUtils.isEmpty(sources)) {
+            log.info("Found {} matches for institution '{}'", sources.size(), institutionRecord.getInstitutionName());
+        }
+
+        return sources;
+    }
+
+    private Criteria buildLocationCriteria(InstitutionRecord institutionRecord, String stateFullName) {
+        String cityPattern = buildRegexPattern(institutionRecord.getCity());
+        String countryPattern = buildRegexPattern(institutionRecord.getCountry());
+
+        return Criteria.where(FIELD_CITY).regex(cityPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_COUNTRY).regex(countryPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_STATE).is(stateFullName);
+    }
+
+    private Criteria buildNameCriteria(String institutionName) {
+        String namePattern = buildRegexPattern(institutionName);
+
+        return new Criteria().orOperator(
+                Criteria.where(FIELD_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE),
+                Criteria.where(MONGO_FIELD_ORGANIZATION_ALIAS_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE)
+        );
+    }
+
+    private String buildRegexPattern(String value) {
+        return REGEX_ANCHOR_START + escapeRegex(value) + REGEX_ANCHOR_END;
+    }
+
+    private String escapeRegex(String input) {
+        return (input == null || input.isEmpty()) ? input : input.replaceAll(REGEX_SPECIAL_CHARS, "\\\\$1");
+    }
+
+    private void updateParchmentExchangeContact(Source source, InstitutionRecord institutionRecord, Vendors vendor) {
+        Document payload = ensurePayload(source);
+        List<Document> contacts = ensureContacts(payload);
+        Document contact = ensureContact(contacts);
+        List<Document> contactDetails = ensureContactDetails(contact);
+        Document automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
+
+        updateParchmentExchangeCommunication(automatedServicesContact, institutionRecord, vendor);
+    }
+
+    private Document ensurePayload(Source source) {
+        Object payloadObj = source.getPayload();
+        Document payload;
+        if (payloadObj == null) {
+            payload = new Document();
+            source.setPayload(payload);
+        } else if (payloadObj instanceof Document) {
+            payload = (Document) payloadObj;
+        } else {
+            // Convert DBObject to Document
+            payload = new Document(payloadObj.toString());
+            source.setPayload(payload);
+        }
+        return payload;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Document> ensureContacts(Document payload) {
+        Object contactsObj = payload.computeIfAbsent(CONTACTS, k -> new ArrayList<Document>());
+        if (contactsObj instanceof List) {
+            List<?> rawList = (List<?>) contactsObj;
+            List<Document> contacts = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item instanceof Document) {
+                    contacts.add((Document) item);
+                } else if (item instanceof Map) {
+                    contacts.add(new Document((Map<String, Object>) item));
+                }
+            }
+            payload.put(CONTACTS, contacts);
+            return contacts;
+        }
+        return new ArrayList<>();
+    }
+
+    private Document ensureContact(List<Document> contacts) {
+        if (contacts.isEmpty()) {
+            Document contact = new Document();
+            contact.put("purpose", EMPTY_STRING);
+            contact.put("purposeRule", new ArrayList<>());
+            contact.put(CONTACT_DETAILS, new ArrayList<>());
+            contacts.add(contact);
+            return contact;
+        }
+        return contacts.get(0);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Document> ensureContactDetails(Document contact) {
+        Object detailsObj = contact.computeIfAbsent(CONTACT_DETAILS, k -> new ArrayList<Document>());
+        if (detailsObj instanceof List) {
+            List<?> rawList = (List<?>) detailsObj;
+            List<Document> details = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item instanceof Document) {
+                    details.add((Document) item);
+                } else if (item instanceof Map) {
+                    details.add(new Document((Map<String, Object>) item));
+                }
+            }
+            contact.put(CONTACT_DETAILS, details);
+            return details;
+        }
+        return new ArrayList<>();
+    }
+
+    private Document ensureAutomatedServicesContact(List<Document> contactDetails) {
+        Document automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
+        if (automatedServicesContact == null) {
+            int newPriority = getMaxPriority(contactDetails) + PRIORITY_INCREMENT;
+            automatedServicesContact = createAutomatedServicesContact(newPriority);
+            contactDetails.add(automatedServicesContact);
+        }
+        return automatedServicesContact;
+    }
+
+    private Document findContactDetailByType(List<Document> contactDetails, String type) {
+        return contactDetails.stream()
+                .filter(cd -> hasType(cd, type))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean hasType(Document cd, String type) {
+        return type.equals(cd.get(TYPE));
+    }
+
+    private int getMaxPriority(List<Document> contactDetails) {
+        return contactDetails.stream()
+                .map(cd -> cd.get(PRIORITY))
+                .filter(Objects::nonNull)
+                .mapToInt(this::toInt)
+                .max()
+                .orElse(0);
+    }
+
+    private int toInt(Object priority) {
+        if (priority instanceof Integer i) {
+            return i;
+        }
+        return Integer.parseInt(priority.toString());
+    }
+
+    private Document createAutomatedServicesContact(int priority) {
+        Document contact = new Document();
+        contact.put(FOLLOW_UP_ALLOWED, EMPTY_STRING);
+        contact.put(TYPE, CONTACT_AUTOMATED_SERVICES);
+        contact.put(PRIORITY, priority);
+        contact.put("version", EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_AMOUNT, EMPTY_STRING);
+        contact.put(NAME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_PAYMENT, EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS);
+        contact.put(SUR_CHARGE_CURRENCY, EMPTY_STRING);
+        contact.put(COMMUNICATION, new ArrayList<>());
+        contact.put("fromYear", EMPTY_STRING);
+        contact.put("toYear", EMPTY_STRING);
+        return contact;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void updateParchmentExchangeCommunication(Document contactDetail, InstitutionRecord institutionRecord, Vendors vendor) {
+        List<Document> communications = ensureCommunications(contactDetail);
+        Document parchmentComm = findParchmentCommunication(communications);
+
+        if (parchmentComm == null) {
+            int newPriority = getMaxPriority(communications) + PRIORITY_INCREMENT;
+            parchmentComm = createParchmentExchangeCommunication(institutionRecord, vendor, newPriority);
+            communications.add(parchmentComm);
+        } else {
+            Object commInfoObj = parchmentComm.get(COMMUNICATION_INFO);
+            List<Document> commInfoList = null;
+            if (commInfoObj instanceof List) {
+                List<?> rawList = (List<?>) commInfoObj;
+                commInfoList = new ArrayList<>();
+                for (Object item : rawList) {
+                    if (item instanceof Document) {
+                        commInfoList.add((Document) item);
+                    } else if (item instanceof Map) {
+                        commInfoList.add(new Document((Map<String, Object>) item));
+                    }
+                }
+            }
+            updateCommunicationInfo(commInfoList, institutionRecord, vendor);
+            updateProviderName(parchmentComm, institutionRecord);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Document> ensureCommunications(Document contactDetail) {
+        Object commsObj = contactDetail.computeIfAbsent(COMMUNICATION, k -> new ArrayList<Document>());
+        if (commsObj instanceof List) {
+            List<?> rawList = (List<?>) commsObj;
+            List<Document> communications = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item instanceof Document) {
+                    communications.add((Document) item);
+                } else if (item instanceof Map) {
+                    communications.add(new Document((Map<String, Object>) item));
+                }
+            }
+            contactDetail.put(COMMUNICATION, communications);
+            return communications;
+        }
+        return new ArrayList<>();
+    }
+
+    private Document findParchmentCommunication(List<Document> communications) {
+        return communications.stream()
+                .filter(this::isParchmentCommunication)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean isParchmentCommunication(Document comm) {
+        return PARCHMENT_EXCHANGE.equals(comm.get(NAME));
+    }
+
+    private void updateProviderName(Document parchmentComm, InstitutionRecord institutionRecord) {
+        if (institutionRecord.getServiceProvider() != null && !institutionRecord.getServiceProvider().isEmpty()) {
+            parchmentComm.put(NAME, institutionRecord.getServiceProvider());
+        }
+    }
+
+    private Document createParchmentExchangeCommunication(InstitutionRecord institutionRecord, Vendors vendor, int priority) {
+        String providerName = Optional.ofNullable(institutionRecord.getServiceProvider())
+                .filter(sp -> !sp.isEmpty())
+                .orElse(PARCHMENT_EXCHANGE);
+
+        Document communication = new Document();
+        communication.put(NAME, providerName);
+        communication.put(COMMUNICATION_INFO, createCommunicationInfoList(institutionRecord, vendor));
+        communication.put(PROVIDER_ID, String.valueOf(vendor.getProviderId()));
+        communication.put(PRIORITY, priority);
+
+        return communication;
+    }
+
+    private List<Document> createCommunicationInfoList(InstitutionRecord institutionRecord, Vendors vendor) {
+        List<Document> infoList = new ArrayList<>();
+
+        infoList.add(createCommunicationInfo("companyNames", institutionRecord.getInstitutionName()));
+        infoList.add(createCommunicationInfo(CODES, institutionRecord.getCode()));
+        infoList.add(createCommunicationInfo(BRANCH, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(URI, vendor.getWebsite()));
+        infoList.add(createCommunicationInfo("sourceType", SOURCE_TYPE_EDUCATION));
+        infoList.add(createCommunicationInfo("surChargeAmount", orEmpty(institutionRecord.getSurchargeAmount())));
+        infoList.add(createCommunicationInfo("surChargeCurrency",
+                COUNTRY_USA.equalsIgnoreCase(institutionRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING));
+        infoList.add(createCommunicationInfo("paymentMethod", orEmpty(institutionRecord.getPaymentMethod())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED, orEmpty(institutionRecord.getFollowUpAllowed())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER_UNITS, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME, orEmpty(institutionRecord.getTurnaroundTime())));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo("fromYear", EMPTY_STRING));
+        infoList.add(createCommunicationInfo("toYear", EMPTY_STRING));
+
+        return infoList;
+    }
+
+    private String orEmpty(String value) {
+        return value != null ? value : EMPTY_STRING;
+    }
+
+    private Document createCommunicationInfo(String type, String value) {
+        Document info = new Document();
+        info.put(TYPE, type);
+        info.put(VALUE, orEmpty(value));
+        return info;
+    }
+
+    private void updateCommunicationInfo(List<Document> communicationInfoList, InstitutionRecord institutionRecord, Vendors vendor) {
+        if (communicationInfoList == null) {
+            return;
+        }
+
+        updateInfoValue(communicationInfoList, "companyNames", institutionRecord.getInstitutionName());
+        updateInfoValue(communicationInfoList, CODES, institutionRecord.getCode());
+        updateInfoValue(communicationInfoList, URI, vendor.getWebsite());
+        updateInfoValue(communicationInfoList, "surChargeAmount", orEmpty(institutionRecord.getSurchargeAmount()));
+        updateInfoValue(communicationInfoList, "surChargeCurrency",
+                COUNTRY_USA.equalsIgnoreCase(institutionRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING);
+        updateInfoValue(communicationInfoList, "paymentMethod", orEmpty(institutionRecord.getPaymentMethod()));
+        updateInfoValue(communicationInfoList, FOLLOW_UP_ALLOWED, orEmpty(institutionRecord.getFollowUpAllowed()));
+        updateInfoValue(communicationInfoList, TURN_AROUND_TIME, orEmpty(institutionRecord.getTurnaroundTime()));
+    }
+
+
+    private void updateInfoValue(List<Document> communicationInfoList, String type, String value) {
+        communicationInfoList.stream()
+                .filter(info -> type.equals(info.get(TYPE)))
+                .findFirst()
+                .ifPresent(updateValue(value));
+    }
+
+    private Consumer<Document> updateValue(String value) {
+        return info -> info.put(VALUE, orEmpty(value));
+    }
+}
