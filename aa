@@ -6,7 +6,7 @@ import com.hireright.sourceintelligence.domain.entity.Vendors;
 import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
 import com.hireright.sourceintelligence.util.Helper;
 import com.hireright.sourceintelligence.util.StateMapper;
-import org.bson.Document;
+import com.mongodb.BasicDBObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.BulkOperations;
@@ -209,53 +209,78 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
     }
 
     private void updateParchmentExchangeContact(Source source, InstitutionRecord institutionRecord, Vendors vendor) {
-        Document payload = ensurePayload(source);
-        List<Document> contacts = ensureContacts(payload);
-        Document contact = ensureContact(contacts);
-        List<Document> contactDetails = ensureContactDetails(contact);
-        Document automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
+        BasicDBObject payload = ensurePayload(source);
+        List<BasicDBObject> contacts = ensureContacts(payload);
+        BasicDBObject contact = ensureContact(contacts);
+        List<BasicDBObject> contactDetails = ensureContactDetails(contact);
+        BasicDBObject automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
 
         updateParchmentExchangeCommunication(automatedServicesContact, institutionRecord, vendor);
     }
 
-    private Document ensurePayload(Source source) {
-        Object payloadObj = source.getPayload();
-        Document payload;
-        if (payloadObj == null) {
-            payload = new Document();
-            source.setPayload(payload);
-        } else if (payloadObj instanceof Document) {
-            payload = (Document) payloadObj;
-        } else {
-            // Convert DBObject to Document
-            payload = new Document(payloadObj.toString());
-            source.setPayload(payload);
-        }
-        return payload;
-    }
-
+    /**
+     * Safely converts any object to a List of BasicDBObjects.
+     * Handles ArrayList, BasicDBList, and other List implementations from MongoDB.
+     * This is critical for MongoDB Driver 4.x+ compatibility where ArrayList is returned
+     * instead of BasicDBList.
+     */
     @SuppressWarnings("unchecked")
-    private List<Document> ensureContacts(Document payload) {
-        Object contactsObj = payload.computeIfAbsent(CONTACTS, k -> new ArrayList<Document>());
-        if (contactsObj instanceof List) {
-            List<?> rawList = (List<?>) contactsObj;
-            List<Document> contacts = new ArrayList<>();
+    private List<BasicDBObject> toBasicDBObjectList(Object obj) {
+        if (obj == null) {
+            return new ArrayList<>();
+        }
+        if (obj instanceof List) {
+            List<?> rawList = (List<?>) obj;
+            List<BasicDBObject> result = new ArrayList<>();
             for (Object item : rawList) {
-                if (item instanceof Document) {
-                    contacts.add((Document) item);
+                if (item instanceof BasicDBObject) {
+                    result.add((BasicDBObject) item);
                 } else if (item instanceof Map) {
-                    contacts.add(new Document((Map<String, Object>) item));
+                    // This handles LinkedHashMap and other Map types from MongoDB
+                    result.add(new BasicDBObject((Map<String, Object>) item));
+                } else {
+                    log.warn("Unexpected item type in list: {}. Skipping.",
+                            item != null ? item.getClass().getName() : "null");
                 }
             }
-            payload.put(CONTACTS, contacts);
-            return contacts;
+            return result;
         }
+        log.warn("Expected List but got: {}. Returning empty list.",
+                obj.getClass().getName());
         return new ArrayList<>();
     }
 
-    private Document ensureContact(List<Document> contacts) {
+    @SuppressWarnings("unchecked")
+    private BasicDBObject ensurePayload(Source source) {
+        Object payloadObj = source.getPayload();
+
+        if (payloadObj == null) {
+            BasicDBObject payload = new BasicDBObject();
+            source.setPayload(payload);
+            return payload;
+        } else if (payloadObj instanceof BasicDBObject) {
+            return (BasicDBObject) payloadObj;
+        } else if (payloadObj instanceof Map) {
+            // Convert Map (including other DBObject implementations) to BasicDBObject
+            // This handles modern MongoDB driver returning LinkedHashMap
+            return new BasicDBObject((Map<String, Object>) payloadObj);
+        } else {
+            // Fallback: try to parse as JSON string
+            log.warn("Unexpected payload type: {}. Attempting to parse as JSON.", payloadObj.getClass().getName());
+            return BasicDBObject.parse(payloadObj.toString());
+        }
+    }
+
+    private List<BasicDBObject> ensureContacts(BasicDBObject payload) {
+        Object contactsObj = payload.computeIfAbsent(CONTACTS, k -> new ArrayList<BasicDBObject>());
+        List<BasicDBObject> contacts = toBasicDBObjectList(contactsObj);
+        payload.put(CONTACTS, contacts);
+        return contacts;
+    }
+
+    private BasicDBObject ensureContact(List<BasicDBObject> contacts) {
         if (contacts.isEmpty()) {
-            Document contact = new Document();
+            BasicDBObject contact = new BasicDBObject();
             contact.put("purpose", EMPTY_STRING);
             contact.put("purposeRule", new ArrayList<>());
             contact.put(CONTACT_DETAILS, new ArrayList<>());
@@ -265,27 +290,15 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         return contacts.get(0);
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Document> ensureContactDetails(Document contact) {
-        Object detailsObj = contact.computeIfAbsent(CONTACT_DETAILS, k -> new ArrayList<Document>());
-        if (detailsObj instanceof List) {
-            List<?> rawList = (List<?>) detailsObj;
-            List<Document> details = new ArrayList<>();
-            for (Object item : rawList) {
-                if (item instanceof Document) {
-                    details.add((Document) item);
-                } else if (item instanceof Map) {
-                    details.add(new Document((Map<String, Object>) item));
-                }
-            }
-            contact.put(CONTACT_DETAILS, details);
-            return details;
-        }
-        return new ArrayList<>();
+    private List<BasicDBObject> ensureContactDetails(BasicDBObject contact) {
+        Object detailsObj = contact.computeIfAbsent(CONTACT_DETAILS, k -> new ArrayList<BasicDBObject>());
+        List<BasicDBObject> details = toBasicDBObjectList(detailsObj);
+        contact.put(CONTACT_DETAILS, details);
+        return details;
     }
 
-    private Document ensureAutomatedServicesContact(List<Document> contactDetails) {
-        Document automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
+    private BasicDBObject ensureAutomatedServicesContact(List<BasicDBObject> contactDetails) {
+        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
         if (automatedServicesContact == null) {
             int newPriority = getMaxPriority(contactDetails) + PRIORITY_INCREMENT;
             automatedServicesContact = createAutomatedServicesContact(newPriority);
@@ -294,18 +307,18 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         return automatedServicesContact;
     }
 
-    private Document findContactDetailByType(List<Document> contactDetails, String type) {
+    private BasicDBObject findContactDetailByType(List<BasicDBObject> contactDetails, String type) {
         return contactDetails.stream()
                 .filter(cd -> hasType(cd, type))
                 .findFirst()
                 .orElse(null);
     }
 
-    private boolean hasType(Document cd, String type) {
+    private boolean hasType(BasicDBObject cd, String type) {
         return type.equals(cd.get(TYPE));
     }
 
-    private int getMaxPriority(List<Document> contactDetails) {
+    private int getMaxPriority(List<BasicDBObject> contactDetails) {
         return contactDetails.stream()
                 .map(cd -> cd.get(PRIORITY))
                 .filter(Objects::nonNull)
@@ -321,8 +334,8 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         return Integer.parseInt(priority.toString());
     }
 
-    private Document createAutomatedServicesContact(int priority) {
-        Document contact = new Document();
+    private BasicDBObject createAutomatedServicesContact(int priority) {
+        BasicDBObject contact = new BasicDBObject();
         contact.put(FOLLOW_UP_ALLOWED, EMPTY_STRING);
         contact.put(TYPE, CONTACT_AUTOMATED_SERVICES);
         contact.put(PRIORITY, priority);
@@ -339,10 +352,9 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         return contact;
     }
 
-    @SuppressWarnings("unchecked")
-    private void updateParchmentExchangeCommunication(Document contactDetail, InstitutionRecord institutionRecord, Vendors vendor) {
-        List<Document> communications = ensureCommunications(contactDetail);
-        Document parchmentComm = findParchmentCommunication(communications);
+    private void updateParchmentExchangeCommunication(BasicDBObject contactDetail, InstitutionRecord institutionRecord, Vendors vendor) {
+        List<BasicDBObject> communications = ensureCommunications(contactDetail);
+        BasicDBObject parchmentComm = findParchmentCommunication(communications);
 
         if (parchmentComm == null) {
             int newPriority = getMaxPriority(communications) + PRIORITY_INCREMENT;
@@ -350,65 +362,42 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
             communications.add(parchmentComm);
         } else {
             Object commInfoObj = parchmentComm.get(COMMUNICATION_INFO);
-            List<Document> commInfoList = null;
-            if (commInfoObj instanceof List) {
-                List<?> rawList = (List<?>) commInfoObj;
-                commInfoList = new ArrayList<>();
-                for (Object item : rawList) {
-                    if (item instanceof Document) {
-                        commInfoList.add((Document) item);
-                    } else if (item instanceof Map) {
-                        commInfoList.add(new Document((Map<String, Object>) item));
-                    }
-                }
-            }
+            List<BasicDBObject> commInfoList = toBasicDBObjectList(commInfoObj);
             updateCommunicationInfo(commInfoList, institutionRecord, vendor);
             updateProviderName(parchmentComm, institutionRecord);
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Document> ensureCommunications(Document contactDetail) {
-        Object commsObj = contactDetail.computeIfAbsent(COMMUNICATION, k -> new ArrayList<Document>());
-        if (commsObj instanceof List) {
-            List<?> rawList = (List<?>) commsObj;
-            List<Document> communications = new ArrayList<>();
-            for (Object item : rawList) {
-                if (item instanceof Document) {
-                    communications.add((Document) item);
-                } else if (item instanceof Map) {
-                    communications.add(new Document((Map<String, Object>) item));
-                }
-            }
-            contactDetail.put(COMMUNICATION, communications);
-            return communications;
-        }
-        return new ArrayList<>();
+    private List<BasicDBObject> ensureCommunications(BasicDBObject contactDetail) {
+        Object commsObj = contactDetail.computeIfAbsent(COMMUNICATION, k -> new ArrayList<BasicDBObject>());
+        List<BasicDBObject> communications = toBasicDBObjectList(commsObj);
+        contactDetail.put(COMMUNICATION, communications);
+        return communications;
     }
 
-    private Document findParchmentCommunication(List<Document> communications) {
+    private BasicDBObject findParchmentCommunication(List<BasicDBObject> communications) {
         return communications.stream()
                 .filter(this::isParchmentCommunication)
                 .findFirst()
                 .orElse(null);
     }
 
-    private boolean isParchmentCommunication(Document comm) {
+    private boolean isParchmentCommunication(BasicDBObject comm) {
         return PARCHMENT_EXCHANGE.equals(comm.get(NAME));
     }
 
-    private void updateProviderName(Document parchmentComm, InstitutionRecord institutionRecord) {
+    private void updateProviderName(BasicDBObject parchmentComm, InstitutionRecord institutionRecord) {
         if (institutionRecord.getServiceProvider() != null && !institutionRecord.getServiceProvider().isEmpty()) {
             parchmentComm.put(NAME, institutionRecord.getServiceProvider());
         }
     }
 
-    private Document createParchmentExchangeCommunication(InstitutionRecord institutionRecord, Vendors vendor, int priority) {
+    private BasicDBObject createParchmentExchangeCommunication(InstitutionRecord institutionRecord, Vendors vendor, int priority) {
         String providerName = Optional.ofNullable(institutionRecord.getServiceProvider())
                 .filter(sp -> !sp.isEmpty())
                 .orElse(PARCHMENT_EXCHANGE);
 
-        Document communication = new Document();
+        BasicDBObject communication = new BasicDBObject();
         communication.put(NAME, providerName);
         communication.put(COMMUNICATION_INFO, createCommunicationInfoList(institutionRecord, vendor));
         communication.put(PROVIDER_ID, String.valueOf(vendor.getProviderId()));
@@ -417,8 +406,8 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         return communication;
     }
 
-    private List<Document> createCommunicationInfoList(InstitutionRecord institutionRecord, Vendors vendor) {
-        List<Document> infoList = new ArrayList<>();
+    private List<BasicDBObject> createCommunicationInfoList(InstitutionRecord institutionRecord, Vendors vendor) {
+        List<BasicDBObject> infoList = new ArrayList<>();
 
         infoList.add(createCommunicationInfo("companyNames", institutionRecord.getInstitutionName()));
         infoList.add(createCommunicationInfo(CODES, institutionRecord.getCode()));
@@ -444,14 +433,14 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         return value != null ? value : EMPTY_STRING;
     }
 
-    private Document createCommunicationInfo(String type, String value) {
-        Document info = new Document();
+    private BasicDBObject createCommunicationInfo(String type, String value) {
+        BasicDBObject info = new BasicDBObject();
         info.put(TYPE, type);
         info.put(VALUE, orEmpty(value));
         return info;
     }
 
-    private void updateCommunicationInfo(List<Document> communicationInfoList, InstitutionRecord institutionRecord, Vendors vendor) {
+    private void updateCommunicationInfo(List<BasicDBObject> communicationInfoList, InstitutionRecord institutionRecord, Vendors vendor) {
         if (communicationInfoList == null) {
             return;
         }
@@ -468,14 +457,14 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
     }
 
 
-    private void updateInfoValue(List<Document> communicationInfoList, String type, String value) {
+    private void updateInfoValue(List<BasicDBObject> communicationInfoList, String type, String value) {
         communicationInfoList.stream()
                 .filter(info -> type.equals(info.get(TYPE)))
                 .findFirst()
                 .ifPresent(updateValue(value));
     }
 
-    private Consumer<Document> updateValue(String value) {
+    private Consumer<BasicDBObject> updateValue(String value) {
         return info -> info.put(VALUE, orEmpty(value));
     }
 }
