@@ -1,169 +1,420 @@
-package com.hireright.sourceintelligence.service.impl;
+package com.hireright.sourceintelligence.service.migration;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.service.excel.ExcelParserFactory;
-import com.hireright.sourceintelligence.service.excel.ExcelParserStrategy;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.entity.Vendors;
+import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
+import com.hireright.sourceintelligence.util.Helper;
+import com.hireright.sourceintelligence.util.StateMapper;
+import com.mongodb.BasicDBList;
+import com.mongodb.BasicDBObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
-import java.util.List;
-
-import static com.hireright.sourceintelligence.domain.constants.Constants.ExcelParserTypes.INSTITUTION;
-
-@Slf4j
-@Service
-@RequiredArgsConstructor
-public class ExcelParserService {
-
-    private final ExcelParserFactory excelParserFactory;
-
-    public List<InstitutionRecord> parseExcelFile(MultipartFile file) throws IOException {
-        return parseExcelFile(file, INSTITUTION);
-    }
-
-    public List<InstitutionRecord> parseExcelFile(MultipartFile file, String parserType) throws IOException {
-        ExcelParserStrategy<InstitutionRecord> parser = excelParserFactory.getParser(parserType);
-        return parser.parse(file);
-    }
-
-    public List<String> getSupportedParserTypes() {
-        return excelParserFactory.getAvailableParserTypes();
-    }
-
-    public boolean isParserTypeSupported(String parserType) {
-        return excelParserFactory.hasParser(parserType);
-    }
-}
-
-
-
-package com.hireright.sourceintelligence.service.excel.strategy;
-
-import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
-import com.hireright.sourceintelligence.service.excel.ExcelParserStrategy;
-import com.hireright.sourceintelligence.service.excel.ExcelRowMapper;
-import com.hireright.sourceintelligence.service.excel.GenericExcelParser;
-import com.hireright.sourceintelligence.service.excel.mapper.InstitutionRowMapper;
-import com.hireright.sourceintelligence.service.excel.mapping.InstitutionColumnMapping;
-import lombok.RequiredArgsConstructor;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
-import java.io.IOException;
-import java.util.List;
+import java.util.*;
+import java.util.function.Consumer;
 
-import static com.hireright.sourceintelligence.domain.constants.Constants.ExcelParserTypes.INSTITUTION;
-
-@Component
-@RequiredArgsConstructor
-public class InstitutionExcelParserStrategy implements ExcelParserStrategy<InstitutionRecord> {
-
-    private final GenericExcelParser genericExcelParser;
-    private final InstitutionRowMapper institutionRowMapper;
-
-    @Override
-    public List<InstitutionRecord> parse(MultipartFile file) throws IOException {
-        return genericExcelParser.parseExcelFile(file, getColumnMapping(), getRowMapper());
-    }
-
-    @Override
-    public String getParserType() {
-        return INSTITUTION;
-    }
-
-    @Override
-    public ExcelColumnMapping getColumnMapping() {
-        return InstitutionColumnMapping.create();
-    }
-
-    @Override
-    public ExcelRowMapper<InstitutionRecord> getRowMapper() {
-        return institutionRowMapper;
-    }
-}
-
-
-
-
-package com.hireright.sourceintelligence.service.excel;
-
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
-import java.util.List;
-
-public interface ExcelParserStrategy<T> {
-    
-    List<T> parse(MultipartFile file) throws IOException;
-    
-    String getParserType();
-    
-    ExcelColumnMapping getColumnMapping();
-    
-    ExcelRowMapper<T> getRowMapper();
-}
-
-
-
-package com.hireright.sourceintelligence.service.excel;
-
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.EDUCATION_COLLECTION_PREFIX;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
+import static com.hireright.sourceintelligence.domain.constants.Constants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.MigrationConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
 
 @Slf4j
 @Component
-public class ExcelParserFactory {
+@RequiredArgsConstructor
+public class ParchmentMigrationProcessor implements MigrationProcessor {
 
-    private final Map<String, ExcelParserStrategy<?>> parserStrategies;
+    private final VendorsRepository vendorsRepository;
+    private final MongoTemplate mongoTemplate;
 
-    public ExcelParserFactory(List<ExcelParserStrategy<?>> strategies) {
-        this.parserStrategies = strategies.stream()
-                .collect(Collectors.toMap(
-                        ExcelParserStrategy::getParserType,
-                        Function.identity()
-                ));
-        
-        log.info("Initialized ExcelParserFactory with {} parser strategies: {}", 
-                parserStrategies.size(), 
-                parserStrategies.keySet());
+    @Override
+    public String getMigrationType() {
+        return MIGRATION_TYPE_PARCHMENT;
     }
 
-    @SuppressWarnings("unchecked")
-    public <T> ExcelParserStrategy<T> getParser(String parserType) {
-        ExcelParserStrategy<?> strategy = parserStrategies.get(parserType);
-        
-        if (strategy == null) {
-            throw new IllegalArgumentException(
-                    String.format("No parser strategy found for type: %s. Available types: %s", 
-                            parserType, 
-                            parserStrategies.keySet())
-            );
+    @Override
+    @Transactional
+    public Map<String, Object> processInstitutionRecords(List<InstitutionRecord> institutionRecordList) {
+        Vendors vendor = findParchmentVendor();
+        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
+        List<String> notFoundInstitutions = new ArrayList<>();
+
+        int updatedRecords = 0;
+        int totalSourcesUpdated = 0;
+
+        for (InstitutionRecord institutionRecord : institutionRecordList) {
+            try {
+                String stateFullName = resolveStateName(institutionRecord.getStateCountyRegion());
+                List<Source> matchingSources = findMatchingInstitutions(institutionRecord, stateFullName);
+
+                if (matchingSources != null && !matchingSources.isEmpty()) {
+                    updatedRecords++;
+                    totalSourcesUpdated += processMatchingSources(matchingSources, institutionRecord, vendor, sourcesToSaveByCollection);
+
+                    if (matchingSources.size() > 1) {
+                        log.info("Multiple matches for '{}': {} institutionRecordList updated",
+                                institutionRecord.getInstitutionName(), matchingSources.size());
+                    }
+                } else {
+                    notFoundInstitutions.add(formatNotFoundEntry(institutionRecord, stateFullName));
+                    log.warn("No match found for: {}", institutionRecord.getInstitutionName());
+                }
+            } catch (Exception e) {
+                log.error("Error processing institutionRecord: {}", institutionRecord.getInstitutionName(), e);
+                notFoundInstitutions.add(institutionRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
+            }
         }
-        
-        return (ExcelParserStrategy<T>) strategy;
+
+        performBulkSave(sourcesToSaveByCollection);
+
+        return buildProcessingResult(institutionRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions);
     }
 
-    public boolean hasParser(String parserType) {
-        return parserStrategies.containsKey(parserType);
+    private Vendors findParchmentVendor() {
+        return vendorsRepository.findAll().stream()
+                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException(
+                        String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
     }
 
-    public List<String> getAvailableParserTypes() {
-        return List.copyOf(parserStrategies.keySet());
+    private String resolveStateName(String stateInput) {
+        String stateFullName = StateMapper.getFullName(stateInput);
+        return stateFullName.isEmpty() && !stateInput.isEmpty() ? stateInput : stateFullName;
+    }
+
+    private int processMatchingSources(List<Source> sources, InstitutionRecord institutionRecord,
+                                       Vendors vendor, Map<String, List<Source>> sourcesToSaveByCollection) {
+        int count = 0;
+        for (Source source : sources) {
+            updateParchmentExchangeContact(source, institutionRecord, vendor);
+            String collectionName = Helper.getCollectionName(source.getHon(), SOURCE_COLLECTION_SUFFIX);
+            sourcesToSaveByCollection.computeIfAbsent(collectionName, k -> new ArrayList<>()).add(source);
+            count++;
+        }
+        return count;
+    }
+
+    private String formatNotFoundEntry(InstitutionRecord institutionRecord, String stateFullName) {
+        return String.format(LOG_NOT_FOUND_TEMPLATE,
+                institutionRecord.getInstitutionName(), institutionRecord.getCity(), stateFullName, institutionRecord.getCountry());
+    }
+
+    private Map<String, Object> buildProcessingResult(int totalRecords, int updatedRecords,
+                                                      int totalSourcesUpdated, List<String> notFoundInstitutions) {
+        Map<String, Object> result = new HashMap<>();
+        result.put(RESULT_KEY_TOTAL_RECORDS, totalRecords);
+        result.put(RESULT_KEY_UPDATED_RECORDS, updatedRecords);
+        result.put(RESULT_KEY_TOTAL_SOURCES_UPDATED, totalSourcesUpdated);
+        result.put(RESULT_KEY_NOT_FOUND_RECORDS, notFoundInstitutions.size());
+        result.put(RESULT_KEY_NOT_FOUND_INSTITUTIONS, notFoundInstitutions);
+
+        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, notFound: {}",
+                totalRecords, updatedRecords, totalSourcesUpdated, notFoundInstitutions.size());
+
+        return result;
+    }
+
+    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
+        sourcesToSaveByCollection.forEach((collectionName, sources) -> {
+            if (!sources.isEmpty()) {
+                log.info("Bulk saving {} sources to collection: {}", sources.size(), collectionName);
+                try {
+                    executeBulkUpdate(collectionName, sources);
+                } catch (Exception e) {
+                    log.error("Bulk save failed for collection: {}, falling back to individual saves", collectionName, e);
+                    fallbackToIndividualSaves(collectionName, sources);
+                }
+            }
+        });
+    }
+
+    private void executeBulkUpdate(String collectionName, List<Source> sources) {
+        BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName);
+
+        sources.forEach(source -> {
+            Query query = new Query(Criteria.where(MONGO_FIELD_ID).is(source.getId()));
+            Update update = new Update()
+                    .set(FIELD_HON, source.getHon())
+                    .set(FIELD_NAME, source.getOrganizationName())
+                    .set(FIELD_CITY, source.getCity())
+                    .set(FIELD_COUNTRY, source.getCountry())
+                    .set(FIELD_STATE, source.getState())
+                    .set("payload", source.getPayload());
+            bulkOps.upsert(query, update);
+        });
+
+        var result = bulkOps.execute();
+        log.info("Bulk save completed - collection: {}, modified: {}, upserted: {}",
+                collectionName, result.getModifiedCount(), result.getUpserts().size());
+    }
+
+    private void fallbackToIndividualSaves(String collectionName, List<Source> sources) {
+        sources.forEach(source -> {
+            try {
+                mongoTemplate.save(source, collectionName);
+            } catch (Exception e) {
+                log.error("Failed to save source: {} (HON: {})", source.getOrganizationName(), source.getHon(), e);
+            }
+        });
+    }
+
+    private List<Source> findMatchingInstitutions(InstitutionRecord institutionRecord, String stateFullName) {
+        Criteria locationCriteria = buildLocationCriteria(institutionRecord, stateFullName);
+        Criteria nameCriteria = buildNameCriteria(institutionRecord.getInstitutionName());
+
+        Query query = new Query(new Criteria().andOperator(nameCriteria, locationCriteria));
+        List<Source> sources = mongoTemplate.find(query, Source.class, "education_source_parchment_test");
+        //List<Source> sources = mongoTemplate.find(query, Source.class, EDUCATION_COLLECTION_PREFIX + SOURCE_COLLECTION_SUFFIX);
+
+        if (!CollectionUtils.isEmpty(sources)) {
+            log.info("Found {} matches for institution '{}'", sources.size(), institutionRecord.getInstitutionName());
+        }
+
+        return sources;
+    }
+
+    private Criteria buildLocationCriteria(InstitutionRecord institutionRecord, String stateFullName) {
+        String cityPattern = buildRegexPattern(institutionRecord.getCity());
+        String countryPattern = buildRegexPattern(institutionRecord.getCountry());
+
+        return Criteria.where(FIELD_CITY).regex(cityPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_COUNTRY).regex(countryPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_STATE).is(stateFullName);
+    }
+
+    private Criteria buildNameCriteria(String institutionName) {
+        String namePattern = buildRegexPattern(institutionName);
+
+        return new Criteria().orOperator(
+                Criteria.where(FIELD_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE),
+                Criteria.where(MONGO_FIELD_ORGANIZATION_ALIAS_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE)
+        );
+    }
+
+    private String buildRegexPattern(String value) {
+        return REGEX_ANCHOR_START + escapeRegex(value) + REGEX_ANCHOR_END;
+    }
+
+    private String escapeRegex(String input) {
+        return (input == null || input.isEmpty()) ? input : input.replaceAll(REGEX_SPECIAL_CHARS, "\\\\$1");
+    }
+
+    private void updateParchmentExchangeContact(Source source, InstitutionRecord institutionRecord, Vendors vendor) {
+        BasicDBObject payload = ensurePayload(source);
+        BasicDBList contacts = ensureContacts(payload);
+        BasicDBObject contact = ensureContact(contacts);
+        BasicDBList contactDetails = ensureContactDetails(contact);
+        BasicDBObject automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
+
+        updateParchmentExchangeCommunication(automatedServicesContact, institutionRecord, vendor);
+    }
+
+    private BasicDBObject ensurePayload(Source source) {
+        BasicDBObject payload = (BasicDBObject) source.getPayload();
+        if (payload == null) {
+            payload = new BasicDBObject();
+            source.setPayload(payload);
+        }
+        return payload;
+    }
+
+    private BasicDBList ensureContacts(BasicDBObject payload) {
+        return (BasicDBList) payload.computeIfAbsent(CONTACTS, k -> new BasicDBList());
+    }
+
+    private BasicDBObject ensureContact(BasicDBList contacts) {
+        if (contacts.isEmpty()) {
+            BasicDBObject contact = new BasicDBObject();
+            contact.put("purpose", EMPTY_STRING);
+            contact.put("purposeRule", new BasicDBList());
+            contact.put(CONTACT_DETAILS, new BasicDBList());
+            contacts.add(contact);
+            return contact;
+        }
+        return (BasicDBObject) contacts.get(0);
+    }
+
+    private BasicDBList ensureContactDetails(BasicDBObject contact) {
+        return (BasicDBList) contact.computeIfAbsent(CONTACT_DETAILS, k -> new BasicDBList());
+    }
+
+    private BasicDBObject ensureAutomatedServicesContact(BasicDBList contactDetails) {
+        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
+        if (automatedServicesContact == null) {
+            int newPriority = getMaxPriority(contactDetails) + PRIORITY_INCREMENT;
+            automatedServicesContact = createAutomatedServicesContact(newPriority);
+            contactDetails.add(automatedServicesContact);
+        }
+        return automatedServicesContact;
+    }
+
+    private BasicDBObject findContactDetailByType(BasicDBList contactDetails, String type) {
+        return contactDetails.stream()
+                .map(BasicDBObject.class::cast)
+                .filter(cd -> hasType(cd, type))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean hasType(BasicDBObject cd, String type) {
+        return type.equals(cd.get(TYPE));
+    }
+
+    private int getMaxPriority(BasicDBList contactDetails) {
+        return contactDetails.stream()
+                .map(BasicDBObject.class::cast)
+                .map(cd -> cd.get(PRIORITY))
+                .filter(Objects::nonNull)
+                .mapToInt(this::toInt)
+                .max()
+                .orElse(0);
+    }
+
+    private int toInt(Object priority) {
+        if (priority instanceof Integer i) {
+            return i;
+        }
+        return Integer.parseInt(priority.toString());
+    }
+
+    private BasicDBObject createAutomatedServicesContact(int priority) {
+        BasicDBObject contact = new BasicDBObject();
+        contact.put(FOLLOW_UP_ALLOWED, EMPTY_STRING);
+        contact.put(TYPE, CONTACT_AUTOMATED_SERVICES);
+        contact.put(PRIORITY, priority);
+        contact.put("version", EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_AMOUNT, EMPTY_STRING);
+        contact.put(NAME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_PAYMENT, EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS);
+        contact.put(SUR_CHARGE_CURRENCY, EMPTY_STRING);
+        contact.put(COMMUNICATION, new BasicDBList());
+        contact.put("fromYear", EMPTY_STRING);
+        contact.put("toYear", EMPTY_STRING);
+        return contact;
+    }
+
+    private void updateParchmentExchangeCommunication(BasicDBObject contactDetail, InstitutionRecord institutionRecord, Vendors vendor) {
+        BasicDBList communications = ensureCommunications(contactDetail);
+        BasicDBObject parchmentComm = findParchmentCommunication(communications);
+
+        if (parchmentComm == null) {
+            int newPriority = getMaxPriority(communications) + PRIORITY_INCREMENT;
+            parchmentComm = createParchmentExchangeCommunication(institutionRecord, vendor, newPriority);
+            communications.add(parchmentComm);
+        } else {
+            updateCommunicationInfo((BasicDBList) parchmentComm.get(COMMUNICATION_INFO), institutionRecord, vendor);
+            updateProviderName(parchmentComm, institutionRecord);
+        }
+    }
+
+    private BasicDBList ensureCommunications(BasicDBObject contactDetail) {
+        return (BasicDBList) contactDetail.computeIfAbsent(COMMUNICATION, k -> new BasicDBList());
+    }
+
+    private BasicDBObject findParchmentCommunication(BasicDBList communications) {
+        return communications.stream()
+                .map(BasicDBObject.class::cast)
+                .filter(this::isParchmentCommunication)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean isParchmentCommunication(BasicDBObject comm) {
+        return PARCHMENT_EXCHANGE.equals(comm.get(NAME));
+    }
+
+    private void updateProviderName(BasicDBObject parchmentComm, InstitutionRecord institutionRecord) {
+        if (institutionRecord.getServiceProvider() != null && !institutionRecord.getServiceProvider().isEmpty()) {
+            parchmentComm.put(NAME, institutionRecord.getServiceProvider());
+        }
+    }
+
+    private BasicDBObject createParchmentExchangeCommunication(InstitutionRecord institutionRecord, Vendors vendor, int priority) {
+        String providerName = Optional.ofNullable(institutionRecord.getServiceProvider())
+                .filter(sp -> !sp.isEmpty())
+                .orElse(PARCHMENT_EXCHANGE);
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put(NAME, providerName);
+        communication.put(COMMUNICATION_INFO, createCommunicationInfoList(institutionRecord, vendor));
+        communication.put(PROVIDER_ID, String.valueOf(vendor.getProviderId()));
+        communication.put(PRIORITY, priority);
+
+        return communication;
+    }
+
+    private BasicDBList createCommunicationInfoList(InstitutionRecord institutionRecord, Vendors vendor) {
+        BasicDBList infoList = new BasicDBList();
+
+        infoList.add(createCommunicationInfo("companyNames", institutionRecord.getInstitutionName()));
+        infoList.add(createCommunicationInfo(CODES, institutionRecord.getCode()));
+        infoList.add(createCommunicationInfo(BRANCH, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(URI, vendor.getWebsite()));
+        infoList.add(createCommunicationInfo("sourceType", SOURCE_TYPE_EDUCATION));
+        infoList.add(createCommunicationInfo("surChargeAmount", orEmpty(institutionRecord.getSurchargeAmount())));
+        infoList.add(createCommunicationInfo("surChargeCurrency",
+                COUNTRY_USA.equalsIgnoreCase(institutionRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING));
+        infoList.add(createCommunicationInfo("paymentMethod", orEmpty(institutionRecord.getPaymentMethod())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED, orEmpty(institutionRecord.getFollowUpAllowed())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER_UNITS, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME, orEmpty(institutionRecord.getTurnaroundTime())));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo("fromYear", EMPTY_STRING));
+        infoList.add(createCommunicationInfo("toYear", EMPTY_STRING));
+
+        return infoList;
+    }
+
+    private String orEmpty(String value) {
+        return value != null ? value : EMPTY_STRING;
+    }
+
+    private BasicDBObject createCommunicationInfo(String type, String value) {
+        BasicDBObject info = new BasicDBObject();
+        info.put(TYPE, type);
+        info.put(VALUE, orEmpty(value));
+        return info;
+    }
+
+    private void updateCommunicationInfo(BasicDBList communicationInfoList, InstitutionRecord institutionRecord, Vendors vendor) {
+        if (communicationInfoList == null) {
+            return;
+        }
+
+        updateInfoValue(communicationInfoList, "companyNames", institutionRecord.getInstitutionName());
+        updateInfoValue(communicationInfoList, CODES, institutionRecord.getCode());
+        updateInfoValue(communicationInfoList, URI, vendor.getWebsite());
+        updateInfoValue(communicationInfoList, "surChargeAmount", orEmpty(institutionRecord.getSurchargeAmount()));
+        updateInfoValue(communicationInfoList, "surChargeCurrency",
+                COUNTRY_USA.equalsIgnoreCase(institutionRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING);
+        updateInfoValue(communicationInfoList, "paymentMethod", orEmpty(institutionRecord.getPaymentMethod()));
+        updateInfoValue(communicationInfoList, FOLLOW_UP_ALLOWED, orEmpty(institutionRecord.getFollowUpAllowed()));
+        updateInfoValue(communicationInfoList, TURN_AROUND_TIME, orEmpty(institutionRecord.getTurnaroundTime()));
+    }
+
+
+    private void updateInfoValue(BasicDBList communicationInfoList, String type, String value) {
+        communicationInfoList.stream()
+                .map(BasicDBObject.class::cast)
+                .filter(info -> type.equals(info.get(TYPE)))
+                .findFirst()
+                .ifPresent(updateValue(value));
+    }
+
+    private Consumer<BasicDBObject> updateValue(String value) {
+        return info -> info.put(VALUE, orEmpty(value));
     }
 }
-
-  public static class ExcelParserTypes {
-        public static final String INSTITUTION = "institution";
-        public static final String ALTERNATIVE_INSTITUTION = "alternative_institution";
-        public static final String LICENSE = "license";
-    }
-
