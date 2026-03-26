@@ -300,11 +300,27 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
     private BasicDBObject ensureAutomatedServicesContact(List<BasicDBObject> contactDetails) {
         BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
         if (automatedServicesContact == null) {
-            int newPriority = getMaxPriority(contactDetails) + PRIORITY_INCREMENT;
-            automatedServicesContact = createAutomatedServicesContact(newPriority);
+            // New automated services contact gets priority 1
+            // Increment all existing contact priorities by 1
+            incrementAllPriorities(contactDetails);
+            automatedServicesContact = createAutomatedServicesContact(1);
             contactDetails.add(automatedServicesContact);
         }
         return automatedServicesContact;
+    }
+
+    /**
+     * Increments the priority of all items in the list by 1.
+     * This ensures new items can be inserted at priority 1.
+     */
+    private void incrementAllPriorities(List<BasicDBObject> items) {
+        for (BasicDBObject item : items) {
+            Object priorityObj = item.get(PRIORITY);
+            if (priorityObj != null) {
+                int currentPriority = toInt(priorityObj);
+                item.put(PRIORITY, currentPriority + 1);
+            }
+        }
     }
 
     private BasicDBObject findContactDetailByType(List<BasicDBObject> contactDetails, String type) {
@@ -357,8 +373,10 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         BasicDBObject parchmentComm = findParchmentCommunication(communications);
 
         if (parchmentComm == null) {
-            int newPriority = getMaxPriority(communications) + PRIORITY_INCREMENT;
-            parchmentComm = createParchmentExchangeCommunication(institutionRecord, vendor, newPriority);
+            // New Parchment communication gets priority 1
+            // Increment all existing communication priorities by 1
+            incrementAllPriorities(communications);
+            parchmentComm = createParchmentExchangeCommunication(institutionRecord, vendor, 1);
             communications.add(parchmentComm);
         } else {
             Object commInfoObj = parchmentComm.get(COMMUNICATION_INFO);
