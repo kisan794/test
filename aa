@@ -1,40 +1,10 @@
-Execution failed for task ':jacocoTestCoverageVerification'.
-> Rule violated for class com.hireright.sourceintelligence.api.model.Error: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.mapper.ReportMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.mapper.ReportMapper: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.service.exception.BusinessException: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.service.exception.FileEmptyException: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.service.impl.ReportConstants.SortFields: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.api.v2.dto.SourceDTO.SourceDTOBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.api.v2.dto.RegionThresholdDTO.RegionThresholdDTOBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.api.v2.dto.PermissionsDTO.PermissionsDTOBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.api.exception.ApiException: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.Reports: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ResponseReport.ResponseReportBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ReportSearchResult.ReportSearchResultBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ContactReport: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.ContactReport.ContactReportBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.domain.entity.TATReport.TATReportBuilder: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.service.impl.SearchConstants.CommonText: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.config.RequestInProgressCache: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.util.ObjectDiff: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.util.JwtUtil: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.dto.PerformanceDTO: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.dto.SourceInformationDTO: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.reports.dto.AutoMatchDTO: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchConstants.Regions: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchConstants: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchConstants.EsFields: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.AutoMatchMapper: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.CountryMapper: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.AutoMatchMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.SourceV2MapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.LanguageMapper: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.LanguageMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.RDSMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.mapper.CountryMapperImpl: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.api.util.Util: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.AutoMatchConstants: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.RelationShipConstants: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.VENDORS: lines covered ratio is 0.0, but expected minimum is 0.1
-  Rule violated for class com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys: lines covered ratio is 0.0, but expected minimum is 0.1
+The provider name should be updated as long as the institution name, city, state and country in the spreadsheet match the information listed in SIDB2
+
+Institution name can match either the primary Institution Name or an Alias listed in SIDB2
+
+Both scenarios should be considered a valid match
+
+If multiple database listings match on name and location, all matching listings should be updated
+
+
+For records where the system is unable to find a match and update automatically, a list of those records should be shared back with Ops for review and possible manual updates
