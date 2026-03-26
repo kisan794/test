@@ -1,279 +1,210 @@
-{
-  "_id": {
-    "$oid": "69a81fba458cd41c3230e3f6"
-  },
-  "hon": "OUEDU-122225-8R688",
-  "organizationName": "(FLETC) Federal Law enforcement training center",
-  "status": "ACTIVE",
-  "version": 1,
-  "organizationType": "EDUCATION",
-  "city": "Artesia",
-  "country": "USA",
-  "state": "New Mexico",
-  "organizationAlias": [],
-  "payload": {
-    "departmentName": "",
-    "website": "",
-    "address": [
-      {
-        "availablePeriod": {
-          "start": "",
-          "end": ""
-        },
-        "city": "Artesia",
-        "countrySubDivisions": [
-          {
-            "type": "Country",
-            "value": "USA"
-          },
-          {
-            "type": "Region",
-            "value": "New Mexico"
-          }
-        ],
-        "line": "",
-        "postalCode": "",
-        "noPhysicalAddress": "false"
-      }
-    ],
-    "notes": "",
-    "contactPersonTitle": "",
-    "infoRequestIDs": [],
-    "addionalInfo": [
-      {
-        "contactPersonName": "",
-        "contactTimeFrom": "",
-        "contactTimeZone": "",
-        "releaseType": "none",
-        "hasChildren": "false",
-        "verificationValidationProcess": "12/22/2025",
-        "contactPersonTitle": "",
-        "doNotContact": "",
-        "contactTimeTo": "",
-        "sourceLanguage": "",
-        "releaseWebAddress": ""
-      }
-    ],
-    "contactPersonName": "",
-    "dotRegulated": true,
-    "lastValidatedDateTime": "",
-    "documentationRequired": true,
-    "unAccreditedSource": true,
-    "lastUsedDateTime": "2026-02-26T11:13:39Z",
-    "contacts": [
-      {
-        "purpose": "",
-        "purposeRule": [
-          {
-            "name": "",
-            "value": ""
-          }
-        ],
-        "contactDetails": [
-          {
-            "followUpAllowed": "false",
-            "type": "contactPhones",
-            "priority": 2,
-            "version": "",
-            "turnAroundTime": "",
-            "name": "",
-            "turnAroundTimeUnit": "days",
-            "followUpAllowedAfter": ""
-          },
-          {
-            "followUpAllowed": "",
-            "type": "contactAutomatedServices",
-            "priority": 1,
-            "version": "",
-            "turnAroundTime": "",
-            "surChargeAmount": "",
-            "name": "",
-            "paymentMethod": "",
-            "turnAroundTimeUnit": "days",
-            "surChargeCurrency": "",
-            "communication": [
-              {
-                "name": "Parchment change",
-                "communicationInfo": [
-                  {
-                    "type": "companyNames",
-                    "value": "(FLETC) Federal Law enforcement training center"
-                  },
-                  {
-                    "type": "codes",
-                    "value": "113"
-                  },
-                  {
-                    "type": "branch",
-                    "value": ""
-                  },
-                  {
-                    "type": "uri",
-                    "value": "https://exchange.parchment.com/u/auth/login"
-                  },
-                  {
-                    "type": "sourceType",
-                    "value": "Education"
-                  },
-                  {
-                    "type": "surChargeAmount",
-                    "value": "111"
-                  },
-                  {
-                    "type": "surChargeCurrency",
-                    "value": "USD"
-                  },
-                  {
-                    "type": "paymentMethod",
-                    "value": "112"
-                  },
-                  {
-                    "type": "followUpAllowed",
-                    "value": "115"
-                  },
-                  {
-                    "type": "followUpAllowedAfter",
-                    "value": ""
-                  },
-                  {
-                    "type": "followUpAllowedAfterTimeUnit",
-                    "value": "days"
-                  },
-                  {
-                    "type": "turnAroundTime",
-                    "value": "114"
-                  },
-                  {
-                    "type": "turnAroundTimeUnit",
-                    "value": "days"
-                  },
-                  {
-                    "type": "fromYear",
-                    "value": ""
-                  },
-                  {
-                    "type": "toYear",
-                    "value": ""
-                  }
-                ],
-                "providerID": "52",
-                "priority": 2
-              },
-              {
-                "name": "Parchment Exchange",
-                "communicationInfo": [
-                  {
-                    "type": "companyNames",
-                    "value": "(FLETC) Federal Law enforcement training center"
-                  },
-                  {
-                    "type": "codes",
-                    "value": "113"
-                  },
-                  {
-                    "type": "branch",
-                    "value": ""
-                  },
-                  {
-                    "type": "uri",
-                    "value": "https://exchange.parchment.com/u/auth/login"
-                  },
-                  {
-                    "type": "sourceType",
-                    "value": "Education"
-                  },
-                  {
-                    "type": "surChargeAmount",
-                    "value": "111"
-                  },
-                  {
-                    "type": "surChargeCurrency",
-                    "value": "USD"
-                  },
-                  {
-                    "type": "paymentMethod",
-                    "value": "112"
-                  },
-                  {
-                    "type": "followUpAllowed",
-                    "value": "115"
-                  },
-                  {
-                    "type": "followUpAllowedAfter",
-                    "value": ""
-                  },
-                  {
-                    "type": "followUpAllowedAfterTimeUnit",
-                    "value": "days"
-                  },
-                  {
-                    "type": "turnAroundTime",
-                    "value": "114"
-                  },
-                  {
-                    "type": "turnAroundTimeUnit",
-                    "value": "days"
-                  },
-                  {
-                    "type": "fromYear",
-                    "value": ""
-                  },
-                  {
-                    "type": "toYear",
-                    "value": ""
-                  }
-                ],
-                "providerID": "52",
-                "priority": 1
-              }
-            ],
-            "fromYear": "",
-            "toYear": ""
-          }
-        ]
-      }
-    ],
-    "usedCount": 2
-  },
-  "approvalStatus": "APPROVED",
-  "postalCode": "",
-  "searchOrg": "(fletc) federal law enforcement training center",
-  "action": "Create",
-  "created_date": {
-    "$date": "2025-12-22T10:43:25.000Z"
-  },
-  "lastModifiedBy": "Nikita Chanchal",
-  "lastModifierId": "",
-  "last_modified_date": {
-    "$date": "2025-12-22T10:43:25.000Z"
-  },
-  "approvedBy": "Nikita Chanchal",
-  "approverId": "",
-  "assignedTo": "Nikita Chanchal",
-  "assignedId": "",
-  "last_approved_date": {
-    "$date": "2025-12-22T10:43:25.000Z"
-  },
-  "_class": "com.hireright.migrationservice.domain.Source",
-  "logFlag": "New Record",
-  "last_action_date": {
-    "$date": "2025-12-22T10:43:25.000Z"
-  },
-  "flagPriority": false
-}
+package com.hireright.sourceintelligence.domain.constants;
+
+public class Constants {
+
+    private Constants() {
+
+    }
+    public static final String SOURCE_ORGANIZATION_COLLECTION = "source_intelligence";
+
+    public static final String FIELD_ID = "id";
+    public static final String FIELD_HON = "hon";
+    public static final String FIELD_LOCATION = "location";
+    public static final String FIELD_VERSION = "version";
+    public static final String FIELD_STATUS = "status";
+    public static final String FIELD_NAME = "organizationName";
+    public static final String FIELD_APPROVAL_STATUS = "approvalStatus";
+    public static final String FIELD_REQUESTED_BY = "requestedBy";
+    public static final String FIELD_LAST_MODIFIED_DATE = "lastModifiedDate";
+    public static final String FIELD_LAST_ACTION_DATE = "last_action_date";
+
+    public static final String FIELD_TYPE = "organizationType";
+    public static final String FIELD_ALIAS = "organizationAlias";
+    public static final String FIELD_USED_COUNT = "payload.usedCount";
+    public static final String FIELD_ADDESS_LINE = "payload.address.line";
+    public static final String FIELD_DEPT_NAME = "payload.departmentName";
+    public static final String FIELD_DEPT_ALIAS = "payload.departmentAliases";
+    public static final String FIELD_CITY = "city";
+    public static final String FIELD_STATE = "state";
+    public static final String FIELD_COUNTRY = "country";
+    public static final String FIELD_OUT_OF_BUSINESS = "outOfBusiness";
+    public static final String FIELD_REVIEW_REQUIRED = "reviewRequired";
+    public static final String FIELD_LAST_CLEAN_UP_DATE = "payload.lastCleanUpDate";
+
+    public static final String COLLATION_LANG = "en_US";
+
+    public static class SmartSearchKeys {
+
+        public static final String HON = "hon";
+        public static final String DOT_REGULATED = "dotRegulated";
+        public static final String RECEIPT = "receipt";
+        public static final String DEPARTMENT = "department";
+        public static final String DEPARTMENT_NAME = "departmentName";
+        public static final String DEPARTMENT_ALIASES = "departmentAliases";
+        public static final String CONTACTS = "contacts";
+        public static final String TURN_AROUND_TIME = "turnAroundTime";
+        public static final String SUR_CHARGE_AMOUNT = "surChargeAmount";
+        public static final String SUR_CHARGE_CURRENCY = "surChargeCurrency";
+        public static final String SUR_CHARGE_PAYMENT = "paymentMethod";
+        public static final String COMMUNICATION = "communication";
+        public static final String COMMUNICATION_INFO = "communicationInfo";
+        public static final String TURN_AROUND_TIME_UNIT = "turnAroundTimeUnit";
+        public static final String FOLLOW_UP_ALLOWED = "followUpAllowed";
+        public static final String FOLLOW_UP_ALLOWED_AFTER = "followUpAllowedAfter";
+        public static final String FOLLOW_UP_ALLOWED_AFTER_UNITS = "followUpAllowedAfterTimeUnit";
+
+        public static final String TYPE = "type";
+        public static final String VALUE = "value";
+        public static final String CONTACT_PHONES = "contactPhones";
+        public static final String CONTACT_FAXES = "contactFaxes";
+        public static final String CONTACT_EMAILS = "contactEmails";
+        public static final String CONTACT_AUTOMATED_SERVICES = "contactAutomatedServices";
+        public static final String CONTACT_MAILS = "contactMails";
+        public static final String CONTACT_WEBSITES = "contactWebsites";
+        public static final String TYPE_PHONES="Phones";
+        public static final String TYPE_FAXES="Faxes";
+        public static final String TYPE_EMAILS="Emails";
+        public static final String TYPE_AUTOMATED_SERVICES="AutomatedServices";
+        public static final String TYPE_MAILS="Mails";
+        public static final String TYPE_WEBSITES="Websites";
+        public static final String COUNTRY_CODE = "countryCode";
+        public static final String PHONE_COUNTRY_CODE = "phoneCountryCode";
+        public static final String AREA_CODE = "areaCode";
+        public static final String PHONE_NUMBER = "phoneNumber";
+        public static final String EXTENSION = "extension";
+        public static final String ADDRESS = "address";
+        public static final String POSTAL_CODE = "postalCode";
+        public static final String COUNTRY_NAME = "countryName";
+        public static final String REGION = "region";
+        public static final String CITY = "city";
+        public static final String URI = "uri";
+        public static final String CODES = "codes";
+        public static final String BRANCH = "branch";
+
+        public static final String ADDRESSES = "addresses";
+        public static final String CONTACT_DETAILS = "contactDetails";
+        public static final String RELATIONSHIPS = "relationships";
+        public static final String RELATIONSHIP = "relationship";
+        public static final String NAME = "name";
+        public static final String PROVIDER_ID = "providerID";
+        public static final String PARENT_HON = "HON";
+        public static final String LINE = "line";
+        public static final String USED_COUNT = "usedCount";
+        public static final String WEBSITE = "website";
+        public static final String NOTES = "notes";
+        public static final String ADDITIONAL_INFO = "addionalInfo";
+        public static final String DO_NOT_CONTACT = "doNotContact";
+        public static final String PRIORITY = "priority";
+
+        public static final String LAST_APPROVED_DATETIME = "lastApprovedDateTime";
+        public static final String LAST_USED_DATETIME = "lastUsedDateTime";
+        public static final String LAST_CLEANUP_DATE = "lastCleanUpDate";
+
+        public static final String ADDRESS_LINE = "address.line";
+
+        public static final String CONTACT_PERSON_NAME = "contactPersonName";
+        public static final String CONTACT_PERSON_TITLE = "contactPersonTitle";
+        public static final String CONTACT_TIME_FROM = "contactTimeFrom";
+        public static final String CONTACT_TIME_TO = "contactTimeTo";
+        public static final String CONTACT_TIME_ZONE = "contactTimeZone";
+        public static final String RELEASE_TYPE = "releaseType";
+        public static final String SOURCE_LANGUAGE = "sourceLanguage";
+
+
+        public static final int DEFAULT_PROVIDER = 999;
+    }
+    public static class RelationShipConstants {
+        public static final String PARENT = "PARENT";
+        public static final String CHILD = "CHILD";
+        public static final String FRANCHISE = "FRANCHISE";
+
+        public static final String EDU_PARENT = "Parent / Main Campus";
+        public static final String CORPORATE_PARENT = "Corporate Parent";
+        public static final String CHILD_OPTION_ONE = "child / affiliated / branch school";
+
+
+    }
+
+    public static class AutoMatchConstants {
+        public static final String EQUI_FAX_HS_DATE_RANGE = "EquifaxHighSchoolDateRange";
+        public static final String TURN_AROUNT_TIME_UNIT = "turnAroundTimeUnit";
+        public static final String TURN_AROUNT_TIME = "turnAroundTime";
+        public static final String FOLLOW_UP_ALLOWED_AFTER_TIME_UNIT = "followUpAllowedAfterTimeUnit";
+        public static final String AM_FOLLOW_UP_ALLOWED_AFTER = "followUpAllowedAfter";
+        public static final String AM_FOLLOW_UP_ALLOWED = "followUpAllowed";
+        public static final String PAYMENT_METHOD = "paymentMethod";
+        public static final String SURCHARGE_CURRENCY = "surchargeCurrency";
+        public static final String SURCHARGE_AMOUNT = "surchargeAmount";
+        public static final String FROM_YEAR = "fromYear";
+        public static final String TO_YEAR = "toYear";
+
+        public static final String EQUIFAX_SCHOOL_CODES = "EquifaxSchoolCodes";
+        public static final String EQUIFAX_EDU_CODES = "EquifaxEduCodes";
+        public static final String NSCH_CODES = "NSCHCodes";
+        public static final String TALX_WORK_NUMBER_CODES = "TALXWorkNumber";
+
+        public static final String CODES = "codes";
+        public static final String PROVIDER_LINK = "providerLink";
+        public static final String AS_NAME = "name";
+        public static final String PROVIDER = "provider";
+        public static final String AS_BRANCH = "branch";
+        public static final String BRANCHES = "branches";
+        public static final String COMPANY_NAMES = "companyNames";
+        public static final String NSCH_INST_NAME = "NSCHInstName_";
 
 
 
+    }
 
+    public static class VENDORS {
+        public static final String EQUI_FAX_HS = "Equifax High School";
+        public static final String NSCH = "NSCH";
+        public static final String EQUIFAX_EDU = "Equifax Education";
+        public static final String TALX_WORK_NUMBER = "TALX (The Work Number)";
+        public static final String PARCHMENT_EXCHANGE = "Parchment Exchange";
+    }
 
+    public static class MigrationConstants {
+        public static final String MIGRATION_TYPE_PARCHMENT = "parchment";
+        public static final String SOURCE_TYPE_EDUCATION = "Education";
+        public static final String CURRENCY_USD = "USD";
+        public static final String TIME_UNIT_DAYS = "days";
+        public static final String COUNTRY_USA = "USA";
+        public static final String REGEX_SPECIAL_CHARS = "([\\\\^$.|?*+()\\[\\]{}])";
+        public static final String REGEX_CASE_INSENSITIVE = "i";
+        public static final String REGEX_ANCHOR_START = "^";
+        public static final String REGEX_ANCHOR_END = "$";
+        public static final String FILE_FORMAT_EXCEL_XLSX = ".xlsx";
+        public static final String FILE_FORMAT_EXCEL_XLS = ".xls";
+        public static final long FILE_SIZE_BYTES_PER_MB = 1024L * 1024L;
+        public static final String RESPONSE_STATUS_SUCCESS = "success";
+        public static final String RESPONSE_STATUS_ERROR = "error";
+        public static final String RESPONSE_MESSAGE_FILE_PROCESSED = "File processed successfully";
+        public static final String RESULT_KEY_TOTAL_RECORDS = "totalRecords";
+        public static final String RESULT_KEY_UPDATED_RECORDS = "updatedRecords";
+        public static final String RESULT_KEY_TOTAL_SOURCES_UPDATED = "totalSourcesUpdated";
+        public static final String RESULT_KEY_NOT_FOUND_RECORDS = "notFoundRecords";
+        public static final String RESULT_KEY_NOT_FOUND_INSTITUTIONS = "notFoundInstitutions";
+        public static final String MONGO_FIELD_ID = "_id";
+        public static final String MONGO_FIELD_ORGANIZATION_ALIAS_NAME = "organizationAlias.name";
+        public static final String EMPTY_STRING = "";
+        public static final int PRIORITY_INCREMENT = 1;
+        public static final String ERROR_VENDOR_NOT_FOUND_TEMPLATE = "Vendor '%s' not found in database";
+        public static final String LOG_NOT_FOUND_TEMPLATE = "%s (City: %s, State: %s, Country: %s)";
+        public static final String FIELD_PAYLOAD = "payload";
+        public static final String FIELD_PURPOSE = "purpose";
+        public static final String FIELD_PURPOSE_RULE = "purposeRule";
+        public static final String FIELD_VERSION = "version";
+        public static final String FIELD_SOURCE_TYPE = "sourceType";
+    }
 
+    public static class ExcelParserTypes {
+        public static final String INSTITUTION = "institution";
+        public static final String ALTERNATIVE_INSTITUTION = "alternative_institution";
+        public static final String LICENSE = "license";
+    }
 
-
-
-
-
-
-
+    }
 
 
 
@@ -303,6 +234,7 @@ import java.util.function.Consumer;
 import static com.hireright.sourceintelligence.constants.ApplicationConstants.EDUCATION_COLLECTION_PREFIX;
 import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
 import static com.hireright.sourceintelligence.domain.constants.Constants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.AutoMatchConstants.*;
 import static com.hireright.sourceintelligence.domain.constants.Constants.MigrationConstants.*;
 import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
 
@@ -424,7 +356,7 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
                     .set(FIELD_CITY, source.getCity())
                     .set(FIELD_COUNTRY, source.getCountry())
                     .set(FIELD_STATE, source.getState())
-                    .set("payload", source.getPayload());
+                    .set(FIELD_PAYLOAD, source.getPayload());
             bulkOps.upsert(query, update);
         });
 
@@ -495,45 +427,45 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
 
     @SuppressWarnings("unchecked")
     private List<BasicDBObject> toBasicDBObjectList(Object obj) {
-        if (obj == null) {
-            return new ArrayList<>();
-        }
-        if (obj instanceof List) {
-            List<?> rawList = (List<?>) obj;
-            List<BasicDBObject> result = new ArrayList<>();
-            for (Object item : rawList) {
-                if (item instanceof BasicDBObject) {
-                    result.add((BasicDBObject) item);
-                } else if (item instanceof Map) {
-                    result.add(new BasicDBObject((Map<String, Object>) item));
-                } else {
-                    log.warn("Unexpected item type in list: {}. Skipping.",
-                            item != null ? item.getClass().getName() : "null");
+        return switch (obj) {
+            case null -> new ArrayList<>();
+            case List<?> rawList -> {
+                List<BasicDBObject> result = new ArrayList<>();
+                for (Object item : rawList) {
+                    switch (item) {
+                        case BasicDBObject bdo -> result.add(bdo);
+                        case Map map -> result.add(new BasicDBObject((Map<String, Object>) map));
+                        case null, default -> log.warn("Unexpected item type in list: {}. Skipping.",
+                                item != null ? item.getClass().getName() : "null");
+                    }
                 }
+                yield result;
             }
-            return result;
-        }
-        log.warn("Expected List but got: {}. Returning empty list.",
-                obj.getClass().getName());
-        return new ArrayList<>();
+            default -> {
+                log.warn("Expected List but got: {}. Returning empty list.",
+                        obj.getClass().getName());
+                yield new ArrayList<>();
+            }
+        };
     }
 
     @SuppressWarnings("unchecked")
     private BasicDBObject ensurePayload(Source source) {
         Object payloadObj = source.getPayload();
 
-        if (payloadObj == null) {
-            BasicDBObject payload = new BasicDBObject();
-            source.setPayload(payload);
-            return payload;
-        } else if (payloadObj instanceof BasicDBObject) {
-            return (BasicDBObject) payloadObj;
-        } else if (payloadObj instanceof Map) {
-            return new BasicDBObject((Map<String, Object>) payloadObj);
-        } else {
-            log.warn("Unexpected payload type: {}. Attempting to parse as JSON.", payloadObj.getClass().getName());
-            return BasicDBObject.parse(payloadObj.toString());
-        }
+        return switch (payloadObj) {
+            case null -> {
+                BasicDBObject payload = new BasicDBObject();
+                source.setPayload(payload);
+                yield payload;
+            }
+            case BasicDBObject bdo -> bdo;
+            case Map map -> new BasicDBObject((Map<String, Object>) map);
+            default -> {
+                log.warn("Unexpected payload type: {}. Attempting to parse as JSON.", payloadObj.getClass().getName());
+                yield BasicDBObject.parse(payloadObj.toString());
+            }
+        };
     }
 
     private List<BasicDBObject> ensureContacts(BasicDBObject payload) {
@@ -546,8 +478,8 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
     private BasicDBObject ensureContact(List<BasicDBObject> contacts) {
         if (contacts.isEmpty()) {
             BasicDBObject contact = new BasicDBObject();
-            contact.put("purpose", EMPTY_STRING);
-            contact.put("purposeRule", new ArrayList<>());
+            contact.put(FIELD_PURPOSE, EMPTY_STRING);
+            contact.put(FIELD_PURPOSE_RULE, new ArrayList<>());
             contact.put(CONTACT_DETAILS, new ArrayList<>());
             contacts.add(contact);
             return contact;
@@ -605,7 +537,7 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         contact.put(FOLLOW_UP_ALLOWED, EMPTY_STRING);
         contact.put(TYPE, CONTACT_AUTOMATED_SERVICES);
         contact.put(PRIORITY, priority);
-        contact.put("version", EMPTY_STRING);
+        contact.put(FIELD_VERSION, EMPTY_STRING);
         contact.put(TURN_AROUND_TIME, EMPTY_STRING);
         contact.put(SUR_CHARGE_AMOUNT, EMPTY_STRING);
         contact.put(NAME, EMPTY_STRING);
@@ -613,8 +545,8 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         contact.put(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS);
         contact.put(SUR_CHARGE_CURRENCY, EMPTY_STRING);
         contact.put(COMMUNICATION, new ArrayList<>());
-        contact.put("fromYear", EMPTY_STRING);
-        contact.put("toYear", EMPTY_STRING);
+        contact.put(FROM_YEAR, EMPTY_STRING);
+        contact.put(TO_YEAR, EMPTY_STRING);
         return contact;
     }
 
@@ -675,22 +607,22 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
     private List<BasicDBObject> createCommunicationInfoList(InstitutionRecord institutionRecord, Vendors vendor) {
         List<BasicDBObject> infoList = new ArrayList<>();
 
-        infoList.add(createCommunicationInfo("companyNames", institutionRecord.getInstitutionName()));
+        infoList.add(createCommunicationInfo(COMPANY_NAMES, institutionRecord.getInstitutionName()));
         infoList.add(createCommunicationInfo(CODES, institutionRecord.getCode()));
         infoList.add(createCommunicationInfo(BRANCH, EMPTY_STRING));
         infoList.add(createCommunicationInfo(URI, vendor.getWebsite()));
-        infoList.add(createCommunicationInfo("sourceType", SOURCE_TYPE_EDUCATION));
-        infoList.add(createCommunicationInfo("surChargeAmount", orEmpty(institutionRecord.getSurchargeAmount())));
-        infoList.add(createCommunicationInfo("surChargeCurrency",
+        infoList.add(createCommunicationInfo(FIELD_SOURCE_TYPE, SOURCE_TYPE_EDUCATION));
+        infoList.add(createCommunicationInfo(SURCHARGE_AMOUNT, orEmpty(institutionRecord.getSurchargeAmount())));
+        infoList.add(createCommunicationInfo(SURCHARGE_CURRENCY,
                 COUNTRY_USA.equalsIgnoreCase(institutionRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING));
-        infoList.add(createCommunicationInfo("paymentMethod", orEmpty(institutionRecord.getPaymentMethod())));
+        infoList.add(createCommunicationInfo(PAYMENT_METHOD, orEmpty(institutionRecord.getPaymentMethod())));
         infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED, orEmpty(institutionRecord.getFollowUpAllowed())));
         infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER, EMPTY_STRING));
         infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER_UNITS, TIME_UNIT_DAYS));
         infoList.add(createCommunicationInfo(TURN_AROUND_TIME, orEmpty(institutionRecord.getTurnaroundTime())));
         infoList.add(createCommunicationInfo(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS));
-        infoList.add(createCommunicationInfo("fromYear", EMPTY_STRING));
-        infoList.add(createCommunicationInfo("toYear", EMPTY_STRING));
+        infoList.add(createCommunicationInfo(FROM_YEAR, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(TO_YEAR, EMPTY_STRING));
 
         return infoList;
     }
@@ -711,13 +643,13 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
             return;
         }
 
-        updateInfoValue(communicationInfoList, "companyNames", institutionRecord.getInstitutionName());
+        updateInfoValue(communicationInfoList, COMPANY_NAMES, institutionRecord.getInstitutionName());
         updateInfoValue(communicationInfoList, CODES, institutionRecord.getCode());
         updateInfoValue(communicationInfoList, URI, vendor.getWebsite());
-        updateInfoValue(communicationInfoList, "surChargeAmount", orEmpty(institutionRecord.getSurchargeAmount()));
-        updateInfoValue(communicationInfoList, "surChargeCurrency",
+        updateInfoValue(communicationInfoList, SURCHARGE_AMOUNT, orEmpty(institutionRecord.getSurchargeAmount()));
+        updateInfoValue(communicationInfoList, SURCHARGE_CURRENCY,
                 COUNTRY_USA.equalsIgnoreCase(institutionRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING);
-        updateInfoValue(communicationInfoList, "paymentMethod", orEmpty(institutionRecord.getPaymentMethod()));
+        updateInfoValue(communicationInfoList, PAYMENT_METHOD, orEmpty(institutionRecord.getPaymentMethod()));
         updateInfoValue(communicationInfoList, FOLLOW_UP_ALLOWED, orEmpty(institutionRecord.getFollowUpAllowed()));
         updateInfoValue(communicationInfoList, TURN_AROUND_TIME, orEmpty(institutionRecord.getTurnaroundTime()));
     }
