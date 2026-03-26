@@ -1,3 +1,282 @@
+{
+  "_id": {
+    "$oid": "69a81fba458cd41c3230e3f6"
+  },
+  "hon": "OUEDU-122225-8R688",
+  "organizationName": "(FLETC) Federal Law enforcement training center",
+  "status": "ACTIVE",
+  "version": 1,
+  "organizationType": "EDUCATION",
+  "city": "Artesia",
+  "country": "USA",
+  "state": "New Mexico",
+  "organizationAlias": [],
+  "payload": {
+    "departmentName": "",
+    "website": "",
+    "address": [
+      {
+        "availablePeriod": {
+          "start": "",
+          "end": ""
+        },
+        "city": "Artesia",
+        "countrySubDivisions": [
+          {
+            "type": "Country",
+            "value": "USA"
+          },
+          {
+            "type": "Region",
+            "value": "New Mexico"
+          }
+        ],
+        "line": "",
+        "postalCode": "",
+        "noPhysicalAddress": "false"
+      }
+    ],
+    "notes": "",
+    "contactPersonTitle": "",
+    "infoRequestIDs": [],
+    "addionalInfo": [
+      {
+        "contactPersonName": "",
+        "contactTimeFrom": "",
+        "contactTimeZone": "",
+        "releaseType": "none",
+        "hasChildren": "false",
+        "verificationValidationProcess": "12/22/2025",
+        "contactPersonTitle": "",
+        "doNotContact": "",
+        "contactTimeTo": "",
+        "sourceLanguage": "",
+        "releaseWebAddress": ""
+      }
+    ],
+    "contactPersonName": "",
+    "dotRegulated": true,
+    "lastValidatedDateTime": "",
+    "documentationRequired": true,
+    "unAccreditedSource": true,
+    "lastUsedDateTime": "2026-02-26T11:13:39Z",
+    "contacts": [
+      {
+        "purpose": "",
+        "purposeRule": [
+          {
+            "name": "",
+            "value": ""
+          }
+        ],
+        "contactDetails": [
+          {
+            "followUpAllowed": "false",
+            "type": "contactPhones",
+            "priority": 2,
+            "version": "",
+            "turnAroundTime": "",
+            "name": "",
+            "turnAroundTimeUnit": "days",
+            "followUpAllowedAfter": ""
+          },
+          {
+            "followUpAllowed": "",
+            "type": "contactAutomatedServices",
+            "priority": 1,
+            "version": "",
+            "turnAroundTime": "",
+            "surChargeAmount": "",
+            "name": "",
+            "paymentMethod": "",
+            "turnAroundTimeUnit": "days",
+            "surChargeCurrency": "",
+            "communication": [
+              {
+                "name": "Parchment change",
+                "communicationInfo": [
+                  {
+                    "type": "companyNames",
+                    "value": "(FLETC) Federal Law enforcement training center"
+                  },
+                  {
+                    "type": "codes",
+                    "value": "113"
+                  },
+                  {
+                    "type": "branch",
+                    "value": ""
+                  },
+                  {
+                    "type": "uri",
+                    "value": "https://exchange.parchment.com/u/auth/login"
+                  },
+                  {
+                    "type": "sourceType",
+                    "value": "Education"
+                  },
+                  {
+                    "type": "surChargeAmount",
+                    "value": "111"
+                  },
+                  {
+                    "type": "surChargeCurrency",
+                    "value": "USD"
+                  },
+                  {
+                    "type": "paymentMethod",
+                    "value": "112"
+                  },
+                  {
+                    "type": "followUpAllowed",
+                    "value": "115"
+                  },
+                  {
+                    "type": "followUpAllowedAfter",
+                    "value": ""
+                  },
+                  {
+                    "type": "followUpAllowedAfterTimeUnit",
+                    "value": "days"
+                  },
+                  {
+                    "type": "turnAroundTime",
+                    "value": "114"
+                  },
+                  {
+                    "type": "turnAroundTimeUnit",
+                    "value": "days"
+                  },
+                  {
+                    "type": "fromYear",
+                    "value": ""
+                  },
+                  {
+                    "type": "toYear",
+                    "value": ""
+                  }
+                ],
+                "providerID": "52",
+                "priority": 2
+              },
+              {
+                "name": "Parchment Exchange",
+                "communicationInfo": [
+                  {
+                    "type": "companyNames",
+                    "value": "(FLETC) Federal Law enforcement training center"
+                  },
+                  {
+                    "type": "codes",
+                    "value": "113"
+                  },
+                  {
+                    "type": "branch",
+                    "value": ""
+                  },
+                  {
+                    "type": "uri",
+                    "value": "https://exchange.parchment.com/u/auth/login"
+                  },
+                  {
+                    "type": "sourceType",
+                    "value": "Education"
+                  },
+                  {
+                    "type": "surChargeAmount",
+                    "value": "111"
+                  },
+                  {
+                    "type": "surChargeCurrency",
+                    "value": "USD"
+                  },
+                  {
+                    "type": "paymentMethod",
+                    "value": "112"
+                  },
+                  {
+                    "type": "followUpAllowed",
+                    "value": "115"
+                  },
+                  {
+                    "type": "followUpAllowedAfter",
+                    "value": ""
+                  },
+                  {
+                    "type": "followUpAllowedAfterTimeUnit",
+                    "value": "days"
+                  },
+                  {
+                    "type": "turnAroundTime",
+                    "value": "114"
+                  },
+                  {
+                    "type": "turnAroundTimeUnit",
+                    "value": "days"
+                  },
+                  {
+                    "type": "fromYear",
+                    "value": ""
+                  },
+                  {
+                    "type": "toYear",
+                    "value": ""
+                  }
+                ],
+                "providerID": "52",
+                "priority": 1
+              }
+            ],
+            "fromYear": "",
+            "toYear": ""
+          }
+        ]
+      }
+    ],
+    "usedCount": 2
+  },
+  "approvalStatus": "APPROVED",
+  "postalCode": "",
+  "searchOrg": "(fletc) federal law enforcement training center",
+  "action": "Create",
+  "created_date": {
+    "$date": "2025-12-22T10:43:25.000Z"
+  },
+  "lastModifiedBy": "Nikita Chanchal",
+  "lastModifierId": "",
+  "last_modified_date": {
+    "$date": "2025-12-22T10:43:25.000Z"
+  },
+  "approvedBy": "Nikita Chanchal",
+  "approverId": "",
+  "assignedTo": "Nikita Chanchal",
+  "assignedId": "",
+  "last_approved_date": {
+    "$date": "2025-12-22T10:43:25.000Z"
+  },
+  "_class": "com.hireright.migrationservice.domain.Source",
+  "logFlag": "New Record",
+  "last_action_date": {
+    "$date": "2025-12-22T10:43:25.000Z"
+  },
+  "flagPriority": false
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 package com.hireright.sourceintelligence.service.migration;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
@@ -55,13 +334,12 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
                 String stateFullName = resolveStateName(institutionRecord.getStateCountyRegion());
                 List<Source> matchingSources = findMatchingInstitutions(institutionRecord, stateFullName);
 
-                if (matchingSources != null && !matchingSources.isEmpty()) {
+                if (!CollectionUtils.isEmpty(matchingSources)) {
                     updatedRecords++;
                     totalSourcesUpdated += processMatchingSources(matchingSources, institutionRecord, vendor, sourcesToSaveByCollection);
 
                     if (matchingSources.size() > 1) {
-                        log.info("Multiple matches for '{}': {} institutionRecordList updated",
-                                institutionRecord.getInstitutionName(), matchingSources.size());
+                        log.info("Multiple matches for '{}': {} institutionRecordList updated", institutionRecord.getInstitutionName(), matchingSources.size());
                     }
                 } else {
                     notFoundInstitutions.add(formatNotFoundEntry(institutionRecord, stateFullName));
@@ -80,10 +358,8 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
 
     private Vendors findParchmentVendor() {
         return vendorsRepository.findAll().stream()
-                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor()))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException(
-                        String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
+                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor())).findFirst()
+                .orElseThrow(() -> new RuntimeException(String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
     }
 
     private String resolveStateName(String stateInput) {
@@ -172,8 +448,7 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         Criteria nameCriteria = buildNameCriteria(institutionRecord.getInstitutionName());
 
         Query query = new Query(new Criteria().andOperator(nameCriteria, locationCriteria));
-        List<Source> sources = mongoTemplate.find(query, Source.class, "education_source_parchment_test");
-        //List<Source> sources = mongoTemplate.find(query, Source.class, EDUCATION_COLLECTION_PREFIX + SOURCE_COLLECTION_SUFFIX);
+        List<Source> sources = mongoTemplate.find(query, Source.class, EDUCATION_COLLECTION_PREFIX + SOURCE_COLLECTION_SUFFIX);
 
         if (!CollectionUtils.isEmpty(sources)) {
             log.info("Found {} matches for institution '{}'", sources.size(), institutionRecord.getInstitutionName());
@@ -218,12 +493,6 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         updateParchmentExchangeCommunication(automatedServicesContact, institutionRecord, vendor);
     }
 
-    /**
-     * Safely converts any object to a List of BasicDBObjects.
-     * Handles ArrayList, BasicDBList, and other List implementations from MongoDB.
-     * This is critical for MongoDB Driver 4.x+ compatibility where ArrayList is returned
-     * instead of BasicDBList.
-     */
     @SuppressWarnings("unchecked")
     private List<BasicDBObject> toBasicDBObjectList(Object obj) {
         if (obj == null) {
@@ -236,7 +505,6 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
                 if (item instanceof BasicDBObject) {
                     result.add((BasicDBObject) item);
                 } else if (item instanceof Map) {
-                    // This handles LinkedHashMap and other Map types from MongoDB
                     result.add(new BasicDBObject((Map<String, Object>) item));
                 } else {
                     log.warn("Unexpected item type in list: {}. Skipping.",
@@ -261,11 +529,8 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         } else if (payloadObj instanceof BasicDBObject) {
             return (BasicDBObject) payloadObj;
         } else if (payloadObj instanceof Map) {
-            // Convert Map (including other DBObject implementations) to BasicDBObject
-            // This handles modern MongoDB driver returning LinkedHashMap
             return new BasicDBObject((Map<String, Object>) payloadObj);
         } else {
-            // Fallback: try to parse as JSON string
             log.warn("Unexpected payload type: {}. Attempting to parse as JSON.", payloadObj.getClass().getName());
             return BasicDBObject.parse(payloadObj.toString());
         }
@@ -300,8 +565,6 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
     private BasicDBObject ensureAutomatedServicesContact(List<BasicDBObject> contactDetails) {
         BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
         if (automatedServicesContact == null) {
-            // New automated services contact gets priority 1
-            // Increment all existing contact priorities by 1
             incrementAllPriorities(contactDetails);
             automatedServicesContact = createAutomatedServicesContact(1);
             contactDetails.add(automatedServicesContact);
@@ -309,10 +572,6 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         return automatedServicesContact;
     }
 
-    /**
-     * Increments the priority of all items in the list by 1.
-     * This ensures new items can be inserted at priority 1.
-     */
     private void incrementAllPriorities(List<BasicDBObject> items) {
         for (BasicDBObject item : items) {
             Object priorityObj = item.get(PRIORITY);
@@ -332,15 +591,6 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
 
     private boolean hasType(BasicDBObject cd, String type) {
         return type.equals(cd.get(TYPE));
-    }
-
-    private int getMaxPriority(List<BasicDBObject> contactDetails) {
-        return contactDetails.stream()
-                .map(cd -> cd.get(PRIORITY))
-                .filter(Objects::nonNull)
-                .mapToInt(this::toInt)
-                .max()
-                .orElse(0);
     }
 
     private int toInt(Object priority) {
@@ -373,8 +623,6 @@ public class ParchmentMigrationProcessor implements MigrationProcessor {
         BasicDBObject parchmentComm = findParchmentCommunication(communications);
 
         if (parchmentComm == null) {
-            // New Parchment communication gets priority 1
-            // Increment all existing communication priorities by 1
             incrementAllPriorities(communications);
             parchmentComm = createParchmentExchangeCommunication(institutionRecord, vendor, 1);
             communications.add(parchmentComm);
