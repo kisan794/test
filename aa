@@ -1,488 +1,354 @@
-package com.hireright.sourceintelligence.service.migration;
+package com.hireright.sourceintelligence.service.impl;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.domain.entity.Source;
-import com.hireright.sourceintelligence.domain.entity.Vendors;
-import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
-import com.mongodb.BasicDBObject;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Query;
+import com.hireright.sourceintelligence.service.excel.GenericExcelParser;
+import com.hireright.sourceintelligence.service.excel.mapper.InstitutionRowMapper;
+import com.hireright.sourceintelligence.service.excel.mapping.InstitutionColumnMapping;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.*;
+import java.io.IOException;
+import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ExcelParserService {
 
-@ExtendWith(MockitoExtension.class)
-class ParchmentMigrationProcessorTest {
+    private final GenericExcelParser genericExcelParser;
+    private final InstitutionRowMapper institutionRowMapper;
 
-    @Mock
-    private VendorsRepository vendorsRepository;
-
-    @Mock
-    private MongoTemplate mongoTemplate;
-
-    @InjectMocks
-    private ParchmentMigrationProcessor processor;
-
-    private Vendors parchmentVendor;
-    private List<InstitutionRecord> sampleRecords;
-
-    @BeforeEach
-    void setUp() {
-        parchmentVendor = new Vendors();
-        parchmentVendor.setVendor("Parchment Exchange");
-        parchmentVendor.setProviderId(123);
-        parchmentVendor.setWebsite("https://www.parchment.com");
-
-        sampleRecords = Arrays.asList(
-                InstitutionRecord.builder()
-                        .institutionName("Harvard University")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .serviceProvider("Parchment Exchange")
-                        .surchargeAmount("5.00")
-                        .paymentMethod("Credit Card")
-                        .code("HARV001")
-                        .turnaroundTime("3")
-                        .followUpAllowed("Yes")
-                        .build(),
-                InstitutionRecord.builder()
-                        .institutionName("MIT")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .serviceProvider("Parchment Exchange")
-                        .surchargeAmount("5.00")
-                        .paymentMethod("Credit Card")
-                        .code("MIT001")
-                        .turnaroundTime("3")
-                        .followUpAllowed("Yes")
-                        .build()
+    public List<InstitutionRecord> parseExcelFile(MultipartFile file) throws IOException {
+        return genericExcelParser.parseExcelFile(
+                file,
+                InstitutionColumnMapping.create(),
+                institutionRowMapper
         );
-    }
-
-    @Test
-    void testGetMigrationType() {
-        String migrationType = processor.getMigrationType();
-        assertEquals("parchment", migrationType);
-    }
-
-    @Test
-    void testSupports_Parchment() {
-        boolean supports = processor.supports("parchment");
-        assertTrue(supports);
-    }
-
-    @Test
-    void testSupports_OtherType() {
-        boolean supports = processor.supports("clearinghouse");
-        assertFalse(supports);
-    }
-
-    @Test
-    void testProcessInstitutionRecords_Success() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(2, result.get("updatedRecords"));
-        assertEquals(2, result.get("totalSourcesUpdated"));
-        assertEquals(0, result.get("notFoundRecords"));
-        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
-
-        verify(vendorsRepository).findAll();
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps, times(2)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_InstitutionNotFound() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.emptyList());
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(1, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(1, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("MIT"));
-
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_VendorNotFound() {
-        when(vendorsRepository.findAll()).thenReturn(Collections.emptyList());
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            processor.processInstitutionRecords(sampleRecords);
-        });
-
-        assertTrue(exception.getMessage().contains("Vendor 'Parchment Exchange' not found"));
-        verify(vendorsRepository).findAll();
-        verifyNoInteractions(mongoTemplate);
-    }
-
-    @Test
-    void testProcessInstitutionRecords_EmptyList() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Map<String, Object> result = processor.processInstitutionRecords(Collections.emptyList());
-
-        assertNotNull(result);
-        assertEquals(0, result.get("totalRecords"));
-        assertEquals(0, result.get("updatedRecords"));
-        assertEquals(0, result.get("notFoundRecords"));
-        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
-
-        verify(vendorsRepository).findAll();
-        verifyNoMoreInteractions(mongoTemplate);
-    }
-
-    @Test
-    void testProcessInstitutionRecords_ProcessingError() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenThrow(new RuntimeException("Database connection failed"));
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(0, result.get("updatedRecords"));
-        assertEquals(2, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(2, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("Error"));
-
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate, never()).bulkOps(any(), anyString());
-    }
-
-    @Test
-    void testProcessInstitutionRecords_PartialSuccess() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenThrow(new RuntimeException("Connection timeout"));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(1, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(1, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("MIT"));
-
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_UpdatesPayload() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source = createMockSource("EDU123", "Harvard University");
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        processor.processInstitutionRecords(Collections.singletonList(sampleRecords.get(0)));
-
-        verify(mockBulkOps).upsert(any(Query.class), argThat(update -> {
-            return true;
-        }));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_StateMapping() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        InstitutionRecord recordWithStateAbbr = InstitutionRecord.builder()
-                .institutionName("Test University")
-                .country("USA")
-                .city("Boston")
-                .stateCountyRegion("MA")
-                .build();
-
-        Source source = createMockSource("EDU125", "Test University");
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source));
-
-        Map<String, Object> result = processor.processInstitutionRecords(
-                Collections.singletonList(recordWithStateAbbr)
-        );
-
-        assertEquals(1, result.get("updatedRecords"));
-        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source"));
-    }
-
-    @Test
-    void testProcessInstitutionRecords_BulkSaveOptimization() {
-        List<InstitutionRecord> multipleRecords = Arrays.asList(
-                sampleRecords.get(0),
-                sampleRecords.get(1),
-                InstitutionRecord.builder()
-                        .institutionName("Stanford University")
-                        .country("USA")
-                        .city("Stanford")
-                        .stateCountyRegion("CA")
-                        .build()
-        );
-
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-        Source source3 = createMockSource("EDU125", "Stanford University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2))
-                .thenReturn(Collections.singletonList(source3));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(multipleRecords);
-
-        assertEquals(3, result.get("totalRecords"));
-        assertEquals(3, result.get("updatedRecords"));
-
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps, times(1)).execute();
-        verify(mongoTemplate, never()).save(any(Source.class), anyString());
-    }
-
-    @Test
-    void testProcessInstitutionRecords_BulkSaveFallback() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-        when(mockBulkOps.execute()).thenThrow(new RuntimeException("Bulk operation failed"));
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(2, result.get("updatedRecords"));
-
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).execute();
-
-        verify(mongoTemplate, times(2)).save(any(Source.class), anyString());
-    }
-
-    @Test
-    void testProcessInstitutionRecords_MultipleCollections() {
-        InstitutionRecord record1 = sampleRecords.get(0);
-        InstitutionRecord record2 = sampleRecords.get(1);
-
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(Arrays.asList(record1, record2));
-
-        assertEquals(2, result.get("updatedRecords"));
-
-        verify(mongoTemplate, atLeastOnce()).bulkOps(any(), anyString());
-        verify(mockBulkOps, atLeastOnce()).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_MultipleMatches() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU456", "Harvard University");
-        Source source3 = createMockSource("EDU789", "Harvard University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Arrays.asList(source1, source2, source3));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(
-                Collections.singletonList(sampleRecords.get(0))
-        );
-
-        assertNotNull(result);
-        assertEquals(1, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(3, result.get("totalSourcesUpdated"));
-        assertEquals(0, result.get("notFoundRecords"));
-
-        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_MatchByAlias() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source = createMockSource("EDU123", "Massachusetts Institute of Technology");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(
-                Collections.singletonList(sampleRecords.get(1))
-        );
-
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(0, result.get("notFoundRecords"));
-        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source"));
-    }
-
-    private Source createMockSource(String hon, String organizationName) {
-        Source source = new Source();
-        source.setHon(hon);
-        source.setOrganizationName(organizationName);
-        source.setPayload(new BasicDBObject());
-        return source;
     }
 }
+
+
+package com.hireright.sourceintelligence.service.excel.mapper;
+
+import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.service.excel.ExcelCellReader;
+import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
+import com.hireright.sourceintelligence.service.excel.ExcelRowMapper;
+import org.apache.poi.ss.usermodel.Row;
+import org.springframework.stereotype.Component;
+
+import static com.hireright.sourceintelligence.service.excel.mapping.InstitutionColumnMapping.*;
+
+@Component
+public class InstitutionRowMapper implements ExcelRowMapper<InstitutionRecord> {
+
+    @Override
+    public InstitutionRecord mapRow(Row row, ExcelColumnMapping columnMapping) {
+        return InstitutionRecord.builder()
+                .institutionName(getCellValue(row, columnMapping, INSTITUTION_NAME))
+                .country(getCellValue(row, columnMapping, COUNTRY))
+                .city(getCellValue(row, columnMapping, CITY))
+                .stateCountyRegion(getCellValue(row, columnMapping, STATE_COUNTY_REGION))
+                .serviceProvider(getCellValue(row, columnMapping, SERVICE_PROVIDER))
+                .surchargeAmount(getCellValue(row, columnMapping, SURCHARGE_AMOUNT))
+                .paymentMethod(getCellValue(row, columnMapping, PAYMENT_METHOD))
+                .code(getCellValue(row, columnMapping, CODE))
+                .turnaroundTime(getCellValue(row, columnMapping, TURNAROUND_TIME))
+                .followUpAllowed(getCellValue(row, columnMapping, FOLLOW_UP_ALLOWED))
+                .build();
+    }
+
+    private String getCellValue(Row row, ExcelColumnMapping columnMapping, String fieldName) {
+        Integer columnIndex = columnMapping.getColumnIndex(fieldName);
+        if (columnIndex == null) {
+            return "";
+        }
+        return ExcelCellReader.getCellValue(row, columnIndex);
+    }
+}
+
+
+
+
+
+package com.hireright.sourceintelligence.service.excel.mapping;
+
+import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
+
+public class InstitutionColumnMapping {
+
+    public static final String INSTITUTION_NAME = "institutionName";
+    public static final String COUNTRY = "country";
+    public static final String CITY = "city";
+    public static final String STATE_COUNTY_REGION = "stateCountyRegion";
+    public static final String SERVICE_PROVIDER = "serviceProvider";
+    public static final String SURCHARGE_AMOUNT = "surchargeAmount";
+    public static final String PAYMENT_METHOD = "paymentMethod";
+    public static final String CODE = "code";
+    public static final String TURNAROUND_TIME = "turnaroundTime";
+    public static final String FOLLOW_UP_ALLOWED = "followUpAllowed";
+
+    private static final int COL_INSTITUTION_NAME = 0;
+    private static final int COL_COUNTRY = 1;
+    private static final int COL_CITY = 2;
+    private static final int COL_STATE_COUNTY_REGION = 3;
+    private static final int COL_SERVICE_PROVIDER = 4;
+    private static final int COL_SURCHARGE_AMOUNT = 5;
+    private static final int COL_PAYMENT_METHOD = 6;
+    private static final int COL_CODE = 7;
+    private static final int COL_TURNAROUND_TIME = 8;
+    private static final int COL_FOLLOW_UP_ALLOWED = 9;
+
+    public static ExcelColumnMapping create() {
+        return ExcelColumnMapping.builder()
+                .addColumn(INSTITUTION_NAME, COL_INSTITUTION_NAME)
+                .addColumn(COUNTRY, COL_COUNTRY)
+                .addColumn(CITY, COL_CITY)
+                .addColumn(STATE_COUNTY_REGION, COL_STATE_COUNTY_REGION)
+                .addColumn(SERVICE_PROVIDER, COL_SERVICE_PROVIDER)
+                .addColumn(SURCHARGE_AMOUNT, COL_SURCHARGE_AMOUNT)
+                .addColumn(PAYMENT_METHOD, COL_PAYMENT_METHOD)
+                .addColumn(CODE, COL_CODE)
+                .addColumn(TURNAROUND_TIME, COL_TURNAROUND_TIME)
+                .addColumn(FOLLOW_UP_ALLOWED, COL_FOLLOW_UP_ALLOWED)
+                .headerRowIndex(0)
+                .dataStartRowIndex(1)
+                .sheetIndex(0)
+                .build();
+    }
+}
+
+
+
+package com.hireright.sourceintelligence.service.excel;
+
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.Row;
+
+import static com.hireright.sourceintelligence.domain.constants.Constants.MigrationConstants.EMPTY_STRING;
+
+public class ExcelCellReader {
+
+    public static String getCellValue(Row row, int columnIndex) {
+        if (row == null) {
+            return EMPTY_STRING;
+        }
+        Cell cell = row.getCell(columnIndex);
+        return getCellValueAsString(cell);
+    }
+
+    public static String getCellValueAsString(Cell cell) {
+        if (cell == null) {
+            return EMPTY_STRING;
+        }
+
+        switch (cell.getCellType()) {
+            case STRING:
+                return cell.getStringCellValue().trim();
+            case NUMERIC:
+                return formatNumericCell(cell);
+            case BOOLEAN:
+                return String.valueOf(cell.getBooleanCellValue());
+            case FORMULA:
+                return evaluateFormulaCell(cell);
+            case BLANK:
+                return EMPTY_STRING;
+            default:
+                return EMPTY_STRING;
+        }
+    }
+
+    private static String formatNumericCell(Cell cell) {
+        if (DateUtil.isCellDateFormatted(cell)) {
+            return cell.getDateCellValue().toString();
+        }
+
+        double numericValue = cell.getNumericCellValue();
+        if (numericValue == (long) numericValue) {
+            return String.valueOf((long) numericValue);
+        }
+        return String.valueOf(numericValue);
+    }
+
+    private static String evaluateFormulaCell(Cell cell) {
+        try {
+            return cell.getStringCellValue().trim();
+        } catch (IllegalStateException e) {
+            return cell.getCellFormula();
+        }
+    }
+
+    public static boolean hasContent(Cell cell) {
+        return cell != null
+                && cell.getCellType() != CellType.BLANK
+                && !getCellValueAsString(cell).isEmpty();
+    }
+
+    public static boolean isRowEmpty(Row row) {
+        if (row == null) {
+            return true;
+        }
+
+        int lastCellNum = row.getLastCellNum();
+        if (lastCellNum < 0) {
+            return true;
+        }
+
+        for (int cellIndex = 0; cellIndex < lastCellNum; cellIndex++) {
+            Cell cell = row.getCell(cellIndex);
+            if (hasContent(cell)) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+
+package com.hireright.sourceintelligence.service.excel;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class ExcelColumnMapping {
+
+    private final Map<String, Integer> columnMap;
+    private final int headerRowIndex;
+    private final int dataStartRowIndex;
+    private final int sheetIndex;
+
+    private ExcelColumnMapping(Builder builder) {
+        this.columnMap = new HashMap<>(builder.columnMap);
+        this.headerRowIndex = builder.headerRowIndex;
+        this.dataStartRowIndex = builder.dataStartRowIndex;
+        this.sheetIndex = builder.sheetIndex;
+    }
+
+    public Integer getColumnIndex(String fieldName) {
+        return columnMap.get(fieldName);
+    }
+
+    public int getHeaderRowIndex() {
+        return headerRowIndex;
+    }
+
+    public int getDataStartRowIndex() {
+        return dataStartRowIndex;
+    }
+
+    public int getSheetIndex() {
+        return sheetIndex;
+    }
+
+    public boolean hasColumn(String fieldName) {
+        return columnMap.containsKey(fieldName);
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static class Builder {
+        private final Map<String, Integer> columnMap = new HashMap<>();
+        private int headerRowIndex = 0;
+        private int dataStartRowIndex = 1;
+        private int sheetIndex = 0;
+
+        public Builder addColumn(String fieldName, int columnIndex) {
+            this.columnMap.put(fieldName, columnIndex);
+            return this;
+        }
+
+        public Builder headerRowIndex(int headerRowIndex) {
+            this.headerRowIndex = headerRowIndex;
+            return this;
+        }
+
+        public Builder dataStartRowIndex(int dataStartRowIndex) {
+            this.dataStartRowIndex = dataStartRowIndex;
+            return this;
+        }
+
+        public Builder sheetIndex(int sheetIndex) {
+            this.sheetIndex = sheetIndex;
+            return this;
+        }
+
+        public ExcelColumnMapping build() {
+            return new ExcelColumnMapping(this);
+        }
+    }
+}
+
+
+
+package com.hireright.sourceintelligence.service.excel;
+
+import org.apache.poi.ss.usermodel.Row;
+
+@FunctionalInterface
+public interface ExcelRowMapper<T> {
+    T mapRow(Row row, ExcelColumnMapping columnMapping);
+}
+
+
+
+
+package com.hireright.sourceintelligence.service.excel;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+
+@Slf4j
+@Component
+public class GenericExcelParser {
+
+    public <T> List<T> parseExcelFile(
+            MultipartFile file,
+            ExcelColumnMapping columnMapping,
+            ExcelRowMapper<T> rowMapper) throws IOException {
+
+        List<T> records = new ArrayList<>();
+
+        try (InputStream inputStream = file.getInputStream();
+             Workbook workbook = new XSSFWorkbook(inputStream)) {
+
+            Sheet sheet = workbook.getSheetAt(columnMapping.getSheetIndex());
+            int lastRowNum = sheet.getLastRowNum();
+            int dataStartRow = columnMapping.getDataStartRowIndex();
+
+            for (int rowIndex = dataStartRow; rowIndex <= lastRowNum; rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
+
+                if (ExcelCellReader.isRowEmpty(row)) {
+                    continue;
+                }
+
+                T record = rowMapper.mapRow(row, columnMapping);
+                records.add(record);
+
+                if (log.isDebugEnabled()) {
+                    log.debug("Parsed record at row {}", rowIndex);
+                }
+            }
+        }
+
+        log.info("Successfully parsed {} records from Excel file", records.size());
+        return records;
+    }
+}
+
