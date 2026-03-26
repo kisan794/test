@@ -1,3 +1,454 @@
+package com.hireright.sourceintelligence.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.List;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class MigrationResponseDTO {
+    private String status;
+    private String message;
+    private String migrationType;
+    private String filename;
+    private Integer totalRecords;
+    private Integer updatedRecords;
+    private Integer totalSourcesUpdated;
+    private Integer notFoundRecords;
+    private List<String> notFoundInstitutions;
+    private Integer failedRecords;
+    private List<String> errors;
+    private Long processingTimeMs;
+}
+
+
+
+package com.hireright.sourceintelligence.service.migration;
+
+import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.entity.Vendors;
+import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
+import com.hireright.sourceintelligence.util.Helper;
+import com.hireright.sourceintelligence.util.StateMapper;
+import com.mongodb.BasicDBList;
+import com.mongodb.BasicDBObject;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.MigrationConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.VENDORS.*;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class ParchmentMigrationProcessor implements MigrationProcessor {
+
+    private final VendorsRepository vendorsRepository;
+    private final MongoTemplate mongoTemplate;
+
+    @Override
+    public String getMigrationType() {
+        return MIGRATION_TYPE_PARCHMENT;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> processInstitutionRecords(List<InstitutionRecord> records) {
+        Vendors vendor = findParchmentVendor();
+        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
+        List<String> notFoundInstitutions = new ArrayList<>();
+
+        int updatedRecords = 0;
+        int totalSourcesUpdated = 0;
+
+        for (InstitutionRecord record : records) {
+            try {
+                String stateFullName = resolveStateName(record.getStateCountyRegion());
+                List<Source> matchingSources = findMatchingInstitutions(record, stateFullName);
+
+                if (matchingSources != null && !matchingSources.isEmpty()) {
+                    updatedRecords++;
+                    totalSourcesUpdated += processMatchingSources(matchingSources, record, vendor, sourcesToSaveByCollection);
+
+                    if (matchingSources.size() > 1) {
+                        log.info("Multiple matches for '{}': {} records updated",
+                                record.getInstitutionName(), matchingSources.size());
+                    }
+                } else {
+                    notFoundInstitutions.add(formatNotFoundEntry(record, stateFullName));
+                    log.warn("No match found for: {}", record.getInstitutionName());
+                }
+            } catch (Exception e) {
+                log.error("Error processing record: {}", record.getInstitutionName(), e);
+                notFoundInstitutions.add(record.getInstitutionName() + " (Error: " + e.getMessage() + ")");
+            }
+        }
+
+        performBulkSave(sourcesToSaveByCollection);
+
+        return buildProcessingResult(records.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions);
+    }
+
+    private Vendors findParchmentVendor() {
+        return vendorsRepository.findAll().stream()
+                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException(
+                        String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
+    }
+
+    private String resolveStateName(String stateInput) {
+        String stateFullName = StateMapper.getFullName(stateInput);
+        return stateFullName.isEmpty() && !stateInput.isEmpty() ? stateInput : stateFullName;
+    }
+
+    private int processMatchingSources(List<Source> sources, InstitutionRecord record,
+                                       Vendors vendor, Map<String, List<Source>> sourcesToSaveByCollection) {
+        int count = 0;
+        for (Source source : sources) {
+            updateParchmentExchangeContact(source, record, vendor);
+            String collectionName = Helper.getCollectionName(source.getHon(), SOURCE_COLLECTION_SUFFIX);
+            sourcesToSaveByCollection.computeIfAbsent(collectionName, k -> new ArrayList<>()).add(source);
+            count++;
+        }
+        return count;
+    }
+
+    private String formatNotFoundEntry(InstitutionRecord record, String stateFullName) {
+        return String.format(LOG_NOT_FOUND_TEMPLATE,
+                record.getInstitutionName(), record.getCity(), stateFullName, record.getCountry());
+    }
+
+    private Map<String, Object> buildProcessingResult(int totalRecords, int updatedRecords,
+                                                      int totalSourcesUpdated, List<String> notFoundInstitutions) {
+        Map<String, Object> result = new HashMap<>();
+        result.put(RESULT_KEY_TOTAL_RECORDS, totalRecords);
+        result.put(RESULT_KEY_UPDATED_RECORDS, updatedRecords);
+        result.put(RESULT_KEY_TOTAL_SOURCES_UPDATED, totalSourcesUpdated);
+        result.put(RESULT_KEY_NOT_FOUND_RECORDS, notFoundInstitutions.size());
+        result.put(RESULT_KEY_NOT_FOUND_INSTITUTIONS, notFoundInstitutions);
+
+        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, notFound: {}",
+                totalRecords, updatedRecords, totalSourcesUpdated, notFoundInstitutions.size());
+
+        return result;
+    }
+
+    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
+        sourcesToSaveByCollection.forEach((collectionName, sources) -> {
+            if (!sources.isEmpty()) {
+                log.info("Bulk saving {} sources to collection: {}", sources.size(), collectionName);
+                try {
+                    executeBulkUpdate(collectionName, sources);
+                } catch (Exception e) {
+                    log.error("Bulk save failed for collection: {}, falling back to individual saves", collectionName, e);
+                    fallbackToIndividualSaves(collectionName, sources);
+                }
+            }
+        });
+    }
+
+    private void executeBulkUpdate(String collectionName, List<Source> sources) {
+        BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName);
+
+        sources.forEach(source -> {
+            Query query = new Query(Criteria.where(MONGO_FIELD_ID).is(source.getId()));
+            Update update = new Update()
+                    .set(FIELD_HON, source.getHon())
+                    .set(FIELD_NAME, source.getOrganizationName())
+                    .set(FIELD_CITY, source.getCity())
+                    .set(FIELD_COUNTRY, source.getCountry())
+                    .set(FIELD_STATE, source.getState())
+                    .set("payload", source.getPayload());
+            bulkOps.upsert(query, update);
+        });
+
+        var result = bulkOps.execute();
+        log.info("Bulk save completed - collection: {}, modified: {}, upserted: {}",
+                collectionName, result.getModifiedCount(), result.getUpserts().size());
+    }
+
+    private void fallbackToIndividualSaves(String collectionName, List<Source> sources) {
+        sources.forEach(source -> {
+            try {
+                mongoTemplate.save(source, collectionName);
+            } catch (Exception e) {
+                log.error("Failed to save source: {} (HON: {})", source.getOrganizationName(), source.getHon(), e);
+            }
+        });
+    }
+
+    private List<Source> findMatchingInstitutions(InstitutionRecord record, String stateFullName) {
+        Criteria locationCriteria = buildLocationCriteria(record, stateFullName);
+        Criteria nameCriteria = buildNameCriteria(record.getInstitutionName());
+
+        Query query = new Query(new Criteria().andOperator(nameCriteria, locationCriteria));
+        List<Source> sources = mongoTemplate.find(query, Source.class, EDUCATION_COLLECTION_PREFIX + SOURCE_COLLECTION_SUFFIX);
+
+        if (sources != null && !sources.isEmpty()) {
+            log.info("Found {} match(es) for institution '{}'", sources.size(), record.getInstitutionName());
+        }
+
+        return sources;
+    }
+
+    private Criteria buildLocationCriteria(InstitutionRecord record, String stateFullName) {
+        String cityPattern = buildRegexPattern(record.getCity());
+        String countryPattern = buildRegexPattern(record.getCountry());
+
+        return Criteria.where(FIELD_CITY).regex(cityPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_COUNTRY).regex(countryPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_STATE).is(stateFullName);
+    }
+
+    private Criteria buildNameCriteria(String institutionName) {
+        String namePattern = buildRegexPattern(institutionName);
+
+        return new Criteria().orOperator(
+                Criteria.where(FIELD_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE),
+                Criteria.where(MONGO_FIELD_ORGANIZATION_ALIAS_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE)
+        );
+    }
+
+    private String buildRegexPattern(String value) {
+        return REGEX_ANCHOR_START + escapeRegex(value) + REGEX_ANCHOR_END;
+    }
+
+    private String escapeRegex(String input) {
+        return (input == null || input.isEmpty()) ? input : input.replaceAll(REGEX_SPECIAL_CHARS, "\\\\$1");
+    }
+
+    private void updateParchmentExchangeContact(Source source, InstitutionRecord record, Vendors vendor) {
+        BasicDBObject payload = ensurePayload(source);
+        BasicDBList contacts = ensureContacts(payload);
+        BasicDBObject contact = ensureContact(contacts);
+        BasicDBList contactDetails = ensureContactDetails(contact);
+        BasicDBObject automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
+
+        updateParchmentExchangeCommunication(automatedServicesContact, record, vendor);
+    }
+
+    private BasicDBObject ensurePayload(Source source) {
+        BasicDBObject payload = (BasicDBObject) source.getPayload();
+        if (payload == null) {
+            payload = new BasicDBObject();
+            source.setPayload(payload);
+        }
+        return payload;
+    }
+
+    private BasicDBList ensureContacts(BasicDBObject payload) {
+        BasicDBList contacts = (BasicDBList) payload.get(CONTACTS);
+        if (contacts == null) {
+            contacts = new BasicDBList();
+            payload.put(CONTACTS, contacts);
+        }
+        return contacts;
+    }
+
+    private BasicDBObject ensureContact(BasicDBList contacts) {
+        if (contacts.isEmpty()) {
+            BasicDBObject contact = new BasicDBObject();
+            contact.put("purpose", EMPTY_STRING);
+            contact.put("purposeRule", new BasicDBList());
+            contact.put(CONTACT_DETAILS, new BasicDBList());
+            contacts.add(contact);
+            return contact;
+        }
+        return (BasicDBObject) contacts.get(0);
+    }
+
+    private BasicDBList ensureContactDetails(BasicDBObject contact) {
+        BasicDBList contactDetails = (BasicDBList) contact.get(CONTACT_DETAILS);
+        if (contactDetails == null) {
+            contactDetails = new BasicDBList();
+            contact.put(CONTACT_DETAILS, contactDetails);
+        }
+        return contactDetails;
+    }
+
+    private BasicDBObject ensureAutomatedServicesContact(BasicDBList contactDetails) {
+        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
+        if (automatedServicesContact == null) {
+            int newPriority = getMaxPriority(contactDetails) + PRIORITY_INCREMENT;
+            automatedServicesContact = createAutomatedServicesContact(newPriority);
+            contactDetails.add(automatedServicesContact);
+        }
+        return automatedServicesContact;
+    }
+
+    private BasicDBObject findContactDetailByType(BasicDBList contactDetails, String type) {
+        return contactDetails.stream()
+                .map(obj -> (BasicDBObject) obj)
+                .filter(cd -> type.equals(cd.get(TYPE)))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private int getMaxPriority(BasicDBList contactDetails) {
+        return contactDetails.stream()
+                .map(obj -> (BasicDBObject) obj)
+                .map(cd -> cd.get(PRIORITY))
+                .filter(Objects::nonNull)
+                .mapToInt(priority -> priority instanceof Integer ? (Integer) priority : Integer.parseInt(priority.toString()))
+                .max()
+                .orElse(0);
+    }
+
+    private BasicDBObject createAutomatedServicesContact(int priority) {
+        BasicDBObject contact = new BasicDBObject();
+        contact.put(FOLLOW_UP_ALLOWED, EMPTY_STRING);
+        contact.put(TYPE, CONTACT_AUTOMATED_SERVICES);
+        contact.put(PRIORITY, priority);
+        contact.put("version", EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_AMOUNT, EMPTY_STRING);
+        contact.put(NAME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_PAYMENT, EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS);
+        contact.put(SUR_CHARGE_CURRENCY, EMPTY_STRING);
+        contact.put(COMMUNICATION, new BasicDBList());
+        contact.put("fromYear", EMPTY_STRING);
+        contact.put("toYear", EMPTY_STRING);
+        return contact;
+    }
+
+    private void updateParchmentExchangeCommunication(BasicDBObject contactDetail, InstitutionRecord record, Vendors vendor) {
+        BasicDBList communications = ensureCommunications(contactDetail);
+        BasicDBObject parchmentComm = findParchmentCommunication(communications);
+
+        if (parchmentComm == null) {
+            int newPriority = getMaxPriority(communications) + PRIORITY_INCREMENT;
+            parchmentComm = createParchmentExchangeCommunication(record, vendor, newPriority);
+            communications.add(parchmentComm);
+        } else {
+            updateCommunicationInfo((BasicDBList) parchmentComm.get(COMMUNICATION_INFO), record, vendor);
+            updateProviderName(parchmentComm, record);
+        }
+    }
+
+    private BasicDBList ensureCommunications(BasicDBObject contactDetail) {
+        BasicDBList communications = (BasicDBList) contactDetail.get(COMMUNICATION);
+        if (communications == null) {
+            communications = new BasicDBList();
+            contactDetail.put(COMMUNICATION, communications);
+        }
+        return communications;
+    }
+
+    private BasicDBObject findParchmentCommunication(BasicDBList communications) {
+        return communications.stream()
+                .map(obj -> (BasicDBObject) obj)
+                .filter(comm -> PARCHMENT_EXCHANGE.equals(comm.get(NAME)))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void updateProviderName(BasicDBObject parchmentComm, InstitutionRecord record) {
+        if (record.getServiceProvider() != null && !record.getServiceProvider().isEmpty()) {
+            parchmentComm.put(NAME, record.getServiceProvider());
+        }
+    }
+
+    private BasicDBObject createParchmentExchangeCommunication(InstitutionRecord record, Vendors vendor, int priority) {
+        String providerName = Optional.ofNullable(record.getServiceProvider())
+                .filter(sp -> !sp.isEmpty())
+                .orElse(PARCHMENT_EXCHANGE);
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put(NAME, providerName);
+        communication.put(COMMUNICATION_INFO, createCommunicationInfoList(record, vendor));
+        communication.put(PROVIDER_ID, String.valueOf(vendor.getProviderId()));
+        communication.put(PRIORITY, priority);
+
+        return communication;
+    }
+
+    private BasicDBList createCommunicationInfoList(InstitutionRecord record, Vendors vendor) {
+        BasicDBList infoList = new BasicDBList();
+
+        infoList.add(createCommunicationInfo("companyNames", record.getInstitutionName()));
+        infoList.add(createCommunicationInfo(CODES, record.getCode()));
+        infoList.add(createCommunicationInfo(BRANCH, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(URI, vendor.getWebsite()));
+        infoList.add(createCommunicationInfo("sourceType", SOURCE_TYPE_EDUCATION));
+        infoList.add(createCommunicationInfo("surChargeAmount", orEmpty(record.getSurchargeAmount())));
+        infoList.add(createCommunicationInfo("surChargeCurrency",
+                COUNTRY_USA.equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : EMPTY_STRING));
+        infoList.add(createCommunicationInfo("paymentMethod", orEmpty(record.getPaymentMethod())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED, orEmpty(record.getFollowUpAllowed())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER_UNITS, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME, orEmpty(record.getTurnaroundTime())));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo("fromYear", EMPTY_STRING));
+        infoList.add(createCommunicationInfo("toYear", EMPTY_STRING));
+
+        return infoList;
+    }
+
+    private String orEmpty(String value) {
+        return value != null ? value : EMPTY_STRING;
+    }
+
+    private BasicDBObject createCommunicationInfo(String type, String value) {
+        BasicDBObject info = new BasicDBObject();
+        info.put(TYPE, type);
+        info.put(VALUE, orEmpty(value));
+        return info;
+    }
+
+    private void updateCommunicationInfo(BasicDBList communicationInfoList, InstitutionRecord record, Vendors vendor) {
+        if (communicationInfoList == null) {
+            return;
+        }
+
+        updateInfoValue(communicationInfoList, "companyNames", record.getInstitutionName());
+        updateInfoValue(communicationInfoList, CODES, record.getCode());
+        updateInfoValue(communicationInfoList, URI, vendor.getWebsite());
+        updateInfoValue(communicationInfoList, "surChargeAmount", orEmpty(record.getSurchargeAmount()));
+        updateInfoValue(communicationInfoList, "surChargeCurrency",
+                COUNTRY_USA.equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : EMPTY_STRING);
+        updateInfoValue(communicationInfoList, "paymentMethod", orEmpty(record.getPaymentMethod()));
+        updateInfoValue(communicationInfoList, FOLLOW_UP_ALLOWED, orEmpty(record.getFollowUpAllowed()));
+        updateInfoValue(communicationInfoList, TURN_AROUND_TIME, orEmpty(record.getTurnaroundTime()));
+    }
+
+    private void updateInfoValue(BasicDBList communicationInfoList, String type, String value) {
+        communicationInfoList.stream()
+                .map(obj -> (BasicDBObject) obj)
+                .filter(info -> type.equals(info.get(TYPE)))
+                .findFirst()
+                .ifPresent(info -> info.put(VALUE, orEmpty(value)));
+    }
+}
+
+
+
+
+
+
+
 package com.hireright.sourceintelligence.api.v1;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
@@ -16,6 +467,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.MigrationConstants.*;
 import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowInvalidRequest;
 
 @Slf4j
@@ -24,10 +476,6 @@ import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrow
 @Validated
 @CrossOrigin
 public class DataMigrationApiController implements DataMigrationApi {
-
-    private static final long BYTES_PER_MB = 1024L * 1024L;
-    private static final String EXCEL_EXTENSION_XLSX = ".xlsx";
-    private static final String EXCEL_EXTENSION_XLS = ".xls";
 
     private final ExcelParserService excelParserService;
     private final MigrationService migrationService;
@@ -76,11 +524,11 @@ public class DataMigrationApiController implements DataMigrationApi {
             logAndThrowInvalidRequest(MIGRATION_FILE_EMPTY, null);
         }
 
-        if (file.getSize() / BYTES_PER_MB > maxFileSizeMb) {
+        if (file.getSize() / FILE_SIZE_BYTES_PER_MB > maxFileSizeMb) {
             logAndThrowInvalidRequest(MIGRATION_FILE_TOO_LARGE, null, maxFileSizeMb);
         }
 
-        if (filename == null || (!filename.endsWith(EXCEL_EXTENSION_XLSX) && !filename.endsWith(EXCEL_EXTENSION_XLS))) {
+        if (filename == null || (!filename.endsWith(FILE_FORMAT_EXCEL_XLSX) && !filename.endsWith(FILE_FORMAT_EXCEL_XLS))) {
             logAndThrowInvalidRequest(MIGRATION_FILE_INVALID_FORMAT, null);
         }
     }
@@ -114,15 +562,15 @@ public class DataMigrationApiController implements DataMigrationApi {
             long processingTime) {
 
         return MigrationResponseDTO.builder()
-                .status("success")
-                .message("File processed successfully")
+                .status(RESPONSE_STATUS_SUCCESS)
+                .message(RESPONSE_MESSAGE_FILE_PROCESSED)
                 .migrationType(migrationType)
                 .filename(filename)
-                .totalRecords((Integer) processingResult.get("totalRecords"))
-                .updatedRecords((Integer) processingResult.get("updatedRecords"))
-                .totalSourcesUpdated((Integer) processingResult.get("totalSourcesUpdated"))
-                .notFoundRecords((Integer) processingResult.get("notFoundRecords"))
-                .notFoundInstitutions((List<String>) processingResult.get("notFoundInstitutions"))
+                .totalRecords((Integer) processingResult.get(RESULT_KEY_TOTAL_RECORDS))
+                .updatedRecords((Integer) processingResult.get(RESULT_KEY_UPDATED_RECORDS))
+                .totalSourcesUpdated((Integer) processingResult.get(RESULT_KEY_TOTAL_SOURCES_UPDATED))
+                .notFoundRecords((Integer) processingResult.get(RESULT_KEY_NOT_FOUND_RECORDS))
+                .notFoundInstitutions((List<String>) processingResult.get(RESULT_KEY_NOT_FOUND_INSTITUTIONS))
                 .processingTimeMs(processingTime)
                 .build();
     }
@@ -130,908 +578,202 @@ public class DataMigrationApiController implements DataMigrationApi {
 
 
 
-package com.hireright.sourceintelligence.service.migration;
 
-import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.domain.entity.Source;
-import com.hireright.sourceintelligence.domain.entity.Vendors;
-import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
-import com.hireright.sourceintelligence.util.Helper;
-import com.hireright.sourceintelligence.util.StateMapper;
-import com.mongodb.BasicDBList;
-import com.mongodb.BasicDBObject;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.BulkOperations;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
-import java.util.stream.Collectors;
+package com.hireright.sourceintelligence.domain.constants;
 
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
+public class Constants {
 
-@Slf4j
-@Component
-@RequiredArgsConstructor
-public class ParchmentMigrationProcessor implements MigrationProcessor {
+    private Constants() {
 
-    private static final String MIGRATION_TYPE = "parchment";
-    private static final String PARCHMENT_EXCHANGE = "Parchment Exchange";
-    private static final String CONTACT_TYPE_AUTOMATED_SERVICES = "contactAutomatedServices";
-    private static final String SOURCE_TYPE_EDUCATION = "Education";
-    private static final String CURRENCY_USD = "USD";
-    private static final String TIME_UNIT_DAYS = "days";
-    private static final String COLLECTION_EDUCATION_SOURCE = "education_source";
-    private static final String REGEX_SPECIAL_CHARS = "([\\\\^$.|?*+()\\[\\]{}])";
-    private static final String COUNTRY_USA = "USA";
+    }
+    public static final String SOURCE_ORGANIZATION_COLLECTION = "source_intelligence";
 
-    private final VendorsRepository vendorsRepository;
-    private final MongoTemplate mongoTemplate;
+    public static final String FIELD_ID = "id";
+    public static final String FIELD_HON = "hon";
+    public static final String FIELD_LOCATION = "location";
+    public static final String FIELD_VERSION = "version";
+    public static final String FIELD_STATUS = "status";
+    public static final String FIELD_NAME = "organizationName";
+    public static final String FIELD_APPROVAL_STATUS = "approvalStatus";
+    public static final String FIELD_REQUESTED_BY = "requestedBy";
+    public static final String FIELD_LAST_MODIFIED_DATE = "lastModifiedDate";
+    public static final String FIELD_LAST_ACTION_DATE = "last_action_date";
 
-    @Override
-    public String getMigrationType() {
-        return MIGRATION_TYPE;
+    public static final String FIELD_TYPE = "organizationType";
+    public static final String FIELD_ALIAS = "organizationAlias";
+    public static final String FIELD_USED_COUNT = "payload.usedCount";
+    public static final String FIELD_ADDESS_LINE = "payload.address.line";
+    public static final String FIELD_DEPT_NAME = "payload.departmentName";
+    public static final String FIELD_DEPT_ALIAS = "payload.departmentAliases";
+    public static final String FIELD_CITY = "city";
+    public static final String FIELD_STATE = "state";
+    public static final String FIELD_COUNTRY = "country";
+    public static final String FIELD_OUT_OF_BUSINESS = "outOfBusiness";
+    public static final String FIELD_REVIEW_REQUIRED = "reviewRequired";
+    public static final String FIELD_LAST_CLEAN_UP_DATE = "payload.lastCleanUpDate";
+
+    public static final String COLLATION_LANG = "en_US";
+
+    public static class SmartSearchKeys {
+
+        public static final String HON = "hon";
+        public static final String DOT_REGULATED = "dotRegulated";
+        public static final String RECEIPT = "receipt";
+        public static final String DEPARTMENT = "department";
+        public static final String DEPARTMENT_NAME = "departmentName";
+        public static final String DEPARTMENT_ALIASES = "departmentAliases";
+        public static final String CONTACTS = "contacts";
+        public static final String TURN_AROUND_TIME = "turnAroundTime";
+        public static final String SUR_CHARGE_AMOUNT = "surChargeAmount";
+        public static final String SUR_CHARGE_CURRENCY = "surChargeCurrency";
+        public static final String SUR_CHARGE_PAYMENT = "paymentMethod";
+        public static final String COMMUNICATION = "communication";
+        public static final String COMMUNICATION_INFO = "communicationInfo";
+        public static final String TURN_AROUND_TIME_UNIT = "turnAroundTimeUnit";
+        public static final String FOLLOW_UP_ALLOWED = "followUpAllowed";
+        public static final String FOLLOW_UP_ALLOWED_AFTER = "followUpAllowedAfter";
+        public static final String FOLLOW_UP_ALLOWED_AFTER_UNITS = "followUpAllowedAfterTimeUnit";
+
+        public static final String TYPE = "type";
+        public static final String VALUE = "value";
+        public static final String CONTACT_PHONES = "contactPhones";
+        public static final String CONTACT_FAXES = "contactFaxes";
+        public static final String CONTACT_EMAILS = "contactEmails";
+        public static final String CONTACT_AUTOMATED_SERVICES = "contactAutomatedServices";
+        public static final String CONTACT_MAILS = "contactMails";
+        public static final String CONTACT_WEBSITES = "contactWebsites";
+        public static final String TYPE_PHONES="Phones";
+        public static final String TYPE_FAXES="Faxes";
+        public static final String TYPE_EMAILS="Emails";
+        public static final String TYPE_AUTOMATED_SERVICES="AutomatedServices";
+        public static final String TYPE_MAILS="Mails";
+        public static final String TYPE_WEBSITES="Websites";
+        public static final String COUNTRY_CODE = "countryCode";
+        public static final String PHONE_COUNTRY_CODE = "phoneCountryCode";
+        public static final String AREA_CODE = "areaCode";
+        public static final String PHONE_NUMBER = "phoneNumber";
+        public static final String EXTENSION = "extension";
+        public static final String ADDRESS = "address";
+        public static final String POSTAL_CODE = "postalCode";
+        public static final String COUNTRY_NAME = "countryName";
+        public static final String REGION = "region";
+        public static final String CITY = "city";
+        public static final String URI = "uri";
+        public static final String CODES = "codes";
+        public static final String BRANCH = "branch";
+
+        public static final String ADDRESSES = "addresses";
+        public static final String CONTACT_DETAILS = "contactDetails";
+        public static final String RELATIONSHIPS = "relationships";
+        public static final String RELATIONSHIP = "relationship";
+        public static final String NAME = "name";
+        public static final String PROVIDER_ID = "providerID";
+        public static final String PARENT_HON = "HON";
+        public static final String LINE = "line";
+        public static final String USED_COUNT = "usedCount";
+        public static final String WEBSITE = "website";
+        public static final String NOTES = "notes";
+        public static final String ADDITIONAL_INFO = "addionalInfo";
+        public static final String DO_NOT_CONTACT = "doNotContact";
+        public static final String PRIORITY = "priority";
+
+        public static final String LAST_APPROVED_DATETIME = "lastApprovedDateTime";
+        public static final String LAST_USED_DATETIME = "lastUsedDateTime";
+        public static final String LAST_CLEANUP_DATE = "lastCleanUpDate";
+
+        public static final String ADDRESS_LINE = "address.line";
+
+        public static final String CONTACT_PERSON_NAME = "contactPersonName";
+        public static final String CONTACT_PERSON_TITLE = "contactPersonTitle";
+        public static final String CONTACT_TIME_FROM = "contactTimeFrom";
+        public static final String CONTACT_TIME_TO = "contactTimeTo";
+        public static final String CONTACT_TIME_ZONE = "contactTimeZone";
+        public static final String RELEASE_TYPE = "releaseType";
+        public static final String SOURCE_LANGUAGE = "sourceLanguage";
+
+
+        public static final int DEFAULT_PROVIDER = 999;
+    }
+    public static class RelationShipConstants {
+        public static final String PARENT = "PARENT";
+        public static final String CHILD = "CHILD";
+        public static final String FRANCHISE = "FRANCHISE";
+
+        public static final String EDU_PARENT = "Parent / Main Campus";
+        public static final String CORPORATE_PARENT = "Corporate Parent";
+        public static final String CHILD_OPTION_ONE = "child / affiliated / branch school";
+
+
     }
 
-    @Override
-    @Transactional
-    public Map<String, Object> processInstitutionRecords(List<InstitutionRecord> records) {
-        Vendors vendor = findParchmentVendor();
-        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
-        List<String> notFoundInstitutions = new ArrayList<>();
+    public static class AutoMatchConstants {
+        public static final String EQUI_FAX_HS_DATE_RANGE = "EquifaxHighSchoolDateRange";
+        public static final String TURN_AROUNT_TIME_UNIT = "turnAroundTimeUnit";
+        public static final String TURN_AROUNT_TIME = "turnAroundTime";
+        public static final String FOLLOW_UP_ALLOWED_AFTER_TIME_UNIT = "followUpAllowedAfterTimeUnit";
+        public static final String AM_FOLLOW_UP_ALLOWED_AFTER = "followUpAllowedAfter";
+        public static final String AM_FOLLOW_UP_ALLOWED = "followUpAllowed";
+        public static final String PAYMENT_METHOD = "paymentMethod";
+        public static final String SURCHARGE_CURRENCY = "surchargeCurrency";
+        public static final String SURCHARGE_AMOUNT = "surchargeAmount";
+        public static final String FROM_YEAR = "fromYear";
+        public static final String TO_YEAR = "toYear";
 
-        int updatedRecords = 0;
-        int totalSourcesUpdated = 0;
+        public static final String EQUIFAX_SCHOOL_CODES = "EquifaxSchoolCodes";
+        public static final String EQUIFAX_EDU_CODES = "EquifaxEduCodes";
+        public static final String NSCH_CODES = "NSCHCodes";
+        public static final String TALX_WORK_NUMBER_CODES = "TALXWorkNumber";
 
-        for (InstitutionRecord record : records) {
-            try {
-                String stateFullName = resolveStateName(record.getStateCountyRegion());
-                List<Source> matchingSources = findMatchingInstitutions(record, stateFullName);
+        public static final String CODES = "codes";
+        public static final String PROVIDER_LINK = "providerLink";
+        public static final String AS_NAME = "name";
+        public static final String PROVIDER = "provider";
+        public static final String AS_BRANCH = "branch";
+        public static final String BRANCHES = "branches";
+        public static final String COMPANY_NAMES = "companyNames";
+        public static final String NSCH_INST_NAME = "NSCHInstName_";
 
-                if (matchingSources != null && !matchingSources.isEmpty()) {
-                    updatedRecords++;
-                    totalSourcesUpdated += processMatchingSources(matchingSources, record, vendor, sourcesToSaveByCollection);
 
-                    if (matchingSources.size() > 1) {
-                        log.info("Multiple matches for '{}': {} records updated",
-                                record.getInstitutionName(), matchingSources.size());
-                    }
-                } else {
-                    notFoundInstitutions.add(formatNotFoundEntry(record, stateFullName));
-                    log.warn("No match found for: {}", record.getInstitutionName());
-                }
-            } catch (Exception e) {
-                log.error("Error processing record: {}", record.getInstitutionName(), e);
-                notFoundInstitutions.add(record.getInstitutionName() + " (Error: " + e.getMessage() + ")");
-            }
-        }
 
-        performBulkSave(sourcesToSaveByCollection);
-
-        return buildProcessingResult(records.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions);
     }
 
-    private Vendors findParchmentVendor() {
-        return vendorsRepository.findAll().stream()
-                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor()))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Vendor 'Parchment Exchange' not found in database"));
+    public static class VENDORS {
+        public static final String EQUI_FAX_HS = "Equifax High School";
+        public static final String NSCH = "NSCH";
+        public static final String EQUIFAX_EDU = "Equifax Education";
+        public static final String TALX_WORK_NUMBER = "TALX (The Work Number)";
+        public static final String PARCHMENT_EXCHANGE = "Parchment Exchange";
     }
 
-    private String resolveStateName(String stateInput) {
-        String stateFullName = StateMapper.getFullName(stateInput);
-        return stateFullName.isEmpty() && !stateInput.isEmpty() ? stateInput : stateFullName;
+    public static class MigrationConstants {
+        public static final String MIGRATION_TYPE_PARCHMENT = "parchment";
+        public static final String SOURCE_TYPE_EDUCATION = "Education";
+        public static final String CURRENCY_USD = "USD";
+        public static final String TIME_UNIT_DAYS = "days";
+        public static final String COUNTRY_USA = "USA";
+        public static final String REGEX_SPECIAL_CHARS = "([\\\\^$.|?*+()\\[\\]{}])";
+        public static final String REGEX_CASE_INSENSITIVE = "i";
+        public static final String REGEX_ANCHOR_START = "^";
+        public static final String REGEX_ANCHOR_END = "$";
+        public static final String FILE_FORMAT_EXCEL_XLSX = ".xlsx";
+        public static final String FILE_FORMAT_EXCEL_XLS = ".xls";
+        public static final long FILE_SIZE_BYTES_PER_MB = 1024L * 1024L;
+        public static final String RESPONSE_STATUS_SUCCESS = "success";
+        public static final String RESPONSE_STATUS_ERROR = "error";
+        public static final String RESPONSE_MESSAGE_FILE_PROCESSED = "File processed successfully";
+        public static final String RESULT_KEY_TOTAL_RECORDS = "totalRecords";
+        public static final String RESULT_KEY_UPDATED_RECORDS = "updatedRecords";
+        public static final String RESULT_KEY_TOTAL_SOURCES_UPDATED = "totalSourcesUpdated";
+        public static final String RESULT_KEY_NOT_FOUND_RECORDS = "notFoundRecords";
+        public static final String RESULT_KEY_NOT_FOUND_INSTITUTIONS = "notFoundInstitutions";
+        public static final String MONGO_FIELD_ID = "_id";
+        public static final String MONGO_FIELD_ORGANIZATION_ALIAS_NAME = "organizationAlias.name";
+        public static final String EMPTY_STRING = "";
+        public static final int PRIORITY_INCREMENT = 1;
+        public static final String ERROR_VENDOR_NOT_FOUND_TEMPLATE = "Vendor '%s' not found in database";
+        public static final String LOG_NOT_FOUND_TEMPLATE = "%s (City: %s, State: %s, Country: %s)";
     }
 
-    private int processMatchingSources(List<Source> sources, InstitutionRecord record,
-                                       Vendors vendor, Map<String, List<Source>> sourcesToSaveByCollection) {
-        int count = 0;
-        for (Source source : sources) {
-            updateParchmentExchangeContact(source, record, vendor);
-            String collectionName = Helper.getCollectionName(source.getHon(), SOURCE_COLLECTION_SUFFIX);
-            sourcesToSaveByCollection.computeIfAbsent(collectionName, k -> new ArrayList<>()).add(source);
-            count++;
-        }
-        return count;
     }
 
-    private String formatNotFoundEntry(InstitutionRecord record, String stateFullName) {
-        return String.format("%s (City: %s, State: %s, Country: %s)",
-                record.getInstitutionName(), record.getCity(), stateFullName, record.getCountry());
-    }
-
-    private Map<String, Object> buildProcessingResult(int totalRecords, int updatedRecords,
-                                                      int totalSourcesUpdated, List<String> notFoundInstitutions) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("totalRecords", totalRecords);
-        result.put("updatedRecords", updatedRecords);
-        result.put("totalSourcesUpdated", totalSourcesUpdated);
-        result.put("notFoundRecords", notFoundInstitutions.size());
-        result.put("notFoundInstitutions", notFoundInstitutions);
-
-        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, notFound: {}",
-                totalRecords, updatedRecords, totalSourcesUpdated, notFoundInstitutions.size());
-
-        return result;
-    }
-
-    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
-        sourcesToSaveByCollection.forEach((collectionName, sources) -> {
-            if (!sources.isEmpty()) {
-                log.info("Bulk saving {} sources to collection: {}", sources.size(), collectionName);
-                try {
-                    executeBulkUpdate(collectionName, sources);
-                } catch (Exception e) {
-                    log.error("Bulk save failed for collection: {}, falling back to individual saves", collectionName, e);
-                    fallbackToIndividualSaves(collectionName, sources);
-                }
-            }
-        });
-    }
-
-    private void executeBulkUpdate(String collectionName, List<Source> sources) {
-        BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName);
-
-        sources.forEach(source -> {
-            Query query = new Query(Criteria.where("_id").is(source.getId()));
-            Update update = new Update()
-                    .set("hon", source.getHon())
-                    .set("organizationName", source.getOrganizationName())
-                    .set("city", source.getCity())
-                    .set("country", source.getCountry())
-                    .set("state", source.getState())
-                    .set("payload", source.getPayload());
-            bulkOps.upsert(query, update);
-        });
-
-        var result = bulkOps.execute();
-        log.info("Bulk save completed - collection: {}, modified: {}, upserted: {}",
-                collectionName, result.getModifiedCount(), result.getUpserts().size());
-    }
-
-    private void fallbackToIndividualSaves(String collectionName, List<Source> sources) {
-        sources.forEach(source -> {
-            try {
-                mongoTemplate.save(source, collectionName);
-            } catch (Exception e) {
-                log.error("Failed to save source: {} (HON: {})", source.getOrganizationName(), source.getHon(), e);
-            }
-        });
-    }
-
-    private List<Source> findMatchingInstitutions(InstitutionRecord record, String stateFullName) {
-        Criteria locationCriteria = buildLocationCriteria(record, stateFullName);
-        Criteria nameCriteria = buildNameCriteria(record.getInstitutionName());
-
-        Query query = new Query(new Criteria().andOperator(nameCriteria, locationCriteria));
-        List<Source> sources = mongoTemplate.find(query, Source.class, COLLECTION_EDUCATION_SOURCE);
-
-        if (sources != null && !sources.isEmpty()) {
-            log.info("Found {} match(es) for institution '{}'", sources.size(), record.getInstitutionName());
-        }
-
-        return sources;
-    }
-
-    private Criteria buildLocationCriteria(InstitutionRecord record, String stateFullName) {
-        return Criteria.where("city").regex("^" + escapeRegex(record.getCity()) + "$", "i")
-                .and("country").regex("^" + escapeRegex(record.getCountry()) + "$", "i")
-                .and("state").is(stateFullName);
-    }
-
-    private Criteria buildNameCriteria(String institutionName) {
-        return new Criteria().orOperator(
-                Criteria.where("organizationName").regex("^" + escapeRegex(institutionName) + "$", "i"),
-                Criteria.where("organizationAlias.name").regex("^" + escapeRegex(institutionName) + "$", "i")
-        );
-    }
-
-    private String escapeRegex(String input) {
-        return (input == null || input.isEmpty()) ? input : input.replaceAll(REGEX_SPECIAL_CHARS, "\\\\$1");
-    }
-
-    private void updateParchmentExchangeContact(Source source, InstitutionRecord record, Vendors vendor) {
-        BasicDBObject payload = ensurePayload(source);
-        BasicDBList contacts = ensureContacts(payload);
-        BasicDBObject contact = ensureContact(contacts);
-        BasicDBList contactDetails = ensureContactDetails(contact);
-        BasicDBObject automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
-
-        updateParchmentExchangeCommunication(automatedServicesContact, record, vendor);
-    }
-
-    private BasicDBObject ensurePayload(Source source) {
-        BasicDBObject payload = (BasicDBObject) source.getPayload();
-        if (payload == null) {
-            payload = new BasicDBObject();
-            source.setPayload(payload);
-        }
-        return payload;
-    }
-
-    private BasicDBList ensureContacts(BasicDBObject payload) {
-        BasicDBList contacts = (BasicDBList) payload.get("contacts");
-        if (contacts == null) {
-            contacts = new BasicDBList();
-            payload.put("contacts", contacts);
-        }
-        return contacts;
-    }
-
-    private BasicDBObject ensureContact(BasicDBList contacts) {
-        if (contacts.isEmpty()) {
-            BasicDBObject contact = new BasicDBObject();
-            contact.put("purpose", "");
-            contact.put("purposeRule", new BasicDBList());
-            contact.put("contactDetails", new BasicDBList());
-            contacts.add(contact);
-            return contact;
-        }
-        return (BasicDBObject) contacts.get(0);
-    }
-
-    private BasicDBList ensureContactDetails(BasicDBObject contact) {
-        BasicDBList contactDetails = (BasicDBList) contact.get("contactDetails");
-        if (contactDetails == null) {
-            contactDetails = new BasicDBList();
-            contact.put("contactDetails", contactDetails);
-        }
-        return contactDetails;
-    }
-
-    private BasicDBObject ensureAutomatedServicesContact(BasicDBList contactDetails) {
-        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_TYPE_AUTOMATED_SERVICES);
-        if (automatedServicesContact == null) {
-            int newPriority = getMaxPriority(contactDetails) + 1;
-            automatedServicesContact = createAutomatedServicesContact(newPriority);
-            contactDetails.add(automatedServicesContact);
-        }
-        return automatedServicesContact;
-    }
-
-    private BasicDBObject findContactDetailByType(BasicDBList contactDetails, String type) {
-        return contactDetails.stream()
-                .map(obj -> (BasicDBObject) obj)
-                .filter(cd -> type.equals(cd.get("type")))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private int getMaxPriority(BasicDBList contactDetails) {
-        return contactDetails.stream()
-                .map(obj -> (BasicDBObject) obj)
-                .map(cd -> cd.get("priority"))
-                .filter(Objects::nonNull)
-                .mapToInt(priority -> priority instanceof Integer ? (Integer) priority : Integer.parseInt(priority.toString()))
-                .max()
-                .orElse(0);
-    }
-
-    private BasicDBObject createAutomatedServicesContact(int priority) {
-        BasicDBObject contact = new BasicDBObject();
-        contact.put("followUpAllowed", "");
-        contact.put("type", CONTACT_TYPE_AUTOMATED_SERVICES);
-        contact.put("priority", priority);
-        contact.put("version", "");
-        contact.put("turnAroundTime", "");
-        contact.put("surChargeAmount", "");
-        contact.put("name", "");
-        contact.put("paymentMethod", "");
-        contact.put("turnAroundTimeUnit", TIME_UNIT_DAYS);
-        contact.put("surChargeCurrency", "");
-        contact.put("communication", new BasicDBList());
-        contact.put("fromYear", "");
-        contact.put("toYear", "");
-        return contact;
-    }
-
-    private void updateParchmentExchangeCommunication(BasicDBObject contactDetail, InstitutionRecord record, Vendors vendor) {
-        BasicDBList communications = ensureCommunications(contactDetail);
-        BasicDBObject parchmentComm = findParchmentCommunication(communications);
-
-        if (parchmentComm == null) {
-            parchmentComm = createParchmentExchangeCommunication(record, vendor, getMaxPriority(communications) + 1);
-            communications.add(parchmentComm);
-        } else {
-            updateCommunicationInfo((BasicDBList) parchmentComm.get("communicationInfo"), record, vendor);
-            updateProviderName(parchmentComm, record);
-        }
-    }
-
-    private BasicDBList ensureCommunications(BasicDBObject contactDetail) {
-        BasicDBList communications = (BasicDBList) contactDetail.get("communication");
-        if (communications == null) {
-            communications = new BasicDBList();
-            contactDetail.put("communication", communications);
-        }
-        return communications;
-    }
-
-    private BasicDBObject findParchmentCommunication(BasicDBList communications) {
-        return communications.stream()
-                .map(obj -> (BasicDBObject) obj)
-                .filter(comm -> PARCHMENT_EXCHANGE.equals(comm.get("name")))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private void updateProviderName(BasicDBObject parchmentComm, InstitutionRecord record) {
-        if (record.getServiceProvider() != null && !record.getServiceProvider().isEmpty()) {
-            parchmentComm.put("name", record.getServiceProvider());
-        }
-    }
-
-    private BasicDBObject createParchmentExchangeCommunication(InstitutionRecord record, Vendors vendor, int priority) {
-        String providerName = Optional.ofNullable(record.getServiceProvider())
-                .filter(sp -> !sp.isEmpty())
-                .orElse(PARCHMENT_EXCHANGE);
-
-        BasicDBObject communication = new BasicDBObject();
-        communication.put("name", providerName);
-        communication.put("communicationInfo", createCommunicationInfoList(record, vendor));
-        communication.put("providerID", String.valueOf(vendor.getProviderId()));
-        communication.put("priority", priority);
-
-        return communication;
-    }
-
-    private BasicDBList createCommunicationInfoList(InstitutionRecord record, Vendors vendor) {
-        BasicDBList infoList = new BasicDBList();
-
-        infoList.add(createCommunicationInfo("companyNames", record.getInstitutionName()));
-        infoList.add(createCommunicationInfo("codes", record.getCode()));
-        infoList.add(createCommunicationInfo("branch", ""));
-        infoList.add(createCommunicationInfo("uri", vendor.getWebsite()));
-        infoList.add(createCommunicationInfo("sourceType", SOURCE_TYPE_EDUCATION));
-        infoList.add(createCommunicationInfo("surChargeAmount", orEmpty(record.getSurchargeAmount())));
-        infoList.add(createCommunicationInfo("surChargeCurrency", COUNTRY_USA.equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : ""));
-        infoList.add(createCommunicationInfo("paymentMethod", orEmpty(record.getPaymentMethod())));
-        infoList.add(createCommunicationInfo("followUpAllowed", orEmpty(record.getFollowUpAllowed())));
-        infoList.add(createCommunicationInfo("followUpAllowedAfter", ""));
-        infoList.add(createCommunicationInfo("followUpAllowedAfterTimeUnit", TIME_UNIT_DAYS));
-        infoList.add(createCommunicationInfo("turnAroundTime", orEmpty(record.getTurnaroundTime())));
-        infoList.add(createCommunicationInfo("turnAroundTimeUnit", TIME_UNIT_DAYS));
-        infoList.add(createCommunicationInfo("fromYear", ""));
-        infoList.add(createCommunicationInfo("toYear", ""));
-
-        return infoList;
-    }
-
-    private String orEmpty(String value) {
-        return value != null ? value : "";
-    }
-
-    private BasicDBObject createCommunicationInfo(String type, String value) {
-        BasicDBObject info = new BasicDBObject();
-        info.put("type", type);
-        info.put("value", value != null ? value : "");
-        return info;
-    }
-
-    private void updateCommunicationInfo(BasicDBList communicationInfoList, InstitutionRecord record, Vendors vendor) {
-        if (communicationInfoList == null) {
-            return;
-        }
-
-        updateInfoValue(communicationInfoList, "companyNames", record.getInstitutionName());
-        updateInfoValue(communicationInfoList, "codes", record.getCode());
-        updateInfoValue(communicationInfoList, "uri", vendor.getWebsite());
-        updateInfoValue(communicationInfoList, "surChargeAmount", orEmpty(record.getSurchargeAmount()));
-        updateInfoValue(communicationInfoList, "surChargeCurrency", COUNTRY_USA.equalsIgnoreCase(record.getCountry()) ? CURRENCY_USD : "");
-        updateInfoValue(communicationInfoList, "paymentMethod", orEmpty(record.getPaymentMethod()));
-        updateInfoValue(communicationInfoList, "followUpAllowed", orEmpty(record.getFollowUpAllowed()));
-        updateInfoValue(communicationInfoList, "turnAroundTime", orEmpty(record.getTurnaroundTime()));
-    }
-
-    private void updateInfoValue(BasicDBList communicationInfoList, String type, String value) {
-        communicationInfoList.stream()
-                .map(obj -> (BasicDBObject) obj)
-                .filter(info -> type.equals(info.get("type")))
-                .findFirst()
-                .ifPresent(info -> info.put("value", orEmpty(value)));
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-package com.hireright.sourceintelligence.service.migration;
-
-import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.domain.entity.Source;
-import com.hireright.sourceintelligence.domain.entity.Vendors;
-import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
-import com.mongodb.BasicDBObject;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Query;
-
-import java.util.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-
-@ExtendWith(MockitoExtension.class)
-class ParchmentMigrationProcessorTest {
-
-    @Mock
-    private VendorsRepository vendorsRepository;
-
-    @Mock
-    private MongoTemplate mongoTemplate;
-
-    @InjectMocks
-    private ParchmentMigrationProcessor processor;
-
-    private Vendors parchmentVendor;
-    private List<InstitutionRecord> sampleRecords;
-
-    @BeforeEach
-    void setUp() {
-        parchmentVendor = new Vendors();
-        parchmentVendor.setVendor("Parchment Exchange");
-        parchmentVendor.setProviderId(123);
-        parchmentVendor.setWebsite("https://www.parchment.com");
-
-        sampleRecords = Arrays.asList(
-                InstitutionRecord.builder()
-                        .institutionName("Harvard University")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .serviceProvider("Parchment Exchange")
-                        .surchargeAmount("5.00")
-                        .paymentMethod("Credit Card")
-                        .code("HARV001")
-                        .turnaroundTime("3")
-                        .followUpAllowed("Yes")
-                        .build(),
-                InstitutionRecord.builder()
-                        .institutionName("MIT")
-                        .country("USA")
-                        .city("Cambridge")
-                        .stateCountyRegion("MA")
-                        .serviceProvider("Parchment Exchange")
-                        .surchargeAmount("5.00")
-                        .paymentMethod("Credit Card")
-                        .code("MIT001")
-                        .turnaroundTime("3")
-                        .followUpAllowed("Yes")
-                        .build()
-        );
-    }
-
-    @Test
-    void testGetMigrationType() {
-        String migrationType = processor.getMigrationType();
-        assertEquals("parchment", migrationType);
-    }
-
-    @Test
-    void testSupports_Parchment() {
-        boolean supports = processor.supports("parchment");
-        assertTrue(supports);
-    }
-
-    @Test
-    void testSupports_OtherType() {
-        boolean supports = processor.supports("clearinghouse");
-        assertFalse(supports);
-    }
-
-    @Test
-    void testProcessInstitutionRecords_Success() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(2, result.get("updatedRecords"));
-        assertEquals(2, result.get("totalSourcesUpdated"));
-        assertEquals(0, result.get("notFoundRecords"));
-        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
-
-        verify(vendorsRepository).findAll();
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps, times(2)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_InstitutionNotFound() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.emptyList());
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(1, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(1, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("MIT"));
-
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_VendorNotFound() {
-        when(vendorsRepository.findAll()).thenReturn(Collections.emptyList());
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            processor.processInstitutionRecords(sampleRecords);
-        });
-
-        assertTrue(exception.getMessage().contains("Vendor 'Parchment Exchange' not found"));
-        verify(vendorsRepository).findAll();
-        verifyNoInteractions(mongoTemplate);
-    }
-
-    @Test
-    void testProcessInstitutionRecords_EmptyList() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Map<String, Object> result = processor.processInstitutionRecords(Collections.emptyList());
-
-        assertNotNull(result);
-        assertEquals(0, result.get("totalRecords"));
-        assertEquals(0, result.get("updatedRecords"));
-        assertEquals(0, result.get("notFoundRecords"));
-        assertTrue(((List<?>) result.get("notFoundInstitutions")).isEmpty());
-
-        verify(vendorsRepository).findAll();
-        verifyNoMoreInteractions(mongoTemplate);
-    }
-
-    @Test
-    void testProcessInstitutionRecords_ProcessingError() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenThrow(new RuntimeException("Database connection failed"));
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(0, result.get("updatedRecords"));
-        assertEquals(2, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(2, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("Error"));
-
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate, never()).bulkOps(any(), anyString());
-    }
-
-    @Test
-    void testProcessInstitutionRecords_PartialSuccess() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenThrow(new RuntimeException("Connection timeout"));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertNotNull(result);
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(1, result.get("notFoundRecords"));
-
-        List<String> notFoundInstitutions = (List<String>) result.get("notFoundInstitutions");
-        assertEquals(1, notFoundInstitutions.size());
-        assertTrue(notFoundInstitutions.get(0).contains("MIT"));
-
-        verify(mongoTemplate, times(2)).find(any(Query.class), eq(Source.class), eq("education_source"));
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_UpdatesPayload() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source = createMockSource("EDU123", "Harvard University");
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        processor.processInstitutionRecords(Collections.singletonList(sampleRecords.get(0)));
-
-        verify(mockBulkOps).upsert(any(Query.class), argThat(update -> {
-            return true;
-        }));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_StateMapping() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        InstitutionRecord recordWithStateAbbr = InstitutionRecord.builder()
-                .institutionName("Test University")
-                .country("USA")
-                .city("Boston")
-                .stateCountyRegion("MA")
-                .build();
-
-        Source source = createMockSource("EDU125", "Test University");
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source));
-
-        Map<String, Object> result = processor.processInstitutionRecords(
-                Collections.singletonList(recordWithStateAbbr)
-        );
-
-        assertEquals(1, result.get("updatedRecords"));
-        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source"));
-    }
-
-    @Test
-    void testProcessInstitutionRecords_BulkSaveOptimization() {
-        List<InstitutionRecord> multipleRecords = Arrays.asList(
-                sampleRecords.get(0),
-                sampleRecords.get(1),
-                InstitutionRecord.builder()
-                        .institutionName("Stanford University")
-                        .country("USA")
-                        .city("Stanford")
-                        .stateCountyRegion("CA")
-                        .build()
-        );
-
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-        Source source3 = createMockSource("EDU125", "Stanford University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2))
-                .thenReturn(Collections.singletonList(source3));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(multipleRecords);
-
-        assertEquals(3, result.get("totalRecords"));
-        assertEquals(3, result.get("updatedRecords"));
-
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps, times(1)).execute();
-        verify(mongoTemplate, never()).save(any(Source.class), anyString());
-    }
-
-    @Test
-    void testProcessInstitutionRecords_BulkSaveFallback() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-        when(mockBulkOps.execute()).thenThrow(new RuntimeException("Bulk operation failed"));
-
-        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
-
-        assertEquals(2, result.get("totalRecords"));
-        assertEquals(2, result.get("updatedRecords"));
-
-        verify(mongoTemplate).bulkOps(any(), anyString());
-        verify(mockBulkOps).execute();
-
-        verify(mongoTemplate, times(2)).save(any(Source.class), anyString());
-    }
-
-    @Test
-    void testProcessInstitutionRecords_MultipleCollections() {
-        InstitutionRecord record1 = sampleRecords.get(0);
-        InstitutionRecord record2 = sampleRecords.get(1);
-
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU124", "MIT");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source1))
-                .thenReturn(Collections.singletonList(source2));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(Arrays.asList(record1, record2));
-
-        assertEquals(2, result.get("updatedRecords"));
-
-        verify(mongoTemplate, atLeastOnce()).bulkOps(any(), anyString());
-        verify(mockBulkOps, atLeastOnce()).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_MultipleMatches() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source1 = createMockSource("EDU123", "Harvard University");
-        Source source2 = createMockSource("EDU456", "Harvard University");
-        Source source3 = createMockSource("EDU789", "Harvard University");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Arrays.asList(source1, source2, source3));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(
-                Collections.singletonList(sampleRecords.get(0))
-        );
-
-        assertNotNull(result);
-        assertEquals(1, result.get("totalRecords"));
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(3, result.get("totalSourcesUpdated"));
-        assertEquals(0, result.get("notFoundRecords"));
-
-        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
-        verify(mockBulkOps).execute();
-    }
-
-    @Test
-    void testProcessInstitutionRecords_MatchByAlias() {
-        List<Vendors> vendors = Collections.singletonList(parchmentVendor);
-        when(vendorsRepository.findAll()).thenReturn(vendors);
-
-        Source source = createMockSource("EDU123", "Massachusetts Institute of Technology");
-
-        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source")))
-                .thenReturn(Collections.singletonList(source));
-
-        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
-        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
-        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
-                .thenReturn(mockBulkOps);
-
-        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
-        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
-        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
-        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
-
-        Map<String, Object> result = processor.processInstitutionRecords(
-                Collections.singletonList(sampleRecords.get(1))
-        );
-
-        assertEquals(1, result.get("updatedRecords"));
-        assertEquals(0, result.get("notFoundRecords"));
-        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source"));
-    }
-
-    private Source createMockSource(String hon, String organizationName) {
-        Source source = new Source();
-        source.setHon(hon);
-        source.setOrganizationName(organizationName);
-        source.setPayload(new BasicDBObject());
-        return source;
-    }
-}
