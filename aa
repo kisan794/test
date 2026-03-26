@@ -1,9 +1,8 @@
 package com.hireright.sourceintelligence.service.impl;
 
 import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.service.excel.GenericExcelParser;
-import com.hireright.sourceintelligence.service.excel.mapper.InstitutionRowMapper;
-import com.hireright.sourceintelligence.service.excel.mapping.InstitutionColumnMapping;
+import com.hireright.sourceintelligence.service.excel.ExcelParserFactory;
+import com.hireright.sourceintelligence.service.excel.ExcelParserStrategy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -12,343 +11,159 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.List;
 
+import static com.hireright.sourceintelligence.domain.constants.Constants.ExcelParserTypes.INSTITUTION;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ExcelParserService {
 
+    private final ExcelParserFactory excelParserFactory;
+
+    public List<InstitutionRecord> parseExcelFile(MultipartFile file) throws IOException {
+        return parseExcelFile(file, INSTITUTION);
+    }
+
+    public List<InstitutionRecord> parseExcelFile(MultipartFile file, String parserType) throws IOException {
+        ExcelParserStrategy<InstitutionRecord> parser = excelParserFactory.getParser(parserType);
+        return parser.parse(file);
+    }
+
+    public List<String> getSupportedParserTypes() {
+        return excelParserFactory.getAvailableParserTypes();
+    }
+
+    public boolean isParserTypeSupported(String parserType) {
+        return excelParserFactory.hasParser(parserType);
+    }
+}
+
+
+
+package com.hireright.sourceintelligence.service.excel.strategy;
+
+import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
+import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
+import com.hireright.sourceintelligence.service.excel.ExcelParserStrategy;
+import com.hireright.sourceintelligence.service.excel.ExcelRowMapper;
+import com.hireright.sourceintelligence.service.excel.GenericExcelParser;
+import com.hireright.sourceintelligence.service.excel.mapper.InstitutionRowMapper;
+import com.hireright.sourceintelligence.service.excel.mapping.InstitutionColumnMapping;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
+
+import static com.hireright.sourceintelligence.domain.constants.Constants.ExcelParserTypes.INSTITUTION;
+
+@Component
+@RequiredArgsConstructor
+public class InstitutionExcelParserStrategy implements ExcelParserStrategy<InstitutionRecord> {
+
     private final GenericExcelParser genericExcelParser;
     private final InstitutionRowMapper institutionRowMapper;
 
-    public List<InstitutionRecord> parseExcelFile(MultipartFile file) throws IOException {
-        return genericExcelParser.parseExcelFile(
-                file,
-                InstitutionColumnMapping.create(),
-                institutionRowMapper
-        );
+    @Override
+    public List<InstitutionRecord> parse(MultipartFile file) throws IOException {
+        return genericExcelParser.parseExcelFile(file, getColumnMapping(), getRowMapper());
     }
-}
-
-
-package com.hireright.sourceintelligence.service.excel.mapper;
-
-import com.hireright.sourceintelligence.api.dto.InstitutionRecord;
-import com.hireright.sourceintelligence.service.excel.ExcelCellReader;
-import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
-import com.hireright.sourceintelligence.service.excel.ExcelRowMapper;
-import org.apache.poi.ss.usermodel.Row;
-import org.springframework.stereotype.Component;
-
-import static com.hireright.sourceintelligence.service.excel.mapping.InstitutionColumnMapping.*;
-
-@Component
-public class InstitutionRowMapper implements ExcelRowMapper<InstitutionRecord> {
 
     @Override
-    public InstitutionRecord mapRow(Row row, ExcelColumnMapping columnMapping) {
-        return InstitutionRecord.builder()
-                .institutionName(getCellValue(row, columnMapping, INSTITUTION_NAME))
-                .country(getCellValue(row, columnMapping, COUNTRY))
-                .city(getCellValue(row, columnMapping, CITY))
-                .stateCountyRegion(getCellValue(row, columnMapping, STATE_COUNTY_REGION))
-                .serviceProvider(getCellValue(row, columnMapping, SERVICE_PROVIDER))
-                .surchargeAmount(getCellValue(row, columnMapping, SURCHARGE_AMOUNT))
-                .paymentMethod(getCellValue(row, columnMapping, PAYMENT_METHOD))
-                .code(getCellValue(row, columnMapping, CODE))
-                .turnaroundTime(getCellValue(row, columnMapping, TURNAROUND_TIME))
-                .followUpAllowed(getCellValue(row, columnMapping, FOLLOW_UP_ALLOWED))
-                .build();
+    public String getParserType() {
+        return INSTITUTION;
     }
 
-    private String getCellValue(Row row, ExcelColumnMapping columnMapping, String fieldName) {
-        Integer columnIndex = columnMapping.getColumnIndex(fieldName);
-        if (columnIndex == null) {
-            return "";
-        }
-        return ExcelCellReader.getCellValue(row, columnIndex);
+    @Override
+    public ExcelColumnMapping getColumnMapping() {
+        return InstitutionColumnMapping.create();
+    }
+
+    @Override
+    public ExcelRowMapper<InstitutionRecord> getRowMapper() {
+        return institutionRowMapper;
     }
 }
 
-
-
-
-
-package com.hireright.sourceintelligence.service.excel.mapping;
-
-import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
-
-public class InstitutionColumnMapping {
-
-    public static final String INSTITUTION_NAME = "institutionName";
-    public static final String COUNTRY = "country";
-    public static final String CITY = "city";
-    public static final String STATE_COUNTY_REGION = "stateCountyRegion";
-    public static final String SERVICE_PROVIDER = "serviceProvider";
-    public static final String SURCHARGE_AMOUNT = "surchargeAmount";
-    public static final String PAYMENT_METHOD = "paymentMethod";
-    public static final String CODE = "code";
-    public static final String TURNAROUND_TIME = "turnaroundTime";
-    public static final String FOLLOW_UP_ALLOWED = "followUpAllowed";
-
-    private static final int COL_INSTITUTION_NAME = 0;
-    private static final int COL_COUNTRY = 1;
-    private static final int COL_CITY = 2;
-    private static final int COL_STATE_COUNTY_REGION = 3;
-    private static final int COL_SERVICE_PROVIDER = 4;
-    private static final int COL_SURCHARGE_AMOUNT = 5;
-    private static final int COL_PAYMENT_METHOD = 6;
-    private static final int COL_CODE = 7;
-    private static final int COL_TURNAROUND_TIME = 8;
-    private static final int COL_FOLLOW_UP_ALLOWED = 9;
-
-    public static ExcelColumnMapping create() {
-        return ExcelColumnMapping.builder()
-                .addColumn(INSTITUTION_NAME, COL_INSTITUTION_NAME)
-                .addColumn(COUNTRY, COL_COUNTRY)
-                .addColumn(CITY, COL_CITY)
-                .addColumn(STATE_COUNTY_REGION, COL_STATE_COUNTY_REGION)
-                .addColumn(SERVICE_PROVIDER, COL_SERVICE_PROVIDER)
-                .addColumn(SURCHARGE_AMOUNT, COL_SURCHARGE_AMOUNT)
-                .addColumn(PAYMENT_METHOD, COL_PAYMENT_METHOD)
-                .addColumn(CODE, COL_CODE)
-                .addColumn(TURNAROUND_TIME, COL_TURNAROUND_TIME)
-                .addColumn(FOLLOW_UP_ALLOWED, COL_FOLLOW_UP_ALLOWED)
-                .headerRowIndex(0)
-                .dataStartRowIndex(1)
-                .sheetIndex(0)
-                .build();
-    }
-}
 
 
 
 package com.hireright.sourceintelligence.service.excel;
 
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.Row;
+import org.springframework.web.multipart.MultipartFile;
 
-import static com.hireright.sourceintelligence.domain.constants.Constants.MigrationConstants.EMPTY_STRING;
+import java.io.IOException;
+import java.util.List;
 
-public class ExcelCellReader {
-
-    public static String getCellValue(Row row, int columnIndex) {
-        if (row == null) {
-            return EMPTY_STRING;
-        }
-        Cell cell = row.getCell(columnIndex);
-        return getCellValueAsString(cell);
-    }
-
-    public static String getCellValueAsString(Cell cell) {
-        if (cell == null) {
-            return EMPTY_STRING;
-        }
-
-        switch (cell.getCellType()) {
-            case STRING:
-                return cell.getStringCellValue().trim();
-            case NUMERIC:
-                return formatNumericCell(cell);
-            case BOOLEAN:
-                return String.valueOf(cell.getBooleanCellValue());
-            case FORMULA:
-                return evaluateFormulaCell(cell);
-            case BLANK:
-                return EMPTY_STRING;
-            default:
-                return EMPTY_STRING;
-        }
-    }
-
-    private static String formatNumericCell(Cell cell) {
-        if (DateUtil.isCellDateFormatted(cell)) {
-            return cell.getDateCellValue().toString();
-        }
-
-        double numericValue = cell.getNumericCellValue();
-        if (numericValue == (long) numericValue) {
-            return String.valueOf((long) numericValue);
-        }
-        return String.valueOf(numericValue);
-    }
-
-    private static String evaluateFormulaCell(Cell cell) {
-        try {
-            return cell.getStringCellValue().trim();
-        } catch (IllegalStateException e) {
-            return cell.getCellFormula();
-        }
-    }
-
-    public static boolean hasContent(Cell cell) {
-        return cell != null
-                && cell.getCellType() != CellType.BLANK
-                && !getCellValueAsString(cell).isEmpty();
-    }
-
-    public static boolean isRowEmpty(Row row) {
-        if (row == null) {
-            return true;
-        }
-
-        int lastCellNum = row.getLastCellNum();
-        if (lastCellNum < 0) {
-            return true;
-        }
-
-        for (int cellIndex = 0; cellIndex < lastCellNum; cellIndex++) {
-            Cell cell = row.getCell(cellIndex);
-            if (hasContent(cell)) {
-                return false;
-            }
-        }
-        return true;
-    }
+public interface ExcelParserStrategy<T> {
+    
+    List<T> parse(MultipartFile file) throws IOException;
+    
+    String getParserType();
+    
+    ExcelColumnMapping getColumnMapping();
+    
+    ExcelRowMapper<T> getRowMapper();
 }
-
-
-package com.hireright.sourceintelligence.service.excel;
-
-import java.util.HashMap;
-import java.util.Map;
-
-public class ExcelColumnMapping {
-
-    private final Map<String, Integer> columnMap;
-    private final int headerRowIndex;
-    private final int dataStartRowIndex;
-    private final int sheetIndex;
-
-    private ExcelColumnMapping(Builder builder) {
-        this.columnMap = new HashMap<>(builder.columnMap);
-        this.headerRowIndex = builder.headerRowIndex;
-        this.dataStartRowIndex = builder.dataStartRowIndex;
-        this.sheetIndex = builder.sheetIndex;
-    }
-
-    public Integer getColumnIndex(String fieldName) {
-        return columnMap.get(fieldName);
-    }
-
-    public int getHeaderRowIndex() {
-        return headerRowIndex;
-    }
-
-    public int getDataStartRowIndex() {
-        return dataStartRowIndex;
-    }
-
-    public int getSheetIndex() {
-        return sheetIndex;
-    }
-
-    public boolean hasColumn(String fieldName) {
-        return columnMap.containsKey(fieldName);
-    }
-
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private final Map<String, Integer> columnMap = new HashMap<>();
-        private int headerRowIndex = 0;
-        private int dataStartRowIndex = 1;
-        private int sheetIndex = 0;
-
-        public Builder addColumn(String fieldName, int columnIndex) {
-            this.columnMap.put(fieldName, columnIndex);
-            return this;
-        }
-
-        public Builder headerRowIndex(int headerRowIndex) {
-            this.headerRowIndex = headerRowIndex;
-            return this;
-        }
-
-        public Builder dataStartRowIndex(int dataStartRowIndex) {
-            this.dataStartRowIndex = dataStartRowIndex;
-            return this;
-        }
-
-        public Builder sheetIndex(int sheetIndex) {
-            this.sheetIndex = sheetIndex;
-            return this;
-        }
-
-        public ExcelColumnMapping build() {
-            return new ExcelColumnMapping(this);
-        }
-    }
-}
-
-
-
-package com.hireright.sourceintelligence.service.excel;
-
-import org.apache.poi.ss.usermodel.Row;
-
-@FunctionalInterface
-public interface ExcelRowMapper<T> {
-    T mapRow(Row row, ExcelColumnMapping columnMapping);
-}
-
 
 
 
 package com.hireright.sourceintelligence.service.excel;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
-public class GenericExcelParser {
+public class ExcelParserFactory {
 
-    public <T> List<T> parseExcelFile(
-            MultipartFile file,
-            ExcelColumnMapping columnMapping,
-            ExcelRowMapper<T> rowMapper) throws IOException {
+    private final Map<String, ExcelParserStrategy<?>> parserStrategies;
 
-        List<T> records = new ArrayList<>();
+    public ExcelParserFactory(List<ExcelParserStrategy<?>> strategies) {
+        this.parserStrategies = strategies.stream()
+                .collect(Collectors.toMap(
+                        ExcelParserStrategy::getParserType,
+                        Function.identity()
+                ));
+        
+        log.info("Initialized ExcelParserFactory with {} parser strategies: {}", 
+                parserStrategies.size(), 
+                parserStrategies.keySet());
+    }
 
-        try (InputStream inputStream = file.getInputStream();
-             Workbook workbook = new XSSFWorkbook(inputStream)) {
-
-            Sheet sheet = workbook.getSheetAt(columnMapping.getSheetIndex());
-            int lastRowNum = sheet.getLastRowNum();
-            int dataStartRow = columnMapping.getDataStartRowIndex();
-
-            for (int rowIndex = dataStartRow; rowIndex <= lastRowNum; rowIndex++) {
-                Row row = sheet.getRow(rowIndex);
-
-                if (ExcelCellReader.isRowEmpty(row)) {
-                    continue;
-                }
-
-                T record = rowMapper.mapRow(row, columnMapping);
-                records.add(record);
-
-                if (log.isDebugEnabled()) {
-                    log.debug("Parsed record at row {}", rowIndex);
-                }
-            }
+    @SuppressWarnings("unchecked")
+    public <T> ExcelParserStrategy<T> getParser(String parserType) {
+        ExcelParserStrategy<?> strategy = parserStrategies.get(parserType);
+        
+        if (strategy == null) {
+            throw new IllegalArgumentException(
+                    String.format("No parser strategy found for type: %s. Available types: %s", 
+                            parserType, 
+                            parserStrategies.keySet())
+            );
         }
+        
+        return (ExcelParserStrategy<T>) strategy;
+    }
 
-        log.info("Successfully parsed {} records from Excel file", records.size());
-        return records;
+    public boolean hasParser(String parserType) {
+        return parserStrategies.containsKey(parserType);
+    }
+
+    public List<String> getAvailableParserTypes() {
+        return List.copyOf(parserStrategies.keySet());
     }
 }
+
+  public static class ExcelParserTypes {
+        public static final String INSTITUTION = "institution";
+        public static final String ALTERNATIVE_INSTITUTION = "alternative_institution";
+        public static final String LICENSE = "license";
+    }
 
