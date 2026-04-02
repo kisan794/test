@@ -1,3 +1,35 @@
+package com.hireright.sourceintelligence.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.List;
+import java.util.Map;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class DataExtractionResponseDTO {
+    private String status;
+    private String message;
+    private String dataExtractionType;
+    private String filename;
+    private Integer totalRecords;
+    private Integer updatedRecords;
+    private Integer totalSourcesUpdated;
+    private Integer notFoundRecords;
+    private List<Map<String, Object>> notFoundRecordsData;
+    private List<Map<String, String>> excelMetadata;
+    private Long processingTimeMs;
+}
+
+
+
 package com.hireright.sourceintelligence.service.extraction;
 
 import com.hireright.sourceintelligence.api.dto.Alias;
@@ -55,79 +87,52 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
     public Map<String, Object> processInstitutionRecords(List<ParchmentRecord> parchmentRecordList) {
         Vendors vendor = findParchmentVendor();
         Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
-        List<String> notFoundInstitutions = new ArrayList<>();
-        List<String> elasticsearchFailures = new ArrayList<>();
+        List<ParchmentRecord> notFoundRecords = new ArrayList<>();
 
         int updatedRecords = 0;
         int totalSourcesUpdated = 0;
 
         log.info("Starting processing of {} institution records", parchmentRecordList.size());
 
-        try {
-            Map<String, List<Source>> batchMatches = findMatchingInstitutionsBatch(parchmentRecordList);
+        Map<String, List<Source>> batchMatches = findMatchingInstitutionsBatch(parchmentRecordList);
 
-            for (ParchmentRecord parchmentRecord : parchmentRecordList) {
-                try {
-                    String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
-                    String recordKey = generateRecordKey(parchmentRecord, stateFullName);
-                    List<Source> matchingSources = batchMatches.getOrDefault(recordKey, Collections.emptyList());
-
-                    if (!CollectionUtils.isEmpty(matchingSources)) {
-                        updatedRecords++;
-                        totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
-
-                        if (matchingSources.size() > 1) {
-                            log.debug("Multiple matches for '{}': {} sources updated",
-                                    parchmentRecord.getInstitutionName(), matchingSources.size());
-                        }
-                    } else {
-                        notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
-                        log.debug("No match found for: {}", parchmentRecord.getInstitutionName());
-                    }
-                } catch (Exception e) {
-                    log.error("Error processing record: {}", parchmentRecord.getInstitutionName(), e);
-                    notFoundInstitutions.add(parchmentRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
-                }
-            }
-
-            performBulkSaveMongoDB(sourcesToSaveByCollection);
-
-        } catch (Exception e) {
-            log.error("Transaction failed for all {} records", parchmentRecordList.size(), e);
-            throw e;
-        }
-
-        int esSuccessCount = 0;
-        int esFailureCount = 0;
-
-        for (Map.Entry<String, List<Source>> entry : sourcesToSaveByCollection.entrySet()) {
-            String collectionName = entry.getKey();
-            List<Source> sources = entry.getValue();
-
+        for (ParchmentRecord parchmentRecord : parchmentRecordList) {
             try {
-                String indexName = Helper.getIndexName(sources.getFirst().getOrganizationType().getType());
-                elasticsearchService.bulkUpdateAutomatedService(indexName, sources);
-                esSuccessCount += sources.size();
-                log.info("Elasticsearch sync successful for {} sources in collection {}", sources.size(), collectionName);
+                String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
+                String recordKey = generateRecordKey(parchmentRecord, stateFullName);
+                List<Source> matchingSources = batchMatches.getOrDefault(recordKey, Collections.emptyList());
+
+                if (!CollectionUtils.isEmpty(matchingSources)) {
+                    updatedRecords++;
+                    totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+
+                    if (matchingSources.size() > 1) {
+                        log.debug("Multiple matches for '{}': {} sources updated",
+                                parchmentRecord.getInstitutionName(), matchingSources.size());
+                    }
+                } else {
+                    notFoundRecords.add(parchmentRecord);
+                    log.debug("No match found for: {}", parchmentRecord.getInstitutionName());
+                }
             } catch (Exception e) {
-                esFailureCount += sources.size();
-                elasticsearchFailures.add(String.format("%s (%d sources)", collectionName, sources.size()));
-                log.error("Elasticsearch update failed for {} sources in collection {}. MongoDB is updated successfully.",
-                        sources.size(), collectionName, e);
+                log.error("Error processing record: {}", parchmentRecord.getInstitutionName(), e);
+                notFoundRecords.add(parchmentRecord);
             }
         }
 
-        if (!elasticsearchFailures.isEmpty()) {
-            log.warn("INCONSISTENCY WARNING: MongoDB updated successfully, but Elasticsearch failed for {} collections: {}. " +
-                    "Total ES failures: {}/{} sources. Manual ES reindex may be required.",
-                    elasticsearchFailures.size(), elasticsearchFailures, esFailureCount, totalSourcesUpdated);
+        performBulkSaveMongoDB(sourcesToSaveByCollection);
+
+        try {
+            updateElasticsearchWithRollback(sourcesToSaveByCollection);
+        } catch (Exception e) {
+            log.error("Elasticsearch update failed. Rolling back MongoDB transaction.", e);
+            throw new RuntimeException("Elasticsearch sync failed - MongoDB changes rolled back", e);
         }
 
-        log.info("Processing completed. Total: {}, Matched: {}, MongoDB Updated: {}, ES Synced: {}/{}, NotFound: {}",
-                parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, esSuccessCount, totalSourcesUpdated, notFoundInstitutions.size());
+        log.info("Processing completed. Total: {}, Matched: {}, Updated: {}, NotFound: {}",
+                parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundRecords.size());
 
-        return buildProcessingResult(parchmentRecordList.size(), updatedRecords, totalSourcesUpdated,
-                notFoundInstitutions, esSuccessCount, esFailureCount, elasticsearchFailures);
+        return buildProcessingResult(parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundRecords);
     }
 
     private Vendors findParchmentVendor() {
@@ -157,29 +162,66 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
         return count;
     }
 
-    private String formatNotFoundEntry(ParchmentRecord parchmentRecord, String stateFullName) {
-        return String.format(LOG_NOT_FOUND_TEMPLATE,
-                parchmentRecord.getInstitutionName(), parchmentRecord.getCity(), stateFullName, parchmentRecord.getCountry());
-    }
-
     private Map<String, Object> buildProcessingResult(int totalRecords, int updatedRecords,
-                                                      int totalSourcesUpdated, List<String> notFoundInstitutions,
-                                                      int esSuccessCount, int esFailureCount, List<String> elasticsearchFailures) {
+                                                      int totalSourcesUpdated, List<ParchmentRecord> notFoundRecords) {
         Map<String, Object> result = new HashMap<>();
         result.put(RESULT_KEY_TOTAL_RECORDS, totalRecords);
         result.put(RESULT_KEY_UPDATED_RECORDS, updatedRecords);
         result.put(RESULT_KEY_TOTAL_SOURCES_UPDATED, totalSourcesUpdated);
-        result.put(RESULT_KEY_NOT_FOUND_RECORDS, notFoundInstitutions.size());
-        result.put(RESULT_KEY_NOT_FOUND_INSTITUTIONS, notFoundInstitutions);
-        result.put("elasticsearchSyncedCount", esSuccessCount);
-        result.put("elasticsearchFailureCount", esFailureCount);
-        result.put("elasticsearchFailures", elasticsearchFailures);
-        result.put("dataConsistencyStatus", esFailureCount == 0 ? "CONSISTENT" : "INCONSISTENT - ES SYNC REQUIRED");
+        result.put(RESULT_KEY_NOT_FOUND_RECORDS, notFoundRecords.size());
 
-        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, esSynced: {}/{}, notFound: {}",
-                totalRecords, updatedRecords, totalSourcesUpdated, esSuccessCount, totalSourcesUpdated, notFoundInstitutions.size());
+        result.put("notFoundRecordsData", convertToExcelData(notFoundRecords));
+        result.put("excelMetadata", buildExcelMetadata());
+
+        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, notFound: {}",
+                totalRecords, updatedRecords, totalSourcesUpdated, notFoundRecords.size());
 
         return result;
+    }
+
+    private List<Map<String, Object>> convertToExcelData(List<ParchmentRecord> records) {
+        return records.stream()
+                .map(this::parchmentRecordToMap)
+                .collect(Collectors.toList());
+    }
+
+    private Map<String, Object> parchmentRecordToMap(ParchmentRecord record) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("institutionName", record.getInstitutionName());
+        map.put("country", record.getCountry());
+        map.put("city", record.getCity());
+        map.put("stateCountyRegion", record.getStateCountyRegion());
+        map.put("serviceProvider", record.getServiceProvider());
+        map.put("surchargeAmount", record.getSurchargeAmount());
+        map.put("paymentMethod", record.getPaymentMethod());
+        map.put("code", record.getCode());
+        map.put("turnaroundTime", record.getTurnaroundTime());
+        map.put("followUpAllowed", record.getFollowUpAllowed());
+        return map;
+    }
+
+    private List<Map<String, String>> buildExcelMetadata() {
+        List<Map<String, String>> metadata = new ArrayList<>();
+
+        metadata.add(createMetadata("Institution Name", "institutionName"));
+        metadata.add(createMetadata("Country", "country"));
+        metadata.add(createMetadata("City", "city"));
+        metadata.add(createMetadata("State/County/Region", "stateCountyRegion"));
+        metadata.add(createMetadata("Service Provider", "serviceProvider"));
+        metadata.add(createMetadata("Surcharge Amount", "surchargeAmount"));
+        metadata.add(createMetadata("Payment Method", "paymentMethod"));
+        metadata.add(createMetadata("Code", "code"));
+        metadata.add(createMetadata("Turnaround Time", "turnaroundTime"));
+        metadata.add(createMetadata("Follow Up Allowed", "followUpAllowed"));
+
+        return metadata;
+    }
+
+    private Map<String, String> createMetadata(String label, String key) {
+        Map<String, String> meta = new LinkedHashMap<>();
+        meta.put("label", label);
+        meta.put("key", key);
+        return meta;
     }
 
     private void performBulkSaveMongoDB(Map<String, List<Source>> sourcesToSaveByCollection) {
@@ -189,6 +231,25 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
                 executeBulkUpdate(collectionName, sources);
             }
         });
+    }
+
+    private void updateElasticsearchWithRollback(Map<String, List<Source>> sourcesToSaveByCollection) throws Exception {
+        for (Map.Entry<String, List<Source>> entry : sourcesToSaveByCollection.entrySet()) {
+            String collectionName = entry.getKey();
+            List<Source> sources = entry.getValue();
+
+            if (!sources.isEmpty()) {
+                try {
+                    String indexName = Helper.getIndexName(sources.getFirst().getOrganizationType().getType());
+                    elasticsearchService.bulkUpdateAutomatedService(indexName, sources);
+                    log.info("Elasticsearch sync successful for {} sources in collection {}", sources.size(), collectionName);
+                } catch (Exception e) {
+                    log.error("Elasticsearch update failed for {} sources in collection {}. Will rollback MongoDB transaction.",
+                            sources.size(), collectionName, e);
+                    throw e;
+                }
+            }
+        }
     }
 
     private void executeBulkUpdate(String collectionName, List<Source> sources) {
@@ -543,4 +604,143 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
         return info;
     }
 
+}
+
+
+
+
+
+
+package com.hireright.sourceintelligence.api.v1;
+
+import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
+import com.hireright.sourceintelligence.api.dto.DataExtractionResponseDTO;
+import com.hireright.sourceintelligence.service.excel.ExcelParserFactory;
+import com.hireright.sourceintelligence.service.excel.ExcelParserStrategy;
+import com.hireright.sourceintelligence.service.extraction.DataExtractionProcessorFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+
+import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.DataExtractionConstants.*;
+import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowInvalidRequest;
+
+@Slf4j
+@RestController
+@RequiredArgsConstructor
+@Validated
+@CrossOrigin
+public class DataExtractionApiController implements DataExtractionApi {
+
+    private final DataExtractionProcessorFactory processorFactory;
+    private final ExcelParserFactory excelParserFactory;
+
+    @Value("${data.extraction.file.max-size-mb:10}")
+    private int maxDataExtractionFileSizeMb;
+
+    @Override
+    public ResponseEntity<DataExtractionResponseDTO> uploadDataExtractionExcelFile(MultipartFile file, String dataExtractionType) {
+        long startTime = System.currentTimeMillis();
+        String filename = file.getOriginalFilename();
+
+        log.info("Received Data Extraction file upload - filename: {}, size: {} bytes, type: {}",
+                filename, file.getSize(), dataExtractionType);
+
+        validateDataExtractionRequest(file, filename, dataExtractionType);
+
+        try {
+            List<ParchmentRecord> records = parseAndValidateRecords(file, filename, dataExtractionType);
+            var processor = processorFactory.getProcessor(dataExtractionType);
+            Map<String, Object> processingResult = processor.processInstitutionRecords(records);
+            processingResult.put("dataExtractionType", dataExtractionType);
+
+            DataExtractionResponseDTO response = buildSuccessResponse(
+                    filename,
+                    dataExtractionType,
+                    processingResult,
+                    System.currentTimeMillis() - startTime
+            );
+
+            logDataExtractionSuccess(dataExtractionType, response);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("Error processing Data Extraction file: {}", filename, e);
+            logAndThrowInvalidRequest(DATA_EXTRACTION_PROCESSING_ERROR, e, e.getMessage());
+            return null;
+        }
+    }
+
+    private void validateDataExtractionRequest(MultipartFile file, String filename, String dataExtractionType) {
+        if (!processorFactory.isSupported(dataExtractionType)) {
+            logAndThrowInvalidRequest(DATA_EXTRACTION_TYPE_UNSUPPORTED, null,
+                    dataExtractionType, processorFactory.getSupportedTypes());
+        }
+
+        if (file.isEmpty()) {
+            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_EMPTY, null);
+        }
+
+        if (file.getSize() / FILE_SIZE_BYTES_PER_MB > maxDataExtractionFileSizeMb) {
+            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_TOO_LARGE, null, maxDataExtractionFileSizeMb);
+        }
+
+        if (filename == null || (!filename.endsWith(FILE_FORMAT_EXCEL_XLSX) && !filename.endsWith(FILE_FORMAT_EXCEL_XLS))) {
+            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_INVALID_FORMAT, null);
+        }
+    }
+
+    private List<ParchmentRecord> parseAndValidateRecords(MultipartFile file, String filename, String dataExtractionType) throws IOException {
+        log.info("Parsing Excel file: {}", filename);
+        ExcelParserStrategy<ParchmentRecord> parser = excelParserFactory.getParser(dataExtractionType);
+        List<ParchmentRecord> records = parser.parse(file);
+
+        if (records.isEmpty()) {
+            logAndThrowInvalidRequest(DATA_EXTRACTION_NO_RECORDS_FOUND, null);
+        }
+
+        log.info("Parsed {} records from Excel file", records.size());
+        return records;
+    }
+
+    private void logDataExtractionSuccess(String dataExtractionType, DataExtractionResponseDTO response) {
+        log.info("Data Extraction completed - type: {}, total: {}, updated: {}, dbRecordsUpdated: {}, notFound: {}, time: {}ms",
+                dataExtractionType,
+                response.getTotalRecords(),
+                response.getUpdatedRecords(),
+                response.getTotalSourcesUpdated(),
+                response.getNotFoundRecords(),
+                response.getProcessingTimeMs());
+    }
+
+    private DataExtractionResponseDTO buildSuccessResponse(
+            String filename,
+            String dataExtractionType,
+            Map<String, Object> processingResult,
+            long processingTime) {
+
+        return DataExtractionResponseDTO.builder()
+                .status(RESPONSE_STATUS_SUCCESS)
+                .message(RESPONSE_MESSAGE_FILE_PROCESSED)
+                .dataExtractionType(dataExtractionType)
+                .filename(filename)
+                .totalRecords((Integer) processingResult.get(RESULT_KEY_TOTAL_RECORDS))
+                .updatedRecords((Integer) processingResult.get(RESULT_KEY_UPDATED_RECORDS))
+                .totalSourcesUpdated((Integer) processingResult.get(RESULT_KEY_TOTAL_SOURCES_UPDATED))
+                .notFoundRecords((Integer) processingResult.get(RESULT_KEY_NOT_FOUND_RECORDS))
+                .notFoundRecordsData((List<Map<String, Object>>) processingResult.get("notFoundRecordsData"))
+                .excelMetadata((List<Map<String, String>>) processingResult.get("excelMetadata"))
+                .processingTimeMs(processingTime)
+                .build();
+    }
 }
