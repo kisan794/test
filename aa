@@ -41,7 +41,15 @@ import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrow
 @RequiredArgsConstructor
 public class ParchmentDataExtractionProcessor implements DataExtractionProcessor {
 
-    private static final int BATCH_SIZE = 500; // Process records in batches to avoid large queries
+    /**
+     * Batch size for processing records.
+     * Recommended: 300 for shared DB, 500-1000 for dedicated DB
+     * For 42K records:
+     *   - 300 = ~140 batches in ~3-5 min
+     *   - 500 = ~84 batches in ~2-3 min
+     *   - 1000 = ~42 batches in ~1-2 min
+     */
+    private static final int BATCH_SIZE = 500; // Optimized for 42K+ records
 
     private final VendorsRepository vendorsRepository;
     private final MongoTemplate mongoTemplate;
@@ -53,53 +61,36 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
     }
 
     @Override
-    @Transactional
     public Map<String, Object> processInstitutionRecords(List<ParchmentRecord> parchmentRecordList) {
         Vendors vendor = findParchmentVendor();
-        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
-        List<String> notFoundInstitutions = new ArrayList<>();
+        List<String> notFoundInstitutions = Collections.synchronizedList(new ArrayList<>());
 
         int updatedRecords = 0;
         int totalSourcesUpdated = 0;
 
-        log.info("Starting batch processing of {} institution records", parchmentRecordList.size());
+        log.info("Starting batch processing of {} institution records (batch size: {})",
+                parchmentRecordList.size(), BATCH_SIZE);
 
-        // Process records in batches to optimize database queries
+        // Process records in batches with separate transactions for each batch
         for (int i = 0; i < parchmentRecordList.size(); i += BATCH_SIZE) {
             int end = Math.min(i + BATCH_SIZE, parchmentRecordList.size());
             List<ParchmentRecord> batch = parchmentRecordList.subList(i, end);
 
-            log.info("Processing batch {}-{} of {}", i + 1, end, parchmentRecordList.size());
+            log.info("Processing batch {}-{} of {} ({}% complete)",
+                    i + 1, end, parchmentRecordList.size(),
+                    (int)((i / (double)parchmentRecordList.size()) * 100));
 
             try {
-                // Fetch all matching sources for the batch in a single DB call
-                Map<String, List<Source>> batchMatches = findMatchingInstitutionsBatch(batch);
+                // Process batch in a separate transaction to avoid timeout
+                BatchProcessingResult batchResult = processBatchWithTransaction(batch, vendor, notFoundInstitutions);
+                updatedRecords += batchResult.updatedRecords();
+                totalSourcesUpdated += batchResult.totalSourcesUpdated();
 
-                // Process each record with its pre-fetched matches
-                for (ParchmentRecord parchmentRecord : batch) {
-                    try {
-                        String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
-                        String recordKey = generateRecordKey(parchmentRecord, stateFullName);
-                        List<Source> matchingSources = batchMatches.getOrDefault(recordKey, Collections.emptyList());
+                log.info("Batch {}-{} completed: {} records matched, {} sources updated",
+                        i + 1, end, batchResult.updatedRecords(), batchResult.totalSourcesUpdated());
 
-                        if (!CollectionUtils.isEmpty(matchingSources)) {
-                            updatedRecords++;
-                            totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
-
-                            if (matchingSources.size() > 1) {
-                                log.info("Multiple matches for '{}': {} institutionRecordList updated", parchmentRecord.getInstitutionName(), matchingSources.size());
-                            }
-                        } else {
-                            notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
-                            log.warn("No match found for: {}", parchmentRecord.getInstitutionName());
-                        }
-                    } catch (Exception e) {
-                        log.error("Error processing institutionRecord: {}", parchmentRecord.getInstitutionName(), e);
-                        notFoundInstitutions.add(parchmentRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
-                    }
-                }
             } catch (Exception e) {
-                log.error("Error processing batch {}-{}", i + 1, end, e);
+                log.error("Error processing batch {}-{}, attempting fallback", i + 1, end, e);
                 // Fallback to individual processing for this batch
                 for (ParchmentRecord parchmentRecord : batch) {
                     try {
@@ -108,7 +99,8 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
 
                         if (!CollectionUtils.isEmpty(matchingSources)) {
                             updatedRecords++;
-                            totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+                            int sourcesUpdated = processSingleRecordWithTransaction(matchingSources, parchmentRecord, vendor);
+                            totalSourcesUpdated += sourcesUpdated;
                         } else {
                             notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
                         }
@@ -120,9 +112,93 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
             }
         }
 
-        performBulkSave(sourcesToSaveByCollection);
+        log.info("All batches completed. Total: {}, Matched: {}, Updated: {}, NotFound: {}",
+                parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions.size());
 
         return buildProcessingResult(parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions);
+    }
+
+    /**
+     * Process a single batch within a separate transaction.
+     * This prevents long-running transactions that can timeout.
+     */
+    @Transactional(timeout = 300) // 5 minutes max per batch
+    private BatchProcessingResult processBatchWithTransaction(
+            List<ParchmentRecord> batch,
+            Vendors vendor,
+            List<String> notFoundInstitutions) {
+
+        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
+        int updatedRecords = 0;
+        int totalSourcesUpdated = 0;
+
+        try {
+            // Fetch all matching sources for the batch in a single DB call
+            Map<String, List<Source>> batchMatches = findMatchingInstitutionsBatch(batch);
+
+            // Process each record with its pre-fetched matches
+            for (ParchmentRecord parchmentRecord : batch) {
+                try {
+                    String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
+                    String recordKey = generateRecordKey(parchmentRecord, stateFullName);
+                    List<Source> matchingSources = batchMatches.getOrDefault(recordKey, Collections.emptyList());
+
+                    if (!CollectionUtils.isEmpty(matchingSources)) {
+                        updatedRecords++;
+                        totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+
+                        if (matchingSources.size() > 1) {
+                            log.debug("Multiple matches for '{}': {} institutionRecordList updated",
+                                    parchmentRecord.getInstitutionName(), matchingSources.size());
+                        }
+                    } else {
+                        notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
+                        log.debug("No match found for: {}", parchmentRecord.getInstitutionName());
+                    }
+                } catch (Exception e) {
+                    log.error("Error processing institutionRecord: {}", parchmentRecord.getInstitutionName(), e);
+                    notFoundInstitutions.add(parchmentRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
+                }
+            }
+
+            // Perform bulk save within this transaction (MongoDB only)
+            performBulkSaveMongoDB(sourcesToSaveByCollection);
+
+            // Update Elasticsearch outside of MongoDB transaction (separate operation)
+            updateElasticsearch(sourcesToSaveByCollection);
+
+        } catch (Exception e) {
+            log.error("Error in batch processing transaction", e);
+            throw e;
+        }
+
+        return new BatchProcessingResult(updatedRecords, totalSourcesUpdated);
+    }
+
+    /**
+     * Process a single record within its own transaction (fallback for errors).
+     */
+    @Transactional(timeout = 30) // 30 seconds max per record
+    private int processSingleRecordWithTransaction(
+            List<Source> matchingSources,
+            ParchmentRecord parchmentRecord,
+            Vendors vendor) throws IOException {
+
+        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
+        int count = processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+
+        if (!sourcesToSaveByCollection.isEmpty()) {
+            performBulkSaveMongoDB(sourcesToSaveByCollection);
+            updateElasticsearch(sourcesToSaveByCollection);
+        }
+
+        return count;
+    }
+
+    /**
+     * Result object for batch processing.
+     */
+    private record BatchProcessingResult(int updatedRecords, int totalSourcesUpdated) {
     }
 
     /**
@@ -175,15 +251,33 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
         return result;
     }
 
-    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
+    /**
+     * Perform bulk save to MongoDB only (within transaction).
+     */
+    private void performBulkSaveMongoDB(Map<String, List<Source>> sourcesToSaveByCollection) {
         sourcesToSaveByCollection.forEach((collectionName, sources) -> {
             if (!sources.isEmpty()) {
-                log.info("Bulk saving {} sources to collection: {}", sources.size(), collectionName);
+                log.info("Bulk saving {} sources to MongoDB collection: {}", sources.size(), collectionName);
                 executeBulkUpdate(collectionName, sources);
+            }
+        });
+    }
+
+    /**
+     * Update Elasticsearch separately (outside MongoDB transaction to avoid timeout).
+     * This is called after MongoDB transaction commits successfully.
+     */
+    private void updateElasticsearch(Map<String, List<Source>> sourcesToSaveByCollection) {
+        sourcesToSaveByCollection.forEach((collectionName, sources) -> {
+            if (!sources.isEmpty()) {
                 try {
-                    elasticsearchService.bulkUpdateAutomatedService(Helper.getIndexName(sources.getFirst().getOrganizationType().getType()), sources);
+                    log.info("Updating Elasticsearch for {} sources", sources.size());
+                    String indexName = Helper.getIndexName(sources.getFirst().getOrganizationType().getType());
+                    elasticsearchService.bulkUpdateAutomatedService(indexName, sources);
                 } catch (IOException e) {
-                    logAndThrowServiceException(UNABLE_TO_UPDATE_ES_SOURCE, e);
+                    // Log error but don't fail the entire batch - Elasticsearch can be synced later
+                    log.error("Failed to update Elasticsearch for {} sources in collection {}. MongoDB is updated successfully.",
+                            sources.size(), collectionName, e);
                 }
             }
         });
