@@ -1,5 +1,6 @@
 package com.hireright.sourceintelligence.service.extraction;
 
+import com.hireright.sourceintelligence.api.dto.Alias;
 import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
 import com.hireright.sourceintelligence.domain.entity.Source;
 import com.hireright.sourceintelligence.domain.entity.Vendors;
@@ -21,6 +22,8 @@ import org.springframework.util.CollectionUtils;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.hireright.sourceintelligence.constants.ApplicationConstants.EDUCATION_COLLECTION_PREFIX;
 import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
@@ -37,6 +40,8 @@ import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrow
 @Component
 @RequiredArgsConstructor
 public class ParchmentDataExtractionProcessor implements DataExtractionProcessor {
+
+    private static final int BATCH_SIZE = 500; // Process records in batches to avoid large queries
 
     private final VendorsRepository vendorsRepository;
     private final MongoTemplate mongoTemplate;
@@ -57,25 +62,61 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
         int updatedRecords = 0;
         int totalSourcesUpdated = 0;
 
-        for (ParchmentRecord parchmentRecord : parchmentRecordList) {
+        log.info("Starting batch processing of {} institution records", parchmentRecordList.size());
+
+        // Process records in batches to optimize database queries
+        for (int i = 0; i < parchmentRecordList.size(); i += BATCH_SIZE) {
+            int end = Math.min(i + BATCH_SIZE, parchmentRecordList.size());
+            List<ParchmentRecord> batch = parchmentRecordList.subList(i, end);
+
+            log.info("Processing batch {}-{} of {}", i + 1, end, parchmentRecordList.size());
+
             try {
-                String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
-                List<Source> matchingSources = findMatchingInstitutions(parchmentRecord, stateFullName);
+                // Fetch all matching sources for the batch in a single DB call
+                Map<String, List<Source>> batchMatches = findMatchingInstitutionsBatch(batch);
 
-                if (!CollectionUtils.isEmpty(matchingSources)) {
-                    updatedRecords++;
-                    totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+                // Process each record with its pre-fetched matches
+                for (ParchmentRecord parchmentRecord : batch) {
+                    try {
+                        String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
+                        String recordKey = generateRecordKey(parchmentRecord, stateFullName);
+                        List<Source> matchingSources = batchMatches.getOrDefault(recordKey, Collections.emptyList());
 
-                    if (matchingSources.size() > 1) {
-                        log.info("Multiple matches for '{}': {} institutionRecordList updated", parchmentRecord.getInstitutionName(), matchingSources.size());
+                        if (!CollectionUtils.isEmpty(matchingSources)) {
+                            updatedRecords++;
+                            totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+
+                            if (matchingSources.size() > 1) {
+                                log.info("Multiple matches for '{}': {} institutionRecordList updated", parchmentRecord.getInstitutionName(), matchingSources.size());
+                            }
+                        } else {
+                            notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
+                            log.warn("No match found for: {}", parchmentRecord.getInstitutionName());
+                        }
+                    } catch (Exception e) {
+                        log.error("Error processing institutionRecord: {}", parchmentRecord.getInstitutionName(), e);
+                        notFoundInstitutions.add(parchmentRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
                     }
-                } else {
-                    notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
-                    log.warn("No match found for: {}", parchmentRecord.getInstitutionName());
                 }
             } catch (Exception e) {
-                log.error("Error processing institutionRecord: {}", parchmentRecord.getInstitutionName(), e);
-                notFoundInstitutions.add(parchmentRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
+                log.error("Error processing batch {}-{}", i + 1, end, e);
+                // Fallback to individual processing for this batch
+                for (ParchmentRecord parchmentRecord : batch) {
+                    try {
+                        String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
+                        List<Source> matchingSources = findMatchingInstitutions(parchmentRecord, stateFullName);
+
+                        if (!CollectionUtils.isEmpty(matchingSources)) {
+                            updatedRecords++;
+                            totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+                        } else {
+                            notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
+                        }
+                    } catch (Exception ex) {
+                        log.error("Error processing institutionRecord: {}", parchmentRecord.getInstitutionName(), ex);
+                        notFoundInstitutions.add(parchmentRecord.getInstitutionName() + " (Error: " + ex.getMessage() + ")");
+                    }
+                }
             }
         }
 
@@ -84,9 +125,11 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
         return buildProcessingResult(parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions);
     }
 
+    /**
+     * Optimized vendor lookup using direct query instead of loading all vendors.
+     */
     private Vendors findParchmentVendor() {
-        return vendorsRepository.findAll().stream()
-                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor())).findFirst()
+        return vendorsRepository.findByVendor(PARCHMENT_EXCHANGE)
                 .orElseThrow(() -> new RuntimeException(String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
     }
 
@@ -161,6 +204,56 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
                 collectionName, result.getModifiedCount(), result.getUpserts().size());
     }
 
+    /**
+     * Optimized batch query to fetch all matching institutions in a single DB call.
+     * This reduces N database calls to just 1 call per batch.
+     */
+    private Map<String, List<Source>> findMatchingInstitutionsBatch(List<ParchmentRecord> batch) {
+        if (batch.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // Collect all unique states to query
+        Set<String> states = batch.stream()
+                .map(record -> resolveStateName(record.getStateCountyRegion()))
+                .filter(state -> state != null && !state.isEmpty())
+                .collect(Collectors.toSet());
+
+        if (states.isEmpty()) {
+            log.warn("No valid states found in batch");
+            return Collections.emptyMap();
+        }
+
+        // Single database query for all states in the batch
+        Query query = new Query(Criteria.where(FIELD_STATE).in(states));
+        List<Source> allSources = mongoTemplate.find(query, Source.class, "education_source_parchment_test");
+
+        log.info("Batch query returned {} sources for {} unique states", allSources.size(), states.size());
+
+        // Group sources by matching records (in-memory matching)
+        Map<String, List<Source>> resultMap = new HashMap<>();
+
+        for (ParchmentRecord record : batch) {
+            String stateFullName = resolveStateName(record.getStateCountyRegion());
+            String recordKey = generateRecordKey(record, stateFullName);
+
+            List<Source> matchingSources = allSources.stream()
+                    .filter(source -> matchesRecord(source, record, stateFullName))
+                    .collect(Collectors.toList());
+
+            if (!matchingSources.isEmpty()) {
+                log.debug("Found {} matches for institution '{}'", matchingSources.size(), record.getInstitutionName());
+            }
+
+            resultMap.put(recordKey, matchingSources);
+        }
+
+        return resultMap;
+    }
+
+    /**
+     * Fallback method for individual institution lookup (used in error scenarios).
+     */
     private List<Source> findMatchingInstitutions(ParchmentRecord parchmentRecord, String stateFullName) {
         Criteria locationCriteria = buildLocationCriteria(parchmentRecord, stateFullName);
         Criteria nameCriteria = buildNameCriteria(parchmentRecord.getInstitutionName());
@@ -173,6 +266,76 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
         }
 
         return sources;
+    }
+
+    /**
+     * Generate a unique key for each record to map it to its matching sources.
+     */
+    private String generateRecordKey(ParchmentRecord record, String stateFullName) {
+        return String.format("%s|%s|%s|%s",
+                normalizeString(record.getInstitutionName()),
+                normalizeString(record.getCity()),
+                normalizeString(stateFullName),
+                normalizeString(record.getCountry()));
+    }
+
+    /**
+     * Check if a source matches a parchment record based on location and name criteria.
+     */
+    private boolean matchesRecord(Source source, ParchmentRecord record, String stateFullName) {
+        // Location match
+        if (!stateFullName.equals(source.getState())) {
+            return false;
+        }
+
+        if (!matchesPattern(source.getCity(), buildRegexPattern(record.getCity()))) {
+            return false;
+        }
+
+        if (!matchesPattern(source.getCountry(), buildRegexPattern(record.getCountry()))) {
+            return false;
+        }
+
+        // Name match (organizationName or organizationAlias)
+        String namePattern = buildRegexPattern(record.getInstitutionName());
+
+        if (matchesPattern(source.getOrganizationName(), namePattern)) {
+            return true;
+        }
+
+        // Check aliases
+        if (source.getOrganizationAlias() != null) {
+            for (Alias alias : source.getOrganizationAlias()) {
+                if (alias != null && alias.getName() != null && matchesPattern(alias.getName(), namePattern)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a value matches a regex pattern (case-insensitive).
+     */
+    private boolean matchesPattern(String value, String regexPattern) {
+        if (value == null || regexPattern == null) {
+            return false;
+        }
+        try {
+            Pattern pattern = Pattern.compile(regexPattern, Pattern.CASE_INSENSITIVE);
+            return pattern.matcher(value).matches();
+        } catch (Exception e) {
+            log.warn("Invalid regex pattern: {}", regexPattern, e);
+            return false;
+        }
+    }
+
+    /**
+     * Normalize string for consistent key generation.
+     */
+    private String normalizeString(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
     }
 
     private Criteria buildLocationCriteria(ParchmentRecord parchmentRecord, String stateFullName) {
