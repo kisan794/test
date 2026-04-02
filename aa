@@ -207,30 +207,62 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
     /**
      * Optimized batch query to fetch all matching institutions in a single DB call.
      * This reduces N database calls to just 1 call per batch.
+     * Uses projection to fetch only required fields for matching.
+     * Uses $or with location + name combinations to minimize result set size.
      */
     private Map<String, List<Source>> findMatchingInstitutionsBatch(List<ParchmentRecord> batch) {
         if (batch.isEmpty()) {
             return Collections.emptyMap();
         }
 
-        // Collect all unique states to query
-        Set<String> states = batch.stream()
-                .map(record -> resolveStateName(record.getStateCountyRegion()))
-                .filter(state -> state != null && !state.isEmpty())
-                .collect(Collectors.toSet());
+        // Build $or criteria for all unique location + name combinations
+        List<Criteria> recordCriteriaList = new ArrayList<>();
 
-        if (states.isEmpty()) {
-            log.warn("No valid states found in batch");
+        for (ParchmentRecord record : batch) {
+            String stateFullName = resolveStateName(record.getStateCountyRegion());
+            if (stateFullName == null || stateFullName.isEmpty()) {
+                continue;
+            }
+
+            // Build location criteria
+            Criteria locationCriteria = buildLocationCriteria(record, stateFullName);
+
+            // Build name criteria (organizationName OR organizationAlias)
+            Criteria nameCriteria = buildNameCriteria(record.getInstitutionName());
+
+            // Combine: (locationMatch AND nameMatch) - this is very precise!
+            Criteria combinedCriteria = new Criteria().andOperator(locationCriteria, nameCriteria);
+
+            recordCriteriaList.add(combinedCriteria);
+        }
+
+        if (recordCriteriaList.isEmpty()) {
+            log.warn("No valid criteria found in batch");
             return Collections.emptyMap();
         }
 
-        // Single database query for all states in the batch
-        Query query = new Query(Criteria.where(FIELD_STATE).in(states));
+        // Single database query with $or for all (location + name) combinations
+        // This is HIGHLY optimized - fetches only sources that match BOTH location AND name
+        Query query = new Query(new Criteria().orOperator(recordCriteriaList.toArray(new Criteria[0])));
+
+        // Use projection to fetch only the fields needed for matching + payload update
+        query.fields()
+                .include(MONGO_FIELD_ID)        // _id needed for update
+                .include(FIELD_NAME)             // organizationName for matching
+                .include(FIELD_ALIAS)            // organizationAlias for matching
+                .include(FIELD_CITY)             // city for matching
+                .include(FIELD_STATE)            // state for matching
+                .include(FIELD_COUNTRY)          // country for matching
+                .include(FIELD_HON)              // hon for logging
+                .include(FIELD_TYPE)             // organizationType for collection name
+                .include(FIELD_PAYLOAD);         // payload for update
+
         List<Source> allSources = mongoTemplate.find(query, Source.class, "education_source_parchment_test");
 
-        log.info("Batch query returned {} sources for {} unique states", allSources.size(), states.size());
+        log.info("Batch query returned {} sources for {} record combinations (location+name, with projection)",
+                 allSources.size(), recordCriteriaList.size());
 
-        // Group sources by matching records (in-memory matching)
+        // Group sources by matching records (in-memory matching for name)
         Map<String, List<Source>> resultMap = new HashMap<>();
 
         for (ParchmentRecord record : batch) {
