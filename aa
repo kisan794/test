@@ -1,7 +1,416 @@
-log.debug("Parchment Exchange communication already exists for institution: {}. Skipping update.",
-                     institutionRecord.getInstitutionName());
+package com.hireright.sourceintelligence.service.extraction;
 
+import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.entity.Vendors;
+import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
+import com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchService;
+import com.hireright.sourceintelligence.util.Helper;
+import com.hireright.sourceintelligence.util.StateMapper;
+import com.mongodb.BasicDBObject;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
-log.debug("Skipping DB update for source: {} (HON: {}) - Parchment Exchange already exists",
+import java.io.IOException;
+import java.util.*;
+
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.EDUCATION_COLLECTION_PREFIX;
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
+import static com.hireright.sourceintelligence.constants.ErrorConstants.UNABLE_TO_UPDATE_ES_SOURCE;
+import static com.hireright.sourceintelligence.domain.constants.Constants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.AutoMatchConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.DataExtractionConstants.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.DataExtractionConstants.FIELD_VERSION;
+import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
+import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.CODES;
+import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowServiceException;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class ParchmentDataExtractionProcessor implements DataExtractionProcessor {
+
+    private final VendorsRepository vendorsRepository;
+    private final MongoTemplate mongoTemplate;
+    private final ElasticsearchService elasticsearchService;
+
+    @Override
+    public String getDataExtractionTypeType() {
+        return DATA_EXTRACTION_TYPE_PARCHMENT;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> processInstitutionRecords(List<ParchmentRecord> parchmentRecordList) {
+        Vendors vendor = findParchmentVendor();
+        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
+        List<String> notFoundInstitutions = new ArrayList<>();
+
+        int updatedRecords = 0;
+        int totalSourcesUpdated = 0;
+
+        for (ParchmentRecord parchmentRecord : parchmentRecordList) {
+            try {
+                String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
+                List<Source> matchingSources = findMatchingInstitutions(parchmentRecord, stateFullName);
+
+                if (!CollectionUtils.isEmpty(matchingSources)) {
+                    updatedRecords++;
+                    totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
+
+                    if (matchingSources.size() > 1) {
+                        log.info("Multiple matches for '{}': {} institutionRecordList updated", parchmentRecord.getInstitutionName(), matchingSources.size());
+                    }
+                } else {
+                    notFoundInstitutions.add(formatNotFoundEntry(parchmentRecord, stateFullName));
+                    log.warn("No match found for: {}", parchmentRecord.getInstitutionName());
+                }
+            } catch (Exception e) {
+                log.error("Error processing institutionRecord: {}", parchmentRecord.getInstitutionName(), e);
+                notFoundInstitutions.add(parchmentRecord.getInstitutionName() + " (Error: " + e.getMessage() + ")");
+            }
+        }
+
+        performBulkSave(sourcesToSaveByCollection);
+
+        return buildProcessingResult(parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundInstitutions);
+    }
+
+    private Vendors findParchmentVendor() {
+        return vendorsRepository.findAll().stream()
+                .filter(v -> PARCHMENT_EXCHANGE.equals(v.getVendor())).findFirst()
+                .orElseThrow(() -> new RuntimeException(String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
+    }
+
+    private String resolveStateName(String stateInput) {
+        String stateFullName = StateMapper.getFullName(stateInput);
+        return stateFullName.isEmpty() && !stateInput.isEmpty() ? stateInput : stateFullName;
+    }
+
+    private int processMatchingSources(List<Source> sources, ParchmentRecord parchmentRecord,
+                                       Vendors vendor, Map<String, List<Source>> sourcesToSaveByCollection) {
+        int count = 0;
+        for (Source source : sources) {
+            boolean wasUpdated = updateParchmentExchangeContact(source, parchmentRecord, vendor);
+            if (wasUpdated) {
+                String collectionName = "education_source_parchment_test";
+                sourcesToSaveByCollection.computeIfAbsent(collectionName, k -> new ArrayList<>()).add(source);
+                count++;
+            } else {
+                log.debug("Skipping DB update for source: {} (HON: {}) - Parchment Exchange already exists",
                         source.getOrganizationName(), source.getHon());
             }
+        }
+        return count;
+    }
+
+    private String formatNotFoundEntry(ParchmentRecord parchmentRecord, String stateFullName) {
+        return String.format(LOG_NOT_FOUND_TEMPLATE,
+                parchmentRecord.getInstitutionName(), parchmentRecord.getCity(), stateFullName, parchmentRecord.getCountry());
+    }
+
+    private Map<String, Object> buildProcessingResult(int totalRecords, int updatedRecords,
+                                                      int totalSourcesUpdated, List<String> notFoundInstitutions) {
+        Map<String, Object> result = new HashMap<>();
+        result.put(RESULT_KEY_TOTAL_RECORDS, totalRecords);
+        result.put(RESULT_KEY_UPDATED_RECORDS, updatedRecords);
+        result.put(RESULT_KEY_TOTAL_SOURCES_UPDATED, totalSourcesUpdated);
+        result.put(RESULT_KEY_NOT_FOUND_RECORDS, notFoundInstitutions.size());
+        result.put(RESULT_KEY_NOT_FOUND_INSTITUTIONS, notFoundInstitutions);
+
+        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, notFound: {}",
+                totalRecords, updatedRecords, totalSourcesUpdated, notFoundInstitutions.size());
+
+        return result;
+    }
+
+    private void performBulkSave(Map<String, List<Source>> sourcesToSaveByCollection) {
+        sourcesToSaveByCollection.forEach((collectionName, sources) -> {
+            if (!sources.isEmpty()) {
+                log.info("Bulk saving {} sources to collection: {}", sources.size(), collectionName);
+                executeBulkUpdate(collectionName, sources);
+                try {
+                    elasticsearchService.bulkUpdateAutomatedService(Helper.getIndexName(sources.getFirst().getOrganizationType().getType()), sources);
+                } catch (IOException e) {
+                    logAndThrowServiceException(UNABLE_TO_UPDATE_ES_SOURCE, e);
+                }
+            }
+        });
+    }
+
+    private void executeBulkUpdate(String collectionName, List<Source> sources) {
+        BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName);
+
+        sources.forEach(source -> {
+            Query query = new Query(Criteria.where(MONGO_FIELD_ID).is(source.getId()));
+            Update update = new Update()
+                    .set(FIELD_PAYLOAD, source.getPayload());
+            bulkOps.upsert(query, update);
+        });
+
+        var result = bulkOps.execute();
+        log.info("Bulk save completed - collection: {}, modified: {}, upserted: {}",
+                collectionName, result.getModifiedCount(), result.getUpserts().size());
+    }
+
+    private List<Source> findMatchingInstitutions(ParchmentRecord parchmentRecord, String stateFullName) {
+        Criteria locationCriteria = buildLocationCriteria(parchmentRecord, stateFullName);
+        Criteria nameCriteria = buildNameCriteria(parchmentRecord.getInstitutionName());
+
+        Query query = new Query(new Criteria().andOperator(nameCriteria, locationCriteria));
+        List<Source> sources = mongoTemplate.find(query, Source.class, "education_source_parchment_test");
+
+        if (!CollectionUtils.isEmpty(sources)) {
+            log.info("Found {} matches for institution '{}'", sources.size(), parchmentRecord.getInstitutionName());
+        }
+
+        return sources;
+    }
+
+    private Criteria buildLocationCriteria(ParchmentRecord parchmentRecord, String stateFullName) {
+        String cityPattern = buildRegexPattern(parchmentRecord.getCity());
+        String countryPattern = buildRegexPattern(parchmentRecord.getCountry());
+
+        return Criteria.where(FIELD_CITY).regex(cityPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_COUNTRY).regex(countryPattern, REGEX_CASE_INSENSITIVE)
+                .and(FIELD_STATE).is(stateFullName);
+    }
+
+    private Criteria buildNameCriteria(String institutionName) {
+        String namePattern = buildRegexPattern(institutionName);
+
+        return new Criteria().orOperator(
+                Criteria.where(FIELD_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE),
+                Criteria.where(MONGO_FIELD_ORGANIZATION_ALIAS_NAME).regex(namePattern, REGEX_CASE_INSENSITIVE)
+        );
+    }
+
+    private String buildRegexPattern(String value) {
+        return REGEX_ANCHOR_START + escapeRegex(value) + REGEX_ANCHOR_END;
+    }
+
+    private String escapeRegex(String input) {
+        return (input == null || input.isEmpty()) ? input : input.replaceAll(REGEX_SPECIAL_CHARS, "\\\\$1");
+    }
+
+    private boolean updateParchmentExchangeContact(Source source, ParchmentRecord parchmentRecord, Vendors vendor) {
+        BasicDBObject payload = ensurePayload(source);
+        List<BasicDBObject> contacts = ensureContacts(payload);
+        BasicDBObject contact = ensureContact(contacts);
+        List<BasicDBObject> contactDetails = ensureContactDetails(contact);
+        BasicDBObject automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
+
+        return updateParchmentExchangeCommunication(automatedServicesContact, parchmentRecord, vendor);
+    }
+
+    private List<BasicDBObject> toBasicDBObjectList(Object obj) {
+        return switch (obj) {
+            case null -> new ArrayList<>();
+            case List<?> rawList -> {
+                List<BasicDBObject> result = new ArrayList<>();
+                for (Object item : rawList) {
+                    switch (item) {
+                        case BasicDBObject bdo -> result.add(bdo);
+                        case Map map -> result.add(new BasicDBObject(map));
+                        case null, default -> log.warn("Unexpected item type in list: {}. Skipping.",
+                                item != null ? item.getClass().getName() : "null");
+                    }
+                }
+                yield result;
+            }
+            default -> {
+                log.warn("Expected List but got: {}. Returning empty list.",
+                        obj.getClass().getName());
+                yield new ArrayList<>();
+            }
+        };
+    }
+
+    private BasicDBObject ensurePayload(Source source) {
+        Object payloadObj = source.getPayload();
+
+        return switch (payloadObj) {
+            case null -> {
+                BasicDBObject payload = new BasicDBObject();
+                source.setPayload(payload);
+                yield payload;
+            }
+            case BasicDBObject bdo -> bdo;
+            case Map map -> new BasicDBObject(map);
+            default -> {
+                log.warn("Unexpected payload type: {}. Attempting to parse as JSON.", payloadObj.getClass().getName());
+                yield BasicDBObject.parse(payloadObj.toString());
+            }
+        };
+    }
+
+    private List<BasicDBObject> ensureContacts(BasicDBObject payload) {
+        Object contactsObj = payload.computeIfAbsent(CONTACTS, k -> new ArrayList<BasicDBObject>());
+        List<BasicDBObject> contacts = toBasicDBObjectList(contactsObj);
+        payload.put(CONTACTS, contacts);
+        return contacts;
+    }
+
+    private BasicDBObject ensureContact(List<BasicDBObject> contacts) {
+        if (contacts.isEmpty()) {
+            BasicDBObject contact = new BasicDBObject();
+            contact.put(FIELD_PURPOSE, EMPTY_STRING);
+            contact.put(FIELD_PURPOSE_RULE, new ArrayList<>());
+            contact.put(CONTACT_DETAILS, new ArrayList<>());
+            contacts.add(contact);
+            return contact;
+        }
+        return contacts.getFirst();
+    }
+
+    private List<BasicDBObject> ensureContactDetails(BasicDBObject contact) {
+        Object detailsObj = contact.computeIfAbsent(CONTACT_DETAILS, k -> new ArrayList<BasicDBObject>());
+        List<BasicDBObject> details = toBasicDBObjectList(detailsObj);
+        contact.put(CONTACT_DETAILS, details);
+        return details;
+    }
+
+    private BasicDBObject ensureAutomatedServicesContact(List<BasicDBObject> contactDetails) {
+        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
+        if (automatedServicesContact == null) {
+            incrementAllPriorities(contactDetails);
+            automatedServicesContact = createAutomatedServicesContact(1);
+            contactDetails.add(automatedServicesContact);
+        }
+        return automatedServicesContact;
+    }
+
+    private void incrementAllPriorities(List<BasicDBObject> items) {
+        for (BasicDBObject item : items) {
+            Object priorityObj = item.get(PRIORITY);
+            if (priorityObj != null) {
+                int currentPriority = toInt(priorityObj);
+                item.put(PRIORITY, currentPriority + 1);
+            }
+        }
+    }
+
+    private BasicDBObject findContactDetailByType(List<BasicDBObject> contactDetails, String type) {
+        return contactDetails.stream()
+                .filter(cd -> hasType(cd, type))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean hasType(BasicDBObject cd, String type) {
+        return type.equals(cd.get(TYPE));
+    }
+
+    private int toInt(Object priority) {
+        if (priority instanceof Integer i) {
+            return i;
+        }
+        return Integer.parseInt(priority.toString());
+    }
+
+    private BasicDBObject createAutomatedServicesContact(int priority) {
+        BasicDBObject contact = new BasicDBObject();
+        contact.put(FOLLOW_UP_ALLOWED, EMPTY_STRING);
+        contact.put(TYPE, CONTACT_AUTOMATED_SERVICES);
+        contact.put(PRIORITY, priority);
+        contact.put(FIELD_VERSION, EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_AMOUNT, EMPTY_STRING);
+        contact.put(NAME, EMPTY_STRING);
+        contact.put(SUR_CHARGE_PAYMENT, EMPTY_STRING);
+        contact.put(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS);
+        contact.put(SUR_CHARGE_CURRENCY, EMPTY_STRING);
+        contact.put(COMMUNICATION, new ArrayList<>());
+        contact.put(FROM_YEAR, EMPTY_STRING);
+        contact.put(TO_YEAR, EMPTY_STRING);
+        return contact;
+    }
+
+    private boolean updateParchmentExchangeCommunication(BasicDBObject contactDetail, ParchmentRecord parchmentRecord, Vendors vendor) {
+        List<BasicDBObject> communications = ensureCommunications(contactDetail);
+        BasicDBObject parchmentComm = findParchmentCommunication(communications);
+
+        if (parchmentComm == null) {
+            incrementAllPriorities(communications);
+            parchmentComm = createParchmentExchangeCommunication(parchmentRecord, vendor, 1);
+            communications.add(parchmentComm);
+            return true;
+        }
+        return false;
+    }
+
+    private List<BasicDBObject> ensureCommunications(BasicDBObject contactDetail) {
+        Object commsObj = contactDetail.computeIfAbsent(COMMUNICATION, k -> new ArrayList<BasicDBObject>());
+        List<BasicDBObject> communications = toBasicDBObjectList(commsObj);
+        contactDetail.put(COMMUNICATION, communications);
+        return communications;
+    }
+
+    private BasicDBObject findParchmentCommunication(List<BasicDBObject> communications) {
+        return communications.stream()
+                .filter(this::isParchmentCommunication)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean isParchmentCommunication(BasicDBObject comm) {
+        return PARCHMENT_EXCHANGE.equals(comm.get(NAME));
+    }
+
+    private BasicDBObject createParchmentExchangeCommunication(ParchmentRecord parchmentRecord, Vendors vendor, int priority) {
+        String providerName = Optional.ofNullable(parchmentRecord.getServiceProvider())
+                .filter(sp -> !sp.isEmpty())
+                .orElse(PARCHMENT_EXCHANGE);
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put(NAME, providerName);
+        communication.put(COMMUNICATION_INFO, createCommunicationInfoList(parchmentRecord, vendor));
+        communication.put(PROVIDER_ID, String.valueOf(vendor.getProviderId()));
+        communication.put(PRIORITY, priority);
+
+        return communication;
+    }
+
+    private List<BasicDBObject> createCommunicationInfoList(ParchmentRecord parchmentRecord, Vendors vendor) {
+        List<BasicDBObject> infoList = new ArrayList<>();
+
+        infoList.add(createCommunicationInfo(COMPANY_NAMES, parchmentRecord.getInstitutionName()));
+        infoList.add(createCommunicationInfo(CODES, parchmentRecord.getCode()));
+        infoList.add(createCommunicationInfo(BRANCH, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(URI, vendor.getWebsite()));
+        infoList.add(createCommunicationInfo(FIELD_SOURCE_TYPE, SOURCE_TYPE_EDUCATION));
+        infoList.add(createCommunicationInfo(SURCHARGE_AMOUNT, orEmpty(parchmentRecord.getSurchargeAmount())));
+        infoList.add(createCommunicationInfo(SURCHARGE_CURRENCY,
+                COUNTRY_USA.equalsIgnoreCase(parchmentRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING));
+        infoList.add(createCommunicationInfo(PAYMENT_METHOD, orEmpty(parchmentRecord.getPaymentMethod())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED, orEmpty(parchmentRecord.getFollowUpAllowed())));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER_UNITS, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME, orEmpty(parchmentRecord.getTurnaroundTime())));
+        infoList.add(createCommunicationInfo(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS));
+        infoList.add(createCommunicationInfo(FROM_YEAR, EMPTY_STRING));
+        infoList.add(createCommunicationInfo(TO_YEAR, EMPTY_STRING));
+
+        return infoList;
+    }
+
+    private String orEmpty(String value) {
+        return value != null ? value : EMPTY_STRING;
+    }
+
+    private BasicDBObject createCommunicationInfo(String type, String value) {
+        BasicDBObject info = new BasicDBObject();
+        info.put(TYPE, type);
+        info.put(VALUE, orEmpty(value));
+        return info;
+    }
+
+}
