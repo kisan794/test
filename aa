@@ -1,609 +1,178 @@
-package com.hireright.sourceintelligence.api.dto;
+package com.hireright.sourceintelligence.service.excel.mapping;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
 
-import java.util.List;
-import java.util.Map;
+public class ParchmentColumnMapping {
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-@JsonInclude(JsonInclude.Include.NON_NULL)
-public class DataExtractionResponseDTO {
-    private String status;
-    private String message;
-    private String dataExtractionType;
-    private String filename;
-    private Integer totalRecords;
-    private Integer updatedRecords;
-    private Integer totalSourcesUpdated;
-    private Integer notFoundRecords;
-    private List<Map<String, Object>> notFoundRecordsData;
-    private List<Map<String, String>> excelMetadata;
-    private Long processingTimeMs;
+    private ParchmentColumnMapping() {
+
+    }
+
+    // Field name constants
+    public static final String INSTITUTION_NAME = "institutionName";
+    public static final String COUNTRY = "country";
+    public static final String CITY = "city";
+    public static final String STATE_COUNTY_REGION = "stateCountyRegion";
+    public static final String SERVICE_PROVIDER = "serviceProvider";
+    public static final String SURCHARGE_AMOUNT = "surchargeAmount";
+    public static final String PAYMENT_METHOD = "paymentMethod";
+    public static final String CODE = "code";
+    public static final String TURNAROUND_TIME = "turnaroundTime";
+    public static final String FOLLOW_UP_ALLOWED = "followUpAllowed";
+
+    // Excel header name constants (as they appear in the Excel file)
+    private static final String HEADER_INSTITUTION_NAME = "Institution Name";
+    private static final String HEADER_COUNTRY = "Country";
+    private static final String HEADER_CITY = "City";
+    private static final String HEADER_STATE_COUNTY_REGION = "State/County/Region";
+    private static final String HEADER_SERVICE_PROVIDER = "Service Provider";
+    private static final String HEADER_SURCHARGE_AMOUNT = "Surcharge Amount";
+    private static final String HEADER_PAYMENT_METHOD = "Payment Method";
+    private static final String HEADER_CODE = "Code";
+    private static final String HEADER_TURNAROUND_TIME = "Turnaround Time";
+    private static final String HEADER_FOLLOW_UP_ALLOWED = "Follow Up Allowed";
+
+    /**
+     * Creates an ExcelColumnMapping that reads column positions dynamically from the header row.
+     * This makes the parser robust against column reordering in the Excel file.
+     *
+     * @return ExcelColumnMapping configured with header-to-field mappings
+     */
+    public static ExcelColumnMapping create() {
+        return ExcelColumnMapping.builder()
+                // Map Excel header names to field names
+                .addHeaderMapping(HEADER_INSTITUTION_NAME, INSTITUTION_NAME)
+                .addHeaderMapping(HEADER_COUNTRY, COUNTRY)
+                .addHeaderMapping(HEADER_CITY, CITY)
+                .addHeaderMapping(HEADER_STATE_COUNTY_REGION, STATE_COUNTY_REGION)
+                .addHeaderMapping(HEADER_SERVICE_PROVIDER, SERVICE_PROVIDER)
+                .addHeaderMapping(HEADER_SURCHARGE_AMOUNT, SURCHARGE_AMOUNT)
+                .addHeaderMapping(HEADER_PAYMENT_METHOD, PAYMENT_METHOD)
+                .addHeaderMapping(HEADER_CODE, CODE)
+                .addHeaderMapping(HEADER_TURNAROUND_TIME, TURNAROUND_TIME)
+                .addHeaderMapping(HEADER_FOLLOW_UP_ALLOWED, FOLLOW_UP_ALLOWED)
+                .headerRowIndex(0)
+                .dataStartRowIndex(1)
+                .sheetIndex(0)
+                .build();
+    }
 }
 
 
 
-package com.hireright.sourceintelligence.service.extraction;
 
-import com.hireright.sourceintelligence.api.dto.Alias;
-import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
-import com.hireright.sourceintelligence.domain.entity.Source;
-import com.hireright.sourceintelligence.domain.entity.Vendors;
-import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
-import com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchService;
-import com.hireright.sourceintelligence.util.Helper;
-import com.hireright.sourceintelligence.util.StateMapper;
-import com.mongodb.BasicDBObject;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.BulkOperations;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
 
-import java.io.IOException;
-import java.util.*;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+package com.hireright.sourceintelligence.service.excel;
 
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.EDUCATION_COLLECTION_PREFIX;
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.SOURCE_COLLECTION_SUFFIX;
-import static com.hireright.sourceintelligence.constants.ErrorConstants.UNABLE_TO_UPDATE_ES_SOURCE;
-import static com.hireright.sourceintelligence.domain.constants.Constants.*;
-import static com.hireright.sourceintelligence.domain.constants.Constants.AutoMatchConstants.*;
-import static com.hireright.sourceintelligence.domain.constants.Constants.DataExtractionConstants.*;
-import static com.hireright.sourceintelligence.domain.constants.Constants.DataExtractionConstants.FIELD_VERSION;
-import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.*;
-import static com.hireright.sourceintelligence.domain.constants.Constants.SmartSearchKeys.CODES;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowServiceException;
+import lombok.Getter;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
 
-@Slf4j
-@Component
-@RequiredArgsConstructor
-public class ParchmentDataExtractionProcessor implements DataExtractionProcessor {
+import java.util.HashMap;
+import java.util.Map;
 
-    private final VendorsRepository vendorsRepository;
-    private final MongoTemplate mongoTemplate;
-    private final ElasticsearchService elasticsearchService;
+@Getter
+public class ExcelColumnMapping {
 
-    @Override
-    public String getDataExtractionTypeType() {
-        return DATA_EXTRACTION_TYPE_PARCHMENT;
+    private final Map<String, Integer> columnMap;
+    private final Map<String, String> headerToFieldMap;
+    private final int headerRowIndex;
+    private final int dataStartRowIndex;
+    private final int sheetIndex;
+
+    private ExcelColumnMapping(Builder builder) {
+        this.columnMap = new HashMap<>(builder.columnMap);
+        this.headerToFieldMap = new HashMap<>(builder.headerToFieldMap);
+        this.headerRowIndex = builder.headerRowIndex;
+        this.dataStartRowIndex = builder.dataStartRowIndex;
+        this.sheetIndex = builder.sheetIndex;
     }
 
-    @Override
-    @Transactional(timeout = 3600)
-    public Map<String, Object> processInstitutionRecords(List<ParchmentRecord> parchmentRecordList) {
-        Vendors vendor = findParchmentVendor();
-        Map<String, List<Source>> sourcesToSaveByCollection = new HashMap<>();
-        List<ParchmentRecord> notFoundRecords = new ArrayList<>();
+    public Integer getColumnIndex(String fieldName) {
+        return columnMap.get(fieldName);
+    }
 
-        int updatedRecords = 0;
-        int totalSourcesUpdated = 0;
+    public boolean hasColumn(String fieldName) {
+        return columnMap.containsKey(fieldName);
+    }
 
-        log.info("Starting processing of {} institution records", parchmentRecordList.size());
-
-        Map<String, List<Source>> batchMatches = findMatchingInstitutionsBatch(parchmentRecordList);
-
-        for (ParchmentRecord parchmentRecord : parchmentRecordList) {
-            try {
-                String stateFullName = resolveStateName(parchmentRecord.getStateCountyRegion());
-                String recordKey = generateRecordKey(parchmentRecord, stateFullName);
-                List<Source> matchingSources = batchMatches.getOrDefault(recordKey, Collections.emptyList());
-
-                if (!CollectionUtils.isEmpty(matchingSources)) {
-                    updatedRecords++;
-                    totalSourcesUpdated += processMatchingSources(matchingSources, parchmentRecord, vendor, sourcesToSaveByCollection);
-
-                    if (matchingSources.size() > 1) {
-                        log.debug("Multiple matches for '{}': {} sources updated",
-                                parchmentRecord.getInstitutionName(), matchingSources.size());
-                    }
-                } else {
-                    notFoundRecords.add(parchmentRecord);
-                    log.debug("No match found for: {}", parchmentRecord.getInstitutionName());
-                }
-            } catch (Exception e) {
-                log.error("Error processing record: {}", parchmentRecord.getInstitutionName(), e);
-                notFoundRecords.add(parchmentRecord);
-            }
+    /**
+     * Builds a column mapping from the header row by matching header names to field names.
+     * This allows the Excel parser to work regardless of column order.
+     *
+     * @param headerRow the header row from the Excel sheet
+     * @return a new ExcelColumnMapping with dynamically mapped column indices
+     */
+    public ExcelColumnMapping buildFromHeaderRow(Row headerRow) {
+        if (headerToFieldMap.isEmpty()) {
+            // If no header mapping is configured, return the existing mapping (backward compatibility)
+            return this;
         }
 
-        performBulkSaveMongoDB(sourcesToSaveByCollection);
+        Builder builder = ExcelColumnMapping.builder()
+                .headerRowIndex(this.headerRowIndex)
+                .dataStartRowIndex(this.dataStartRowIndex)
+                .sheetIndex(this.sheetIndex);
 
-        try {
-            updateElasticsearchWithRollback(sourcesToSaveByCollection);
-        } catch (Exception e) {
-            log.error("Elasticsearch update failed. Rolling back MongoDB transaction.", e);
-            throw new RuntimeException("Elasticsearch sync failed - MongoDB changes rolled back", e);
-        }
-
-        log.info("Processing completed. Total: {}, Matched: {}, Updated: {}, NotFound: {}",
-                parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundRecords.size());
-
-        return buildProcessingResult(parchmentRecordList.size(), updatedRecords, totalSourcesUpdated, notFoundRecords);
-    }
-
-    private Vendors findParchmentVendor() {
-        return vendorsRepository.findByVendor(PARCHMENT_EXCHANGE)
-                .orElseThrow(() -> new RuntimeException(String.format(ERROR_VENDOR_NOT_FOUND_TEMPLATE, PARCHMENT_EXCHANGE)));
-    }
-
-    private String resolveStateName(String stateInput) {
-        String stateFullName = StateMapper.getFullName(stateInput);
-        return stateFullName.isEmpty() && !stateInput.isEmpty() ? stateInput : stateFullName;
-    }
-
-    private int processMatchingSources(List<Source> sources, ParchmentRecord parchmentRecord,
-                                       Vendors vendor, Map<String, List<Source>> sourcesToSaveByCollection) {
-        int count = 0;
-        for (Source source : sources) {
-            boolean wasUpdated = updateParchmentExchangeContact(source, parchmentRecord, vendor);
-            if (wasUpdated) {
-                String collectionName = "education_source_parchment_test";
-                sourcesToSaveByCollection.computeIfAbsent(collectionName, k -> new ArrayList<>()).add(source);
-                count++;
-            } else {
-                log.debug("Skipping DB update for source: {} (HON: {}) - Parchment Exchange already exists",
-                        source.getOrganizationName(), source.getHon());
-            }
-        }
-        return count;
-    }
-
-    private Map<String, Object> buildProcessingResult(int totalRecords, int updatedRecords,
-                                                      int totalSourcesUpdated, List<ParchmentRecord> notFoundRecords) {
-        Map<String, Object> result = new HashMap<>();
-        result.put(RESULT_KEY_TOTAL_RECORDS, totalRecords);
-        result.put(RESULT_KEY_UPDATED_RECORDS, updatedRecords);
-        result.put(RESULT_KEY_TOTAL_SOURCES_UPDATED, totalSourcesUpdated);
-        result.put(RESULT_KEY_NOT_FOUND_RECORDS, notFoundRecords.size());
-
-        result.put("notFoundRecordsData", convertToExcelData(notFoundRecords));
-        result.put("excelMetadata", buildExcelMetadata());
-
-        log.info("Processing complete - total: {}, matched: {}, dbUpdated: {}, notFound: {}",
-                totalRecords, updatedRecords, totalSourcesUpdated, notFoundRecords.size());
-
-        return result;
-    }
-
-    private List<Map<String, Object>> convertToExcelData(List<ParchmentRecord> records) {
-        return records.stream()
-                .map(this::parchmentRecordToMap)
-                .collect(Collectors.toList());
-    }
-
-    private Map<String, Object> parchmentRecordToMap(ParchmentRecord record) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("institutionName", record.getInstitutionName());
-        map.put("country", record.getCountry());
-        map.put("city", record.getCity());
-        map.put("stateCountyRegion", record.getStateCountyRegion());
-        map.put("serviceProvider", record.getServiceProvider());
-        map.put("surchargeAmount", record.getSurchargeAmount());
-        map.put("paymentMethod", record.getPaymentMethod());
-        map.put("code", record.getCode());
-        map.put("turnaroundTime", record.getTurnaroundTime());
-        map.put("followUpAllowed", record.getFollowUpAllowed());
-        return map;
-    }
-
-    private List<Map<String, String>> buildExcelMetadata() {
-        List<Map<String, String>> metadata = new ArrayList<>();
-
-        metadata.add(createMetadata("Institution Name", "institutionName"));
-        metadata.add(createMetadata("Country", "country"));
-        metadata.add(createMetadata("City", "city"));
-        metadata.add(createMetadata("State/County/Region", "stateCountyRegion"));
-        metadata.add(createMetadata("Service Provider", "serviceProvider"));
-        metadata.add(createMetadata("Surcharge Amount", "surchargeAmount"));
-        metadata.add(createMetadata("Payment Method", "paymentMethod"));
-        metadata.add(createMetadata("Code", "code"));
-        metadata.add(createMetadata("Turnaround Time", "turnaroundTime"));
-        metadata.add(createMetadata("Follow Up Allowed", "followUpAllowed"));
-
-        return metadata;
-    }
-
-    private Map<String, String> createMetadata(String label, String key) {
-        Map<String, String> meta = new LinkedHashMap<>();
-        meta.put("label", label);
-        meta.put("key", key);
-        return meta;
-    }
-
-    private void performBulkSaveMongoDB(Map<String, List<Source>> sourcesToSaveByCollection) {
-        sourcesToSaveByCollection.forEach((collectionName, sources) -> {
-            if (!sources.isEmpty()) {
-                log.info("Bulk saving {} sources to MongoDB collection: {}", sources.size(), collectionName);
-                executeBulkUpdate(collectionName, sources);
-            }
-        });
-    }
-
-    private void updateElasticsearchWithRollback(Map<String, List<Source>> sourcesToSaveByCollection) throws Exception {
-        for (Map.Entry<String, List<Source>> entry : sourcesToSaveByCollection.entrySet()) {
-            String collectionName = entry.getKey();
-            List<Source> sources = entry.getValue();
-
-            if (!sources.isEmpty()) {
-                try {
-                    String indexName = Helper.getIndexName(sources.getFirst().getOrganizationType().getType());
-                    elasticsearchService.bulkUpdateAutomatedService(indexName, sources);
-                    log.info("Elasticsearch sync successful for {} sources in collection {}", sources.size(), collectionName);
-                } catch (Exception e) {
-                    log.error("Elasticsearch update failed for {} sources in collection {}. Will rollback MongoDB transaction.",
-                            sources.size(), collectionName, e);
-                    throw e;
-                }
-            }
-        }
-    }
-
-    private void executeBulkUpdate(String collectionName, List<Source> sources) {
-        BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName);
-
-        sources.forEach(source -> {
-            Query query = new Query(Criteria.where(MONGO_FIELD_ID).is(source.getId()));
-            Update update = new Update()
-                    .set(FIELD_PAYLOAD, source.getPayload());
-            bulkOps.upsert(query, update);
-        });
-
-        var result = bulkOps.execute();
-        log.info("Bulk save completed - collection: {}, modified: {}, upserted: {}",
-                collectionName, result.getModifiedCount(), result.getUpserts().size());
-    }
-
-    private Map<String, List<Source>> findMatchingInstitutionsBatch(List<ParchmentRecord> batch) {
-        if (batch.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        List<Criteria> recordCriteriaList = new ArrayList<>();
-
-        for (ParchmentRecord record : batch) {
-            String stateFullName = resolveStateName(record.getStateCountyRegion());
-            if (stateFullName == null || stateFullName.isEmpty()) {
+        // Iterate through cells in the header row
+        int lastCellNum = headerRow.getLastCellNum();
+        for (int cellIndex = 0; cellIndex < lastCellNum; cellIndex++) {
+            Cell cell = headerRow.getCell(cellIndex);
+            if (cell == null) {
                 continue;
             }
 
-            Criteria locationCriteria = buildLocationCriteria(record, stateFullName);
-            Criteria nameCriteria = buildNameCriteria(record.getInstitutionName());
-            Criteria combinedCriteria = new Criteria().andOperator(locationCriteria, nameCriteria);
+            String headerValue = ExcelCellReader.getCellValueAsString(cell).trim();
+            String fieldName = headerToFieldMap.get(headerValue);
 
-            recordCriteriaList.add(combinedCriteria);
-        }
-
-        if (recordCriteriaList.isEmpty()) {
-            log.warn("No valid criteria found in batch");
-            return Collections.emptyMap();
-        }
-
-        Query query = new Query(new Criteria().orOperator(recordCriteriaList.toArray(new Criteria[0])));
-
-        query.fields()
-                .include(MONGO_FIELD_ID)
-                .include(FIELD_NAME)
-                .include(FIELD_ALIAS)
-                .include(FIELD_CITY)
-                .include(FIELD_STATE)
-                .include(FIELD_COUNTRY)
-                .include(FIELD_HON)
-                .include(FIELD_TYPE)
-                .include(FIELD_PAYLOAD);
-
-        List<Source> allSources = mongoTemplate.find(query, Source.class, "education_source_parchment_test");
-
-        Map<String, List<Source>> resultMap = new HashMap<>();
-
-        for (ParchmentRecord record : batch) {
-            String stateFullName = resolveStateName(record.getStateCountyRegion());
-            String recordKey = generateRecordKey(record, stateFullName);
-
-            List<Source> matchingSources = allSources.stream()
-                    .filter(source -> matchesRecord(source, record, stateFullName))
-                    .collect(Collectors.toList());
-
-            resultMap.put(recordKey, matchingSources);
-        }
-
-        return resultMap;
-    }
-
-    private String generateRecordKey(ParchmentRecord record, String stateFullName) {
-        return String.format("%s|%s|%s|%s",
-                normalize(record.getInstitutionName()),
-                normalize(record.getCity()),
-                normalize(stateFullName),
-                normalize(record.getCountry()));
-    }
-
-    private String normalize(String value) {
-        return value == null ? "" : value.trim().toLowerCase();
-    }
-
-    private boolean matchesRecord(Source source, ParchmentRecord record, String stateFullName) {
-        if (!stateFullName.equals(source.getState())) {
-            return false;
-        }
-
-        if (!equalsIgnoreCase(source.getCity(), record.getCity())) {
-            return false;
-        }
-
-        if (!equalsIgnoreCase(source.getCountry(), record.getCountry())) {
-            return false;
-        }
-
-        if (equalsIgnoreCase(source.getOrganizationName(), record.getInstitutionName())) {
-            return true;
-        }
-
-        if (source.getOrganizationAlias() != null) {
-            for (Alias alias : source.getOrganizationAlias()) {
-                if (alias != null && equalsIgnoreCase(alias.getName(), record.getInstitutionName())) {
-                    return true;
-                }
+            if (fieldName != null) {
+                builder.addColumn(fieldName, cellIndex);
             }
         }
 
-        return false;
+        return builder.build();
     }
 
-    private boolean equalsIgnoreCase(String value1, String value2) {
-        if (value1 == null && value2 == null) {
-            return true;
-        }
-        if (value1 == null || value2 == null) {
-            return false;
-        }
-        return value1.equalsIgnoreCase(value2);
+    public static Builder builder() {
+        return new Builder();
     }
 
-    private Criteria buildLocationCriteria(ParchmentRecord parchmentRecord, String stateFullName) {
-        Criteria criteria = Criteria.where(FIELD_STATE).is(stateFullName);
-        criteria.and(FIELD_CITY).regex("^" + Pattern.quote(parchmentRecord.getCity()) + "$", "i");
-        criteria.and(FIELD_COUNTRY).regex("^" + Pattern.quote(parchmentRecord.getCountry()) + "$", "i");
-        return criteria;
-    }
+    public static class Builder {
+        private final Map<String, Integer> columnMap = new HashMap<>();
+        private final Map<String, String> headerToFieldMap = new HashMap<>();
+        private int headerRowIndex = 0;
+        private int dataStartRowIndex = 1;
+        private int sheetIndex = 0;
 
-    private Criteria buildNameCriteria(String institutionName) {
-        if (institutionName == null || institutionName.isEmpty()) {
-            return new Criteria();
+        public Builder addColumn(String fieldName, int columnIndex) {
+            this.columnMap.put(fieldName, columnIndex);
+            return this;
         }
 
-        String pattern = "^" + Pattern.quote(institutionName) + "$";
-        return new Criteria().orOperator(
-                Criteria.where(FIELD_NAME).regex(pattern, "i"),
-                Criteria.where(MONGO_FIELD_ORGANIZATION_ALIAS_NAME).regex(pattern, "i")
-        );
-    }
-
-    private boolean updateParchmentExchangeContact(Source source, ParchmentRecord parchmentRecord, Vendors vendor) {
-        BasicDBObject payload = ensurePayload(source);
-        List<BasicDBObject> contacts = ensureContacts(payload);
-        BasicDBObject contact = ensureContact(contacts);
-        List<BasicDBObject> contactDetails = ensureContactDetails(contact);
-        BasicDBObject automatedServicesContact = ensureAutomatedServicesContact(contactDetails);
-
-        return updateParchmentExchangeCommunication(automatedServicesContact, parchmentRecord, vendor);
-    }
-
-    private List<BasicDBObject> toBasicDBObjectList(Object obj) {
-        return switch (obj) {
-            case null -> new ArrayList<>();
-            case List<?> rawList -> {
-                List<BasicDBObject> result = new ArrayList<>();
-                for (Object item : rawList) {
-                    switch (item) {
-                        case BasicDBObject bdo -> result.add(bdo);
-                        case Map map -> result.add(new BasicDBObject(map));
-                        case null, default -> log.warn("Unexpected item type in list: {}. Skipping.",
-                                item != null ? item.getClass().getName() : "null");
-                    }
-                }
-                yield result;
-            }
-            default -> {
-                log.warn("Expected List but got: {}. Returning empty list.",
-                        obj.getClass().getName());
-                yield new ArrayList<>();
-            }
-        };
-    }
-
-    private BasicDBObject ensurePayload(Source source) {
-        Object payloadObj = source.getPayload();
-
-        return switch (payloadObj) {
-            case null -> {
-                BasicDBObject payload = new BasicDBObject();
-                source.setPayload(payload);
-                yield payload;
-            }
-            case BasicDBObject bdo -> bdo;
-            case Map map -> new BasicDBObject(map);
-            default -> {
-                log.warn("Unexpected payload type: {}. Attempting to parse as JSON.", payloadObj.getClass().getName());
-                yield BasicDBObject.parse(payloadObj.toString());
-            }
-        };
-    }
-
-    private List<BasicDBObject> ensureContacts(BasicDBObject payload) {
-        Object contactsObj = payload.computeIfAbsent(CONTACTS, k -> new ArrayList<BasicDBObject>());
-        List<BasicDBObject> contacts = toBasicDBObjectList(contactsObj);
-        payload.put(CONTACTS, contacts);
-        return contacts;
-    }
-
-    private BasicDBObject ensureContact(List<BasicDBObject> contacts) {
-        if (contacts.isEmpty()) {
-            BasicDBObject contact = new BasicDBObject();
-            contact.put(FIELD_PURPOSE, EMPTY_STRING);
-            contact.put(FIELD_PURPOSE_RULE, new ArrayList<>());
-            contact.put(CONTACT_DETAILS, new ArrayList<>());
-            contacts.add(contact);
-            return contact;
+        public Builder addHeaderMapping(String headerName, String fieldName) {
+            this.headerToFieldMap.put(headerName, fieldName);
+            return this;
         }
-        return contacts.getFirst();
-    }
 
-    private List<BasicDBObject> ensureContactDetails(BasicDBObject contact) {
-        Object detailsObj = contact.computeIfAbsent(CONTACT_DETAILS, k -> new ArrayList<BasicDBObject>());
-        List<BasicDBObject> details = toBasicDBObjectList(detailsObj);
-        contact.put(CONTACT_DETAILS, details);
-        return details;
-    }
-
-    private BasicDBObject ensureAutomatedServicesContact(List<BasicDBObject> contactDetails) {
-        BasicDBObject automatedServicesContact = findContactDetailByType(contactDetails, CONTACT_AUTOMATED_SERVICES);
-        if (automatedServicesContact == null) {
-            incrementAllPriorities(contactDetails);
-            automatedServicesContact = createAutomatedServicesContact(1);
-            contactDetails.add(automatedServicesContact);
+        public Builder headerRowIndex(int headerRowIndex) {
+            this.headerRowIndex = headerRowIndex;
+            return this;
         }
-        return automatedServicesContact;
-    }
 
-    private void incrementAllPriorities(List<BasicDBObject> items) {
-        for (BasicDBObject item : items) {
-            Object priorityObj = item.get(PRIORITY);
-            if (priorityObj != null) {
-                int currentPriority = toInt(priorityObj);
-                item.put(PRIORITY, currentPriority + 1);
-            }
+        public Builder dataStartRowIndex(int dataStartRowIndex) {
+            this.dataStartRowIndex = dataStartRowIndex;
+            return this;
+        }
+
+        public Builder sheetIndex(int sheetIndex) {
+            this.sheetIndex = sheetIndex;
+            return this;
+        }
+
+        public ExcelColumnMapping build() {
+            return new ExcelColumnMapping(this);
         }
     }
-
-    private BasicDBObject findContactDetailByType(List<BasicDBObject> contactDetails, String type) {
-        return contactDetails.stream()
-                .filter(cd -> hasType(cd, type))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private boolean hasType(BasicDBObject cd, String type) {
-        return type.equals(cd.get(TYPE));
-    }
-
-    private int toInt(Object priority) {
-        if (priority instanceof Integer i) {
-            return i;
-        }
-        return Integer.parseInt(priority.toString());
-    }
-
-    private BasicDBObject createAutomatedServicesContact(int priority) {
-        BasicDBObject contact = new BasicDBObject();
-        contact.put(FOLLOW_UP_ALLOWED, EMPTY_STRING);
-        contact.put(TYPE, CONTACT_AUTOMATED_SERVICES);
-        contact.put(PRIORITY, priority);
-        contact.put(FIELD_VERSION, EMPTY_STRING);
-        contact.put(TURN_AROUND_TIME, EMPTY_STRING);
-        contact.put(SUR_CHARGE_AMOUNT, EMPTY_STRING);
-        contact.put(NAME, EMPTY_STRING);
-        contact.put(SUR_CHARGE_PAYMENT, EMPTY_STRING);
-        contact.put(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS);
-        contact.put(SUR_CHARGE_CURRENCY, EMPTY_STRING);
-        contact.put(COMMUNICATION, new ArrayList<>());
-        contact.put(FROM_YEAR, EMPTY_STRING);
-        contact.put(TO_YEAR, EMPTY_STRING);
-        return contact;
-    }
-
-    private boolean updateParchmentExchangeCommunication(BasicDBObject contactDetail, ParchmentRecord parchmentRecord, Vendors vendor) {
-        List<BasicDBObject> communications = ensureCommunications(contactDetail);
-        BasicDBObject parchmentComm = findParchmentCommunication(communications);
-
-        if (parchmentComm == null) {
-            incrementAllPriorities(communications);
-            parchmentComm = createParchmentExchangeCommunication(parchmentRecord, vendor, 1);
-            communications.add(parchmentComm);
-            return true;
-        }
-        return false;
-    }
-
-    private List<BasicDBObject> ensureCommunications(BasicDBObject contactDetail) {
-        Object commsObj = contactDetail.computeIfAbsent(COMMUNICATION, k -> new ArrayList<BasicDBObject>());
-        List<BasicDBObject> communications = toBasicDBObjectList(commsObj);
-        contactDetail.put(COMMUNICATION, communications);
-        return communications;
-    }
-
-    private BasicDBObject findParchmentCommunication(List<BasicDBObject> communications) {
-        return communications.stream()
-                .filter(this::isParchmentCommunication)
-                .findFirst()
-                .orElse(null);
-    }
-
-    private boolean isParchmentCommunication(BasicDBObject comm) {
-        return PARCHMENT_EXCHANGE.equals(comm.get(NAME));
-    }
-
-    private BasicDBObject createParchmentExchangeCommunication(ParchmentRecord parchmentRecord, Vendors vendor, int priority) {
-        String providerName = Optional.ofNullable(parchmentRecord.getServiceProvider())
-                .filter(sp -> !sp.isEmpty())
-                .orElse(PARCHMENT_EXCHANGE);
-
-        BasicDBObject communication = new BasicDBObject();
-        communication.put(NAME, providerName);
-        communication.put(COMMUNICATION_INFO, createCommunicationInfoList(parchmentRecord, vendor));
-        communication.put(PROVIDER_ID, String.valueOf(vendor.getProviderId()));
-        communication.put(PRIORITY, priority);
-
-        return communication;
-    }
-
-    private List<BasicDBObject> createCommunicationInfoList(ParchmentRecord parchmentRecord, Vendors vendor) {
-        List<BasicDBObject> infoList = new ArrayList<>();
-
-        infoList.add(createCommunicationInfo(COMPANY_NAMES, parchmentRecord.getInstitutionName()));
-        infoList.add(createCommunicationInfo(CODES, parchmentRecord.getCode()));
-        infoList.add(createCommunicationInfo(BRANCH, EMPTY_STRING));
-        infoList.add(createCommunicationInfo(URI, vendor.getWebsite()));
-        infoList.add(createCommunicationInfo(FIELD_SOURCE_TYPE, SOURCE_TYPE_EDUCATION));
-        infoList.add(createCommunicationInfo(SURCHARGE_AMOUNT, orEmpty(parchmentRecord.getSurchargeAmount())));
-        infoList.add(createCommunicationInfo(SURCHARGE_CURRENCY,
-                COUNTRY_USA.equalsIgnoreCase(parchmentRecord.getCountry()) ? CURRENCY_USD : EMPTY_STRING));
-        infoList.add(createCommunicationInfo(PAYMENT_METHOD, orEmpty(parchmentRecord.getPaymentMethod())));
-        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED, orEmpty(parchmentRecord.getFollowUpAllowed())));
-        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER, EMPTY_STRING));
-        infoList.add(createCommunicationInfo(FOLLOW_UP_ALLOWED_AFTER_UNITS, TIME_UNIT_DAYS));
-        infoList.add(createCommunicationInfo(TURN_AROUND_TIME, orEmpty(parchmentRecord.getTurnaroundTime())));
-        infoList.add(createCommunicationInfo(TURN_AROUND_TIME_UNIT, TIME_UNIT_DAYS));
-        infoList.add(createCommunicationInfo(FROM_YEAR, EMPTY_STRING));
-        infoList.add(createCommunicationInfo(TO_YEAR, EMPTY_STRING));
-
-        return infoList;
-    }
-
-    private String orEmpty(String value) {
-        return value != null ? value : EMPTY_STRING;
-    }
-
-    private BasicDBObject createCommunicationInfo(String type, String value) {
-        BasicDBObject info = new BasicDBObject();
-        info.put(TYPE, type);
-        info.put(VALUE, orEmpty(value));
-        return info;
-    }
-
 }
 
 
@@ -611,136 +180,64 @@ public class ParchmentDataExtractionProcessor implements DataExtractionProcessor
 
 
 
-package com.hireright.sourceintelligence.api.v1;
 
-import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
-import com.hireright.sourceintelligence.api.dto.DataExtractionResponseDTO;
-import com.hireright.sourceintelligence.service.excel.ExcelParserFactory;
-import com.hireright.sourceintelligence.service.excel.ExcelParserStrategy;
-import com.hireright.sourceintelligence.service.extraction.DataExtractionProcessorFactory;
-import lombok.RequiredArgsConstructor;
+
+
+package com.hireright.sourceintelligence.service.excel;
+
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.RestController;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-
-import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
-import static com.hireright.sourceintelligence.domain.constants.Constants.DataExtractionConstants.*;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowInvalidRequest;
 
 @Slf4j
-@RestController
-@RequiredArgsConstructor
-@Validated
-@CrossOrigin
-public class DataExtractionApiController implements DataExtractionApi {
+@Component
+public class GenericExcelParser {
 
-    private final DataExtractionProcessorFactory processorFactory;
-    private final ExcelParserFactory excelParserFactory;
+    public <T> List<T> parseExcelFile(
+            MultipartFile file,
+            ExcelColumnMapping columnMapping,
+            ExcelRowMapper<T> rowMapper) throws IOException {
 
-    @Value("${data.extraction.file.max-size-mb:10}")
-    private int maxDataExtractionFileSizeMb;
+        List<T> records = new ArrayList<>();
 
-    @Override
-    public ResponseEntity<DataExtractionResponseDTO> uploadDataExtractionExcelFile(MultipartFile file, String dataExtractionType) {
-        long startTime = System.currentTimeMillis();
-        String filename = file.getOriginalFilename();
+        try (InputStream inputStream = file.getInputStream();
+             Workbook workbook = new XSSFWorkbook(inputStream)) {
 
-        log.info("Received Data Extraction file upload - filename: {}, size: {} bytes, type: {}",
-                filename, file.getSize(), dataExtractionType);
+            Sheet sheet = workbook.getSheetAt(columnMapping.getSheetIndex());
 
-        validateDataExtractionRequest(file, filename, dataExtractionType);
+            // Build dynamic column mapping from header row
+            Row headerRow = sheet.getRow(columnMapping.getHeaderRowIndex());
+            ExcelColumnMapping dynamicColumnMapping = columnMapping.buildFromHeaderRow(headerRow);
 
-        try {
-            List<ParchmentRecord> records = parseAndValidateRecords(file, filename, dataExtractionType);
-            var processor = processorFactory.getProcessor(dataExtractionType);
-            Map<String, Object> processingResult = processor.processInstitutionRecords(records);
-            processingResult.put("dataExtractionType", dataExtractionType);
+            int lastRowNum = sheet.getLastRowNum();
+            int dataStartRow = dynamicColumnMapping.getDataStartRowIndex();
 
-            DataExtractionResponseDTO response = buildSuccessResponse(
-                    filename,
-                    dataExtractionType,
-                    processingResult,
-                    System.currentTimeMillis() - startTime
-            );
+            for (int rowIndex = dataStartRow; rowIndex <= lastRowNum; rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
 
-            logDataExtractionSuccess(dataExtractionType, response);
-            return ResponseEntity.ok(response);
+                if (ExcelCellReader.isRowEmpty(row)) {
+                    continue;
+                }
 
-        } catch (Exception e) {
-            log.error("Error processing Data Extraction file: {}", filename, e);
-            logAndThrowInvalidRequest(DATA_EXTRACTION_PROCESSING_ERROR, e, e.getMessage());
-            return null;
-        }
-    }
+                T rowRecord = rowMapper.mapRow(row, dynamicColumnMapping);
+                records.add(rowRecord);
 
-    private void validateDataExtractionRequest(MultipartFile file, String filename, String dataExtractionType) {
-        if (!processorFactory.isSupported(dataExtractionType)) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_TYPE_UNSUPPORTED, null,
-                    dataExtractionType, processorFactory.getSupportedTypes());
+                if (log.isDebugEnabled()) {
+                    log.debug("Parsed record at row {}", rowIndex);
+                }
+            }
         }
 
-        if (file.isEmpty()) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_EMPTY, null);
-        }
-
-        if (file.getSize() / FILE_SIZE_BYTES_PER_MB > maxDataExtractionFileSizeMb) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_TOO_LARGE, null, maxDataExtractionFileSizeMb);
-        }
-
-        if (filename == null || (!filename.endsWith(FILE_FORMAT_EXCEL_XLSX) && !filename.endsWith(FILE_FORMAT_EXCEL_XLS))) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_INVALID_FORMAT, null);
-        }
-    }
-
-    private List<ParchmentRecord> parseAndValidateRecords(MultipartFile file, String filename, String dataExtractionType) throws IOException {
-        log.info("Parsing Excel file: {}", filename);
-        ExcelParserStrategy<ParchmentRecord> parser = excelParserFactory.getParser(dataExtractionType);
-        List<ParchmentRecord> records = parser.parse(file);
-
-        if (records.isEmpty()) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_NO_RECORDS_FOUND, null);
-        }
-
-        log.info("Parsed {} records from Excel file", records.size());
+        log.info("Successfully parsed {} records from Excel file", records.size());
         return records;
-    }
-
-    private void logDataExtractionSuccess(String dataExtractionType, DataExtractionResponseDTO response) {
-        log.info("Data Extraction completed - type: {}, total: {}, updated: {}, dbRecordsUpdated: {}, notFound: {}, time: {}ms",
-                dataExtractionType,
-                response.getTotalRecords(),
-                response.getUpdatedRecords(),
-                response.getTotalSourcesUpdated(),
-                response.getNotFoundRecords(),
-                response.getProcessingTimeMs());
-    }
-
-    private DataExtractionResponseDTO buildSuccessResponse(
-            String filename,
-            String dataExtractionType,
-            Map<String, Object> processingResult,
-            long processingTime) {
-
-        return DataExtractionResponseDTO.builder()
-                .status(RESPONSE_STATUS_SUCCESS)
-                .message(RESPONSE_MESSAGE_FILE_PROCESSED)
-                .dataExtractionType(dataExtractionType)
-                .filename(filename)
-                .totalRecords((Integer) processingResult.get(RESULT_KEY_TOTAL_RECORDS))
-                .updatedRecords((Integer) processingResult.get(RESULT_KEY_UPDATED_RECORDS))
-                .totalSourcesUpdated((Integer) processingResult.get(RESULT_KEY_TOTAL_SOURCES_UPDATED))
-                .notFoundRecords((Integer) processingResult.get(RESULT_KEY_NOT_FOUND_RECORDS))
-                .notFoundRecordsData((List<Map<String, Object>>) processingResult.get("notFoundRecordsData"))
-                .excelMetadata((List<Map<String, String>>) processingResult.get("excelMetadata"))
-                .processingTimeMs(processingTime)
-                .build();
     }
 }
