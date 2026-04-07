@@ -1,243 +1,428 @@
-package com.hireright.sourceintelligence.service.excel.mapping;
+# Steps to Create New Information Request Template with `employment:employNameSIDB` Variable
 
-import com.hireright.sourceintelligence.service.excel.ExcelColumnMapping;
+## Overview
+This document outlines the complete steps required to create a new Information Request Template that uses the `employment:employNameSIDB` tag/variable. This variable would retrieve employer name from Source Intelligence Database (SIDB/ContactDB).
 
-public class ParchmentColumnMapping {
+---
 
-    private ParchmentColumnMapping() {
+## Prerequisites
 
+Before starting, ensure you understand:
+- **Tag Resolution System**: Uses `CTagResolver` to replace placeholders like `${employment:employNameSIDB}` with actual data
+- **Bean Configuration**: Tag namespaces are mapped to Java beans in `config.xml`
+- **Database Structure**: Templates are stored in `INFORMATION_REQUEST_TEMPLATE` and related tables
+
+---
+
+## Step 1: Add New Method to CEmploymentBean
+
+The `employment` namespace is already mapped to `CEmploymentBean` in the tag resolver configuration, but you need to add a new method to support the `employNameSIDB` property.
+
+### File to Modify
+📁 **Path**: `components.tag_resolver.sdk_tag_resolver/src/main/java/hireright/components/tag_resolver/sdk/beans/CEmploymentBean.java`
+
+### Code Changes
+
+Add the following method to `CEmploymentBean` class (around line 296, after `getEmployerAudioName()` method):
+
+```java
+/**
+ * Get employer name from Source Intelligence Database (SIDB/ContactDB).
+ * Returns the verified employer name from CCDBOrgUnit if available, 
+ * otherwise returns null to indicate SIDB data is not available.
+ * 
+ * @return Employer name from SIDB or null if not available
+ */
+public String getEmployNameSIDB()
+{
+    CCDBOrgUnit orgUnit = getOrgUnit();
+    
+    if (orgUnit != null)
+    {
+        return CStringSanitizer.sanitize(orgUnit.getOrgName());
     }
-
-    // Field name constants
-    public static final String INSTITUTION_NAME = "institutionName";
-    public static final String COUNTRY = "country";
-    public static final String CITY = "city";
-    public static final String STATE_COUNTY_REGION = "stateCountyRegion";
-    public static final String SERVICE_PROVIDER = "serviceProvider";
-    public static final String SURCHARGE_AMOUNT = "surchargeAmount";
-    public static final String PAYMENT_METHOD = "paymentMethod";
-    public static final String CODE = "code";
-    public static final String TURNAROUND_TIME = "turnaroundTime";
-    public static final String FOLLOW_UP_ALLOWED = "followUpAllowed";
-
-    // Excel header name constants (as they appear in the Excel file)
-    private static final String HEADER_INSTITUTION_NAME = "Institution Name";
-    private static final String HEADER_COUNTRY = "Country";
-    private static final String HEADER_CITY = "City";
-    private static final String HEADER_STATE_COUNTY_REGION = "State/County/Region";
-    private static final String HEADER_SERVICE_PROVIDER = "Service Provider";
-    private static final String HEADER_SURCHARGE_AMOUNT = "Surcharge Amount";
-    private static final String HEADER_PAYMENT_METHOD = "Payment Method";
-    private static final String HEADER_CODE = "Code";
-    private static final String HEADER_TURNAROUND_TIME = "Turnaround Time";
-    private static final String HEADER_FOLLOW_UP_ALLOWED = "Follow Up Allowed";
-
-    /**
-     * Creates an ExcelColumnMapping that reads column positions dynamically from the header row.
-     * This makes the parser robust against column reordering in the Excel file.
-     *
-     * @return ExcelColumnMapping configured with header-to-field mappings
-     */
-    public static ExcelColumnMapping create() {
-        return ExcelColumnMapping.builder()
-                // Map Excel header names to field names
-                .addHeaderMapping(HEADER_INSTITUTION_NAME, INSTITUTION_NAME)
-                .addHeaderMapping(HEADER_COUNTRY, COUNTRY)
-                .addHeaderMapping(HEADER_CITY, CITY)
-                .addHeaderMapping(HEADER_STATE_COUNTY_REGION, STATE_COUNTY_REGION)
-                .addHeaderMapping(HEADER_SERVICE_PROVIDER, SERVICE_PROVIDER)
-                .addHeaderMapping(HEADER_SURCHARGE_AMOUNT, SURCHARGE_AMOUNT)
-                .addHeaderMapping(HEADER_PAYMENT_METHOD, PAYMENT_METHOD)
-                .addHeaderMapping(HEADER_CODE, CODE)
-                .addHeaderMapping(HEADER_TURNAROUND_TIME, TURNAROUND_TIME)
-                .addHeaderMapping(HEADER_FOLLOW_UP_ALLOWED, FOLLOW_UP_ALLOWED)
-                .headerRowIndex(0)
-                .dataStartRowIndex(1)
-                .sheetIndex(0)
-                .build();
-    }
+    
+    return null;
 }
+```
 
+### Explanation
+- **`getOrgUnit()`**: Already exists in the class, retrieves CCDBOrgUnit from Source Intelligence Database
+- **`orgUnit.getOrgName()`**: Gets the organization name from ContactDB (SIDB)
+- **`CStringSanitizer.sanitize()`**: Sanitizes the string to prevent XSS/injection attacks
+- Returns `null` if SIDB data is not available (graceful degradation)
 
+---
 
+## Step 2: Compile and Deploy the Updated Component
 
+After modifying `CEmploymentBean.java`:
 
-package com.hireright.sourceintelligence.service.excel;
+```bash
+# Navigate to the tag_resolver SDK component
+cd /path/to/components.tag_resolver.sdk_tag_resolver
 
-import lombok.Getter;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.Row;
+# Build the component
+mvn clean install
 
-import java.util.HashMap;
-import java.util.Map;
+# Or if using Ant
+ant clean build
 
-@Getter
-public class ExcelColumnMapping {
+# Deploy the JAR to your application's lib directory
+cp target/tag_resolver_sdk.jar /path/to/applications/comm_tool2/webapp/WEB-INF/lib/
+```
 
-    private final Map<String, Integer> columnMap;
-    private final Map<String, String> headerToFieldMap;
-    private final int headerRowIndex;
-    private final int dataStartRowIndex;
-    private final int sheetIndex;
+---
 
-    private ExcelColumnMapping(Builder builder) {
-        this.columnMap = new HashMap<>(builder.columnMap);
-        this.headerToFieldMap = new HashMap<>(builder.headerToFieldMap);
-        this.headerRowIndex = builder.headerRowIndex;
-        this.dataStartRowIndex = builder.dataStartRowIndex;
-        this.sheetIndex = builder.sheetIndex;
-    }
+## Step 3: Create Database Template Record
 
-    public Integer getColumnIndex(String fieldName) {
-        return columnMap.get(fieldName);
-    }
+Insert a new Information Request Template into the database.
 
-    public boolean hasColumn(String fieldName) {
-        return columnMap.containsKey(fieldName);
-    }
+### SQL: Insert Template Record
 
-    /**
-     * Builds a column mapping from the header row by matching header names to field names.
-     * This allows the Excel parser to work regardless of column order.
-     *
-     * @param headerRow the header row from the Excel sheet
-     * @return a new ExcelColumnMapping with dynamically mapped column indices
-     */
-    public ExcelColumnMapping buildFromHeaderRow(Row headerRow) {
-        if (headerToFieldMap.isEmpty()) {
-            // If no header mapping is configured, return the existing mapping (backward compatibility)
-            return this;
-        }
+```sql
+-- Insert into INFORMATION_REQUEST_TEMPLATE table
+INSERT INTO INFORMATION_REQUEST_TEMPLATE (
+    ID,
+    TITLE,
+    TYPE,
+    STATE,
+    SEND_TO_APPLICANT,
+    SEND_TO_RECRUITER,
+    IS_HARDCOPY,
+    CREATION_DATE,
+    CREATED_BY
+) VALUES (
+    INFORMATION_REQUEST_TEMPLATE_SEQ.NEXTVAL,  -- Auto-generated ID
+    'Employment Verification - SIDB',           -- Template title
+    'EMAIL',                                     -- EMAIL or HARDCOPY
+    'ACTIVE',                                    -- ACTIVE or INACTIVE
+    'Y',                                         -- Send to applicant
+    'Y',                                         -- Send to recruiter
+    'N',                                         -- Is hardcopy
+    SYSDATE,                                     -- Creation timestamp
+    'ADMIN'                                      -- Created by operator
+);
 
-        Builder builder = ExcelColumnMapping.builder()
-                .headerRowIndex(this.headerRowIndex)
-                .dataStartRowIndex(this.dataStartRowIndex)
-                .sheetIndex(this.sheetIndex);
+-- Get the generated ID for next steps
+SELECT INFORMATION_REQUEST_TEMPLATE_SEQ.CURRVAL AS TEMPLATE_ID FROM DUAL;
+```
 
-        // Iterate through cells in the header row
-        int lastCellNum = headerRow.getLastCellNum();
-        for (int cellIndex = 0; cellIndex < lastCellNum; cellIndex++) {
-            Cell cell = headerRow.getCell(cellIndex);
-            if (cell == null) {
-                continue;
-            }
+---
 
-            String headerValue = ExcelCellReader.getCellValueAsString(cell).trim();
-            String fieldName = headerToFieldMap.get(headerValue);
+## Step 4: Add Template Descriptions
 
-            if (fieldName != null) {
-                builder.addColumn(fieldName, cellIndex);
-            }
-        }
+Add localized descriptions for the template.
 
-        return builder.build();
-    }
+### SQL: Insert Description Records
 
-    public static Builder builder() {
-        return new Builder();
-    }
+```sql
+-- Assuming template ID = 12345 (use the ID from Step 3)
 
-    public static class Builder {
-        private final Map<String, Integer> columnMap = new HashMap<>();
-        private final Map<String, String> headerToFieldMap = new HashMap<>();
-        private int headerRowIndex = 0;
-        private int dataStartRowIndex = 1;
-        private int sheetIndex = 0;
+-- English Description
+INSERT INTO INFORMATION_REQUEST_DESCRIPTION (
+    ID,
+    TEMPLATE_ID,
+    LANGUAGE,
+    SHORT_APPLICANT_DESCRIPTION,
+    APPLICANT_DESCRIPTION,
+    SHORT_RECRUITER_DESCRIPTION,
+    RECRUITER_DESCRIPTION
+) VALUES (
+    INFORMATION_REQUEST_DESCRIPTION_SEQ.NEXTVAL,
+    12345,  -- Replace with your template ID
+    'en',
+    'Employer Verification Request',
+    'We need to verify your employment with ${employment:employNameSIDB}. Please provide the requested information below.',
+    'Employment Verification',
+    'Request employment verification for the candidate at ${employment:employNameSIDB}.'
+);
 
-        public Builder addColumn(String fieldName, int columnIndex) {
-            this.columnMap.put(fieldName, columnIndex);
-            return this;
-        }
+-- Add additional languages if needed (Spanish, French, etc.)
+INSERT INTO INFORMATION_REQUEST_DESCRIPTION (
+    ID,
+    TEMPLATE_ID,
+    LANGUAGE,
+    SHORT_APPLICANT_DESCRIPTION,
+    APPLICANT_DESCRIPTION,
+    SHORT_RECRUITER_DESCRIPTION,
+    RECRUITER_DESCRIPTION
+) VALUES (
+    INFORMATION_REQUEST_DESCRIPTION_SEQ.NEXTVAL,
+    12345,  -- Replace with your template ID
+    'es',
+    'Solicitud de verificación del empleador',
+    'Necesitamos verificar su empleo con ${employment:employNameSIDB}. Por favor proporcione la información solicitada a continuación.',
+    'Verificación de empleo',
+    'Solicitar verificación de empleo para el candidato en ${employment:employNameSIDB}.'
+);
+```
 
-        public Builder addHeaderMapping(String headerName, String fieldName) {
-            this.headerToFieldMap.put(headerName, fieldName);
-            return this;
-        }
+**Note**: The `${employment:employNameSIDB}` tag will be automatically resolved by the `CTagResolver` when the template is loaded.
 
-        public Builder headerRowIndex(int headerRowIndex) {
-            this.headerRowIndex = headerRowIndex;
-            return this;
-        }
+---
 
-        public Builder dataStartRowIndex(int dataStartRowIndex) {
-            this.dataStartRowIndex = dataStartRowIndex;
-            return this;
-        }
+## Step 5: Map Template to Service Groups
 
-        public Builder sheetIndex(int sheetIndex) {
-            this.sheetIndex = sheetIndex;
-            return this;
-        }
+Associate the template with specific service groups.
 
-        public ExcelColumnMapping build() {
-            return new ExcelColumnMapping(this);
-        }
-    }
-}
+### SQL: Insert Service Group Mappings
 
+```sql
+-- Map template to Employment Verification service groups
+INSERT INTO INFORMATION_REQUEST_MAPPINGS (
+    ID,
+    TEMPLATE_ID,
+    SERVICE_GROUP_ID
+) VALUES (
+    INFORMATION_REQUEST_MAPPINGS_SEQ.NEXTVAL,
+    12345,  -- Your template ID
+    1001    -- Service Group ID for Employment Verification
+);
 
+-- Map to "ALL" service group if applicable
+INSERT INTO INFORMATION_REQUEST_MAPPINGS (
+    ID,
+    TEMPLATE_ID,
+    SERVICE_GROUP_ID
+) VALUES (
+    INFORMATION_REQUEST_MAPPINGS_SEQ.NEXTVAL,
+    12345,  -- Your template ID
+    -1      -- Special ID for "ALL" services
+);
 
+COMMIT;
+```
 
+---
 
+## Step 6: (Optional) Attach Document Templates
 
+If the template requires document attachments (forms, PDFs, etc.):
 
+```sql
+-- First, insert document template record
+INSERT INTO DOCUMENT_TEMPLATE (
+    ID,
+    NAME,
+    FILE_PATH,
+    MIME_TYPE,
+    CREATION_DATE
+) VALUES (
+    DOCUMENT_TEMPLATE_SEQ.NEXTVAL,
+    'Employment_Verification_Form.pdf',
+    '/templates/employment_verification.pdf',
+    'application/pdf',
+    SYSDATE
+);
 
+-- Get the document template ID
+SELECT DOCUMENT_TEMPLATE_SEQ.CURRVAL AS DOC_TEMPLATE_ID FROM DUAL;
 
-package com.hireright.sourceintelligence.service.excel;
+-- Link document template to information request template
+INSERT INTO IR_TEMPLATE_DOCUMENT_MAPPING (
+    ID,
+    IR_TEMPLATE_ID,
+    DOCUMENT_TEMPLATE_ID
+) VALUES (
+    IR_TEMPLATE_DOCUMENT_MAPPING_SEQ.NEXTVAL,
+    12345,  -- Information Request Template ID
+    5678    -- Document Template ID
+);
 
-import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
+COMMIT;
+```
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
+---
 
-@Slf4j
-@Component
-public class GenericExcelParser {
+## Step 7: Configure Gap Enhancement (If Needed)
 
-    public <T> List<T> parseExcelFile(
-            MultipartFile file,
-            ExcelColumnMapping columnMapping,
-            ExcelRowMapper<T> rowMapper) throws IOException {
+If this template needs to support gap enhancement services (like UK Credit), add it to the tag filters:
 
-        List<T> records = new ArrayList<>();
+### File to Check
+📁 **Path**: `src/main/java/hireright/project/comm_tool2/core/CTagFilters.java`
 
-        try (InputStream inputStream = file.getInputStream();
-             Workbook workbook = new XSSFWorkbook(inputStream)) {
+Add your service to the `isRelevantForService()` method if gap enhancement processing is required.
 
-            Sheet sheet = workbook.getSheetAt(columnMapping.getSheetIndex());
+---
 
-            // Build dynamic column mapping from header row
-            Row headerRow = sheet.getRow(columnMapping.getHeaderRowIndex());
-            ExcelColumnMapping dynamicColumnMapping = columnMapping.buildFromHeaderRow(headerRow);
+## Step 8: Test the Template
 
-            int lastRowNum = sheet.getLastRowNum();
-            int dataStartRow = dynamicColumnMapping.getDataStartRowIndex();
+### 8.1 Restart Application Server
 
-            for (int rowIndex = dataStartRow; rowIndex <= lastRowNum; rowIndex++) {
-                Row row = sheet.getRow(rowIndex);
+After deploying the updated JAR, restart your application server:
 
-                if (ExcelCellReader.isRowEmpty(row)) {
-                    continue;
-                }
+```bash
+# For Tomcat
+./shutdown.sh && ./startup.sh
 
-                T rowRecord = rowMapper.mapRow(row, dynamicColumnMapping);
-                records.add(rowRecord);
+# For other servers, use appropriate commands
+```
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Parsed record at row {}", rowIndex);
-                }
-            }
-        }
+### 8.2 Test Tag Resolution
 
-        log.info("Successfully parsed {} records from Excel file", records.size());
-        return records;
-    }
-}
+Create a test program or use existing tools to verify tag resolution:
+
+```java
+// Test code snippet
+CTagResolver resolver = new CTagResolver();
+CProperties contextProps = new CProperties();
+contextProps.setProperty("orderServiceID", "123456"); // Valid employment order service ID
+
+String resolvedValue = (String) resolver.getFieldValue(
+    "employment:employNameSIDB", 
+    null, 
+    contextProps
+);
+
+System.out.println("Resolved value: " + resolvedValue);
+// Should output employer name from SIDB or null
+```
+
+### 8.3 Verify via API
+
+Use the `loadInformationRequestsDetails` API to load your template:
+
+**Request Parameters:**
+- `serviceID`: Employment verification service ID
+- `informationRequestTemplateId`: Your template ID (12345)
+
+**Expected Response:**
+```xml
+<InformationRequest type="EMAIL" templateID="12345">
+  <Description language="en">
+    <ShortDescription><![CDATA[Employer Verification Request]]></ShortDescription>
+    <LongDescription><![CDATA[We need to verify your employment with [RESOLVED_SIDB_NAME]. ...]]></LongDescription>
+  </Description>
+</InformationRequest>
+```
+
+The `${employment:employNameSIDB}` should be replaced with actual SIDB employer name.
+
+---
+
+## Step 9: Verify in UI
+
+1. **Login to Operator Tool**
+2. **Navigate to an Order** with Employment service
+3. **Create Information Request**:
+   - Select your new template
+   - Verify the employer name from SIDB appears correctly
+4. **Send the Request** and verify recipient receives correct content
+
+---
+
+## Summary of Changes
+
+| Component | Action | File/Table |
+|-----------|--------|------------|
+| **Java Code** | Add method `getEmployNameSIDB()` | `CEmploymentBean.java` |
+| **Build** | Compile and deploy JAR | Maven/Ant build |
+| **Database** | Insert template record | `INFORMATION_REQUEST_TEMPLATE` |
+| **Database** | Insert descriptions | `INFORMATION_REQUEST_DESCRIPTION` |
+| **Database** | Map to service groups | `INFORMATION_REQUEST_MAPPINGS` |
+| **Database** | (Optional) Link documents | `IR_TEMPLATE_DOCUMENT_MAPPING` |
+| **Deployment** | Deploy JAR and restart server | Application server |
+| **Testing** | Verify tag resolution | API and UI testing |
+
+---
+
+## Tag Resolution Flow
+
+```
+Template Description Text with Variable
+        ↓
+"...employment with ${employment:employNameSIDB}..."
+        ↓
+CTagResolver.resolveTags()
+        ↓
+Parse namespace "employment" and property "employNameSIDB"
+        ↓
+Load CEmploymentBean (from config.xml mapping)
+        ↓
+Call CEmploymentBean.getEmployNameSIDB()
+        ↓
+Return SIDB employer name or null
+        ↓
+Replace ${employment:employNameSIDB} with actual value
+        ↓
+Final Output: "...employment with ABC Corporation..."
+```
+
+---
+
+## Available Employment Tag Variables
+
+For reference, here are other available `employment:*` variables already implemented:
+
+| Variable | Description | Method |
+|----------|-------------|--------|
+| `employment:jobStartDate` | Job start date (verified or reported) | `getJobStartDate()` |
+| `employment:reportedJobStartDate` | Reported job start date | `getReportedJobStartDate()` |
+| `employment:verifiedJobStartDate` | Verified job start date | `getVerifiedJobStartDate()` |
+| `employment:jobEndDate` | Job end date (verified or reported) | `getJobEndDate()` |
+| `employment:employerName` | Employer name (verified or reported) | `getEmployerName()` |
+| `employment:reportedEmployerName` | Reported employer name | `getReportedEmployerName()` |
+| `employment:verifiedEmployerName` | Verified employer name | `getVerifiedEmployerName()` |
+| `employment:jobTitle` | Job title (verified or reported) | `getJobTitle()` |
+| `employment:supervisorName` | Supervisor name | `getSupervisorName()` |
+| `employment:email` | Employer email | `getEmail()` |
+| `employment:phone` | Employer phone | `getPhone()` |
+| `employment:fax` | Employer fax | `getFax()` |
+| `employment:reportedSalary` | Reported salary | `getReportedSalary()` |
+| `employment:verifiedSalary` | Verified salary | `getVerifiedSalary()` |
+| `employment:employNameSIDB` | **NEW** - Employer name from SIDB | `getEmployNameSIDB()` |
+
+---
+
+## Troubleshooting
+
+### Issue: Variable not resolving (shows `${employment:employNameSIDB}`)
+
+**Possible Causes:**
+1. JAR not deployed properly
+2. Server not restarted
+3. Method name mismatch (must be `getEmployNameSIDB()` - case-sensitive)
+4. Bean not initialized correctly
+
+**Solution:**
+- Verify JAR is in `WEB-INF/lib`
+- Restart application server
+- Check method signature matches pattern: `get + PropertyName()`
+
+### Issue: Returns null instead of employer name
+
+**Possible Causes:**
+1. No SIDB (ContactDB) data for this employment record
+2. `orgUnitID` is null in employment record
+
+**Solution:**
+- Check if `m_emp.getOrgUnitID()` returns a valid ID
+- Verify `CCDB_ORG_UNIT` table has record with matching ID
+- Fallback to `employment:employerName` for templates that need guaranteed data
+
+---
+
+## Best Practices
+
+1. **Always sanitize output**: Use `CStringSanitizer.sanitize()` for user-facing strings
+2. **Graceful degradation**: Return null or default values when data unavailable
+3. **Test thoroughly**: Test with orders that have SIDB data AND without
+4. **Version control**: Commit changes to CEmploymentBean with proper comments
+5. **Documentation**: Update API documentation with new variable
+
+---
+
+## Contact & Support
+
+For questions about this implementation:
+- Refer to existing similar implementations in `CEducationBean.getSchoolAudioName()`
+- Check tag resolver documentation
+- Review `CTagResolver.java` source code for resolution logic
+
+---
+
+**Document Version**: 1.0  
+**Last Updated**: 2026-04-06  
+**Author**: Development Team
+
