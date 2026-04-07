@@ -1,91 +1,94 @@
-INSERT INTO INFORMATION_REQUEST_TEMPLATE (
+create new method in cemploymentbean
+  public String getEmployerNameSIDB2()
+    {
+        return CStringUtils.nvl(getReportedEmployerName(), getVerifiedEmployerName());
+    }
+
+1.INSERT INTO INFO_REQUEST_TEMPLATE (
     ID,
     TITLE,
     TYPE,
     STATE,
-    SEND_TO_APPLICANT,
-    SEND_TO_RECRUITER,
-    IS_HARDCOPY,
-    CREATION_DATE,
-    CREATED_BY
+    STATE_DTTM,
+    FORMAT,
+    OPERATOR_ID,
+    PROPERTIES,
+    REFERENCE
 )
 SELECT 
-    INFORMATION_REQUEST_TEMPLATE_SEQ.NEXTVAL,
-    TITLE || ' (SIDB)',
+    (SELECT MAX(ID) + 1 FROM INFO_REQUEST_TEMPLATE),
+    TITLE,
     TYPE,
     STATE,
-    SEND_TO_APPLICANT,
-    SEND_TO_RECRUITER,
-    IS_HARDCOPY,
-    SYSDATE,
-    'ADMIN'  -- Change to your username
-FROM INFORMATION_REQUEST_TEMPLATE
+    STATE_DTTM,
+    FORMAT,
+    OPERATOR_ID,
+    PROPERTIES,
+    REFERENCE
+FROM INFO_REQUEST_TEMPLATE
 WHERE ID = 2245;
 
--- Get the new template ID
-SELECT INFORMATION_REQUEST_TEMPLATE_SEQ.CURRVAL AS NEW_TEMPLATE_ID 
-FROM DUAL;
+UPDATE info_request_template
+SET title = 'INT''L - Unacceptable Employment SIDB2 Documentation received - generic'
+WHERE id = '1137022';
 
 
 
-
-INSERT INTO INFORMATION_REQUEST_DESCRIPTION (
+2. INSERT INTO INFO_REQUEST_DESCRIPTION (
     ID,
     TEMPLATE_ID,
+    SHORT_DESCRIPTION,
+    DESCRIPTION,
     LANGUAGE,
     SHORT_APPLICANT_DESCRIPTION,
-    APPLICANT_DESCRIPTION,
-    SHORT_RECRUITER_DESCRIPTION,
-    RECRUITER_DESCRIPTION
+    APPLICANT_DESCRIPTION
 )
 SELECT 
-    INFORMATION_REQUEST_DESCRIPTION_SEQ.NEXTVAL,
-    2300,  -- REPLACE with your new template ID
+(SELECT MAX(ID) + 1 FROM INFO_REQUEST_DESCRIPTION),
+    1137022, 
+    SHORT_DESCRIPTION,
+    DESCRIPTION,
     LANGUAGE,
-    REPLACE(NVL(SHORT_APPLICANT_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}'),
-    REPLACE(NVL(APPLICANT_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}'),
-    REPLACE(NVL(SHORT_RECRUITER_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}'),
-    REPLACE(NVL(RECRUITER_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}')
-FROM INFORMATION_REQUEST_DESCRIPTION
-WHERE TEMPLATE_ID = 2245;
+    SHORT_APPLICANT_DESCRIPTION,
+    APPLICANT_DESCRIPTION
+FROM INFO_REQUEST_DESCRIPTION
+WHERE TEMPLATE_ID = 2245 and language='en';
+
+
+UPDATE info_request_description
+SET 
+    short_description = REPLACE(short_description, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    description = REPLACE(description, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    short_applicant_description = REPLACE(short_applicant_description, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    applicant_description = REPLACE(applicant_description, '$employment:employerName$', '$employment:employerNameSIDB2$')
+WHERE template_id = '1137022'
+  AND language = 'en';
 
 
 
-
-
-
-
-INSERT INTO INFORMATION_REQUEST_MAPPINGS (
+3. 
+INSERT INTO INFO_REQUEST_MAPPINGS (
     ID,
     TEMPLATE_ID,
-    SERVICE_ID,
-    SERVICE_GROUP_ID
+    OBJECT_CLASS,
+    OBJECT_ID,
+    USAGE
 )
 SELECT 
-    INFORMATION_REQUEST_MAPPINGS_SEQ.NEXTVAL,
-    2300,  -- REPLACE with your new template ID
-    SERVICE_ID,
-    SERVICE_GROUP_ID
-FROM INFORMATION_REQUEST_MAPPINGS
+    (SELECT MAX(ID) FROM INFO_REQUEST_MAPPINGS) 
+        + ROW_NUMBER() OVER (ORDER BY ID),
+    1137022,  
+    OBJECT_CLASS,
+    OBJECT_ID,
+    USAGE
+FROM INFO_REQUEST_MAPPINGS
 WHERE TEMPLATE_ID = 2245;
 
 
 
 
-INSERT INTO IR_TEMPLATE_DOCUMENT_MAPPING (
-    ID,
-    IR_TEMPLATE_ID,
-    DOCUMENT_TEMPLATE_ID,
-    DISPLAY_ORDER
-)
-SELECT 
-    IR_TEMPLATE_DOCUMENT_MAPPING_SEQ.NEXTVAL,
-    2300,  -- REPLACE with your new template ID
-    DOCUMENT_TEMPLATE_ID,
-    DISPLAY_ORDER
-FROM IR_TEMPLATE_DOCUMENT_MAPPING
-WHERE IR_TEMPLATE_ID = 2245;
-
-
-
-COMMIT;
+short_description='Unacceptable EMP Docs for _$employment:employerName$_' and 
+description='HireRight has received your documentation 
+for _$employment:employerName$_ that we are unable to accept. Please resend your documentation that covers both your starting date and your ending date. Acceptable documentation: 
+copy of contract; contract termination or termination decision; contract annex, appendix, addendum; reference letter, pay slips, tax documents,  work certificate, employment/experience
+ letter; salary certificate.  '
