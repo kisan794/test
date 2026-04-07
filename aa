@@ -1,87 +1,3 @@
-# Steps to Create New Information Request Template with `employment:employNameSIDB` Variable
-
-## Overview
-This document outlines the complete steps required to create a new Information Request Template that uses the `employment:employNameSIDB` tag/variable. This variable would retrieve employer name from Source Intelligence Database (SIDB/ContactDB).
-
----
-
-## Prerequisites
-
-Before starting, ensure you understand:
-- **Tag Resolution System**: Uses `CTagResolver` to replace placeholders like `${employment:employNameSIDB}` with actual data
-- **Bean Configuration**: Tag namespaces are mapped to Java beans in `config.xml`
-- **Database Structure**: Templates are stored in `INFORMATION_REQUEST_TEMPLATE` and related tables
-
----
-
-## Step 1: Add New Method to CEmploymentBean
-
-The `employment` namespace is already mapped to `CEmploymentBean` in the tag resolver configuration, but you need to add a new method to support the `employNameSIDB` property.
-
-### File to Modify
-📁 **Path**: `components.tag_resolver.sdk_tag_resolver/src/main/java/hireright/components/tag_resolver/sdk/beans/CEmploymentBean.java`
-
-### Code Changes
-
-Add the following method to `CEmploymentBean` class (around line 296, after `getEmployerAudioName()` method):
-
-```java
-/**
- * Get employer name from Source Intelligence Database (SIDB/ContactDB).
- * Returns the verified employer name from CCDBOrgUnit if available, 
- * otherwise returns null to indicate SIDB data is not available.
- * 
- * @return Employer name from SIDB or null if not available
- */
-public String getEmployNameSIDB()
-{
-    CCDBOrgUnit orgUnit = getOrgUnit();
-    
-    if (orgUnit != null)
-    {
-        return CStringSanitizer.sanitize(orgUnit.getOrgName());
-    }
-    
-    return null;
-}
-```
-
-### Explanation
-- **`getOrgUnit()`**: Already exists in the class, retrieves CCDBOrgUnit from Source Intelligence Database
-- **`orgUnit.getOrgName()`**: Gets the organization name from ContactDB (SIDB)
-- **`CStringSanitizer.sanitize()`**: Sanitizes the string to prevent XSS/injection attacks
-- Returns `null` if SIDB data is not available (graceful degradation)
-
----
-
-## Step 2: Compile and Deploy the Updated Component
-
-After modifying `CEmploymentBean.java`:
-
-```bash
-# Navigate to the tag_resolver SDK component
-cd /path/to/components.tag_resolver.sdk_tag_resolver
-
-# Build the component
-mvn clean install
-
-# Or if using Ant
-ant clean build
-
-# Deploy the JAR to your application's lib directory
-cp target/tag_resolver_sdk.jar /path/to/applications/comm_tool2/webapp/WEB-INF/lib/
-```
-
----
-
-## Step 3: Create Database Template Record
-
-Insert a new Information Request Template into the database.
-
-### SQL: Insert Template Record
-
-```sql
--- Insert into INFORMATION_REQUEST_TEMPLATE table
 INSERT INTO INFORMATION_REQUEST_TEMPLATE (
     ID,
     TITLE,
@@ -92,34 +8,27 @@ INSERT INTO INFORMATION_REQUEST_TEMPLATE (
     IS_HARDCOPY,
     CREATION_DATE,
     CREATED_BY
-) VALUES (
-    INFORMATION_REQUEST_TEMPLATE_SEQ.NEXTVAL,  -- Auto-generated ID
-    'Employment Verification - SIDB',           -- Template title
-    'EMAIL',                                     -- EMAIL or HARDCOPY
-    'ACTIVE',                                    -- ACTIVE or INACTIVE
-    'Y',                                         -- Send to applicant
-    'Y',                                         -- Send to recruiter
-    'N',                                         -- Is hardcopy
-    SYSDATE,                                     -- Creation timestamp
-    'ADMIN'                                      -- Created by operator
-);
+)
+SELECT 
+    INFORMATION_REQUEST_TEMPLATE_SEQ.NEXTVAL,
+    TITLE || ' (SIDB)',
+    TYPE,
+    STATE,
+    SEND_TO_APPLICANT,
+    SEND_TO_RECRUITER,
+    IS_HARDCOPY,
+    SYSDATE,
+    'ADMIN'  -- Change to your username
+FROM INFORMATION_REQUEST_TEMPLATE
+WHERE ID = 2245;
 
--- Get the generated ID for next steps
-SELECT INFORMATION_REQUEST_TEMPLATE_SEQ.CURRVAL AS TEMPLATE_ID FROM DUAL;
-```
+-- Get the new template ID
+SELECT INFORMATION_REQUEST_TEMPLATE_SEQ.CURRVAL AS NEW_TEMPLATE_ID 
+FROM DUAL;
 
----
 
-## Step 4: Add Template Descriptions
 
-Add localized descriptions for the template.
 
-### SQL: Insert Description Records
-
-```sql
--- Assuming template ID = 12345 (use the ID from Step 3)
-
--- English Description
 INSERT INTO INFORMATION_REQUEST_DESCRIPTION (
     ID,
     TEMPLATE_ID,
@@ -128,301 +37,55 @@ INSERT INTO INFORMATION_REQUEST_DESCRIPTION (
     APPLICANT_DESCRIPTION,
     SHORT_RECRUITER_DESCRIPTION,
     RECRUITER_DESCRIPTION
-) VALUES (
+)
+SELECT 
     INFORMATION_REQUEST_DESCRIPTION_SEQ.NEXTVAL,
-    12345,  -- Replace with your template ID
-    'en',
-    'Employer Verification Request',
-    'We need to verify your employment with ${employment:employNameSIDB}. Please provide the requested information below.',
-    'Employment Verification',
-    'Request employment verification for the candidate at ${employment:employNameSIDB}.'
-);
-
--- Add additional languages if needed (Spanish, French, etc.)
-INSERT INTO INFORMATION_REQUEST_DESCRIPTION (
-    ID,
-    TEMPLATE_ID,
+    2300,  -- REPLACE with your new template ID
     LANGUAGE,
-    SHORT_APPLICANT_DESCRIPTION,
-    APPLICANT_DESCRIPTION,
-    SHORT_RECRUITER_DESCRIPTION,
-    RECRUITER_DESCRIPTION
-) VALUES (
-    INFORMATION_REQUEST_DESCRIPTION_SEQ.NEXTVAL,
-    12345,  -- Replace with your template ID
-    'es',
-    'Solicitud de verificación del empleador',
-    'Necesitamos verificar su empleo con ${employment:employNameSIDB}. Por favor proporcione la información solicitada a continuación.',
-    'Verificación de empleo',
-    'Solicitar verificación de empleo para el candidato en ${employment:employNameSIDB}.'
-);
-```
+    REPLACE(NVL(SHORT_APPLICANT_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}'),
+    REPLACE(NVL(APPLICANT_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}'),
+    REPLACE(NVL(SHORT_RECRUITER_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}'),
+    REPLACE(NVL(RECRUITER_DESCRIPTION, ''), '${employment:employerName}', '${employment:employerSIDB}')
+FROM INFORMATION_REQUEST_DESCRIPTION
+WHERE TEMPLATE_ID = 2245;
 
-**Note**: The `${employment:employNameSIDB}` tag will be automatically resolved by the `CTagResolver` when the template is loaded.
 
----
 
-## Step 5: Map Template to Service Groups
 
-Associate the template with specific service groups.
 
-### SQL: Insert Service Group Mappings
 
-```sql
--- Map template to Employment Verification service groups
+
 INSERT INTO INFORMATION_REQUEST_MAPPINGS (
     ID,
     TEMPLATE_ID,
+    SERVICE_ID,
     SERVICE_GROUP_ID
-) VALUES (
+)
+SELECT 
     INFORMATION_REQUEST_MAPPINGS_SEQ.NEXTVAL,
-    12345,  -- Your template ID
-    1001    -- Service Group ID for Employment Verification
-);
-
--- Map to "ALL" service group if applicable
-INSERT INTO INFORMATION_REQUEST_MAPPINGS (
-    ID,
-    TEMPLATE_ID,
+    2300,  -- REPLACE with your new template ID
+    SERVICE_ID,
     SERVICE_GROUP_ID
-) VALUES (
-    INFORMATION_REQUEST_MAPPINGS_SEQ.NEXTVAL,
-    12345,  -- Your template ID
-    -1      -- Special ID for "ALL" services
-);
+FROM INFORMATION_REQUEST_MAPPINGS
+WHERE TEMPLATE_ID = 2245;
 
-COMMIT;
-```
 
----
 
-## Step 6: (Optional) Attach Document Templates
 
-If the template requires document attachments (forms, PDFs, etc.):
-
-```sql
--- First, insert document template record
-INSERT INTO DOCUMENT_TEMPLATE (
-    ID,
-    NAME,
-    FILE_PATH,
-    MIME_TYPE,
-    CREATION_DATE
-) VALUES (
-    DOCUMENT_TEMPLATE_SEQ.NEXTVAL,
-    'Employment_Verification_Form.pdf',
-    '/templates/employment_verification.pdf',
-    'application/pdf',
-    SYSDATE
-);
-
--- Get the document template ID
-SELECT DOCUMENT_TEMPLATE_SEQ.CURRVAL AS DOC_TEMPLATE_ID FROM DUAL;
-
--- Link document template to information request template
 INSERT INTO IR_TEMPLATE_DOCUMENT_MAPPING (
     ID,
     IR_TEMPLATE_ID,
-    DOCUMENT_TEMPLATE_ID
-) VALUES (
+    DOCUMENT_TEMPLATE_ID,
+    DISPLAY_ORDER
+)
+SELECT 
     IR_TEMPLATE_DOCUMENT_MAPPING_SEQ.NEXTVAL,
-    12345,  -- Information Request Template ID
-    5678    -- Document Template ID
-);
+    2300,  -- REPLACE with your new template ID
+    DOCUMENT_TEMPLATE_ID,
+    DISPLAY_ORDER
+FROM IR_TEMPLATE_DOCUMENT_MAPPING
+WHERE IR_TEMPLATE_ID = 2245;
+
+
 
 COMMIT;
-```
-
----
-
-## Step 7: Configure Gap Enhancement (If Needed)
-
-If this template needs to support gap enhancement services (like UK Credit), add it to the tag filters:
-
-### File to Check
-📁 **Path**: `src/main/java/hireright/project/comm_tool2/core/CTagFilters.java`
-
-Add your service to the `isRelevantForService()` method if gap enhancement processing is required.
-
----
-
-## Step 8: Test the Template
-
-### 8.1 Restart Application Server
-
-After deploying the updated JAR, restart your application server:
-
-```bash
-# For Tomcat
-./shutdown.sh && ./startup.sh
-
-# For other servers, use appropriate commands
-```
-
-### 8.2 Test Tag Resolution
-
-Create a test program or use existing tools to verify tag resolution:
-
-```java
-// Test code snippet
-CTagResolver resolver = new CTagResolver();
-CProperties contextProps = new CProperties();
-contextProps.setProperty("orderServiceID", "123456"); // Valid employment order service ID
-
-String resolvedValue = (String) resolver.getFieldValue(
-    "employment:employNameSIDB", 
-    null, 
-    contextProps
-);
-
-System.out.println("Resolved value: " + resolvedValue);
-// Should output employer name from SIDB or null
-```
-
-### 8.3 Verify via API
-
-Use the `loadInformationRequestsDetails` API to load your template:
-
-**Request Parameters:**
-- `serviceID`: Employment verification service ID
-- `informationRequestTemplateId`: Your template ID (12345)
-
-**Expected Response:**
-```xml
-<InformationRequest type="EMAIL" templateID="12345">
-  <Description language="en">
-    <ShortDescription><![CDATA[Employer Verification Request]]></ShortDescription>
-    <LongDescription><![CDATA[We need to verify your employment with [RESOLVED_SIDB_NAME]. ...]]></LongDescription>
-  </Description>
-</InformationRequest>
-```
-
-The `${employment:employNameSIDB}` should be replaced with actual SIDB employer name.
-
----
-
-## Step 9: Verify in UI
-
-1. **Login to Operator Tool**
-2. **Navigate to an Order** with Employment service
-3. **Create Information Request**:
-   - Select your new template
-   - Verify the employer name from SIDB appears correctly
-4. **Send the Request** and verify recipient receives correct content
-
----
-
-## Summary of Changes
-
-| Component | Action | File/Table |
-|-----------|--------|------------|
-| **Java Code** | Add method `getEmployNameSIDB()` | `CEmploymentBean.java` |
-| **Build** | Compile and deploy JAR | Maven/Ant build |
-| **Database** | Insert template record | `INFORMATION_REQUEST_TEMPLATE` |
-| **Database** | Insert descriptions | `INFORMATION_REQUEST_DESCRIPTION` |
-| **Database** | Map to service groups | `INFORMATION_REQUEST_MAPPINGS` |
-| **Database** | (Optional) Link documents | `IR_TEMPLATE_DOCUMENT_MAPPING` |
-| **Deployment** | Deploy JAR and restart server | Application server |
-| **Testing** | Verify tag resolution | API and UI testing |
-
----
-
-## Tag Resolution Flow
-
-```
-Template Description Text with Variable
-        ↓
-"...employment with ${employment:employNameSIDB}..."
-        ↓
-CTagResolver.resolveTags()
-        ↓
-Parse namespace "employment" and property "employNameSIDB"
-        ↓
-Load CEmploymentBean (from config.xml mapping)
-        ↓
-Call CEmploymentBean.getEmployNameSIDB()
-        ↓
-Return SIDB employer name or null
-        ↓
-Replace ${employment:employNameSIDB} with actual value
-        ↓
-Final Output: "...employment with ABC Corporation..."
-```
-
----
-
-## Available Employment Tag Variables
-
-For reference, here are other available `employment:*` variables already implemented:
-
-| Variable | Description | Method |
-|----------|-------------|--------|
-| `employment:jobStartDate` | Job start date (verified or reported) | `getJobStartDate()` |
-| `employment:reportedJobStartDate` | Reported job start date | `getReportedJobStartDate()` |
-| `employment:verifiedJobStartDate` | Verified job start date | `getVerifiedJobStartDate()` |
-| `employment:jobEndDate` | Job end date (verified or reported) | `getJobEndDate()` |
-| `employment:employerName` | Employer name (verified or reported) | `getEmployerName()` |
-| `employment:reportedEmployerName` | Reported employer name | `getReportedEmployerName()` |
-| `employment:verifiedEmployerName` | Verified employer name | `getVerifiedEmployerName()` |
-| `employment:jobTitle` | Job title (verified or reported) | `getJobTitle()` |
-| `employment:supervisorName` | Supervisor name | `getSupervisorName()` |
-| `employment:email` | Employer email | `getEmail()` |
-| `employment:phone` | Employer phone | `getPhone()` |
-| `employment:fax` | Employer fax | `getFax()` |
-| `employment:reportedSalary` | Reported salary | `getReportedSalary()` |
-| `employment:verifiedSalary` | Verified salary | `getVerifiedSalary()` |
-| `employment:employNameSIDB` | **NEW** - Employer name from SIDB | `getEmployNameSIDB()` |
-
----
-
-## Troubleshooting
-
-### Issue: Variable not resolving (shows `${employment:employNameSIDB}`)
-
-**Possible Causes:**
-1. JAR not deployed properly
-2. Server not restarted
-3. Method name mismatch (must be `getEmployNameSIDB()` - case-sensitive)
-4. Bean not initialized correctly
-
-**Solution:**
-- Verify JAR is in `WEB-INF/lib`
-- Restart application server
-- Check method signature matches pattern: `get + PropertyName()`
-
-### Issue: Returns null instead of employer name
-
-**Possible Causes:**
-1. No SIDB (ContactDB) data for this employment record
-2. `orgUnitID` is null in employment record
-
-**Solution:**
-- Check if `m_emp.getOrgUnitID()` returns a valid ID
-- Verify `CCDB_ORG_UNIT` table has record with matching ID
-- Fallback to `employment:employerName` for templates that need guaranteed data
-
----
-
-## Best Practices
-
-1. **Always sanitize output**: Use `CStringSanitizer.sanitize()` for user-facing strings
-2. **Graceful degradation**: Return null or default values when data unavailable
-3. **Test thoroughly**: Test with orders that have SIDB data AND without
-4. **Version control**: Commit changes to CEmploymentBean with proper comments
-5. **Documentation**: Update API documentation with new variable
-
----
-
-## Contact & Support
-
-For questions about this implementation:
-- Refer to existing similar implementations in `CEducationBean.getSchoolAudioName()`
-- Check tag resolver documentation
-- Review `CTagResolver.java` source code for resolution logic
-
----
-
-**Document Version**: 1.0  
-**Last Updated**: 2026-04-06  
-**Author**: Development Team
-
