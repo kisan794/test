@@ -1,10 +1,35 @@
-create new method in cemploymentbean
-  public String getEmployerNameSIDB2()
-    {
-        return CStringUtils.nvl(getReportedEmployerName(), getVerifiedEmployerName());
-    }
+# Implementation Guide: Clone Template 2245 with `employerNameSIDB2` Variable
 
-1.INSERT INTO INFO_REQUEST_TEMPLATE (
+## Overview
+This document outlines the steps to create a new Information Request Template (ID: **1137022**) based on template **2245**, using a new variable `${employment:employerNameSIDB2}` that returns **reported employer name first**, falling back to verified name if unavailable.
+
+---
+
+## Step 1: Add New Method to CEmploymentBean
+
+
+public String getEmployerNameSIDB2()
+{
+    return CStringUtils.nvl(getReportedEmployerName(), getVerifiedEmployerName());
+}
+
+
+### Key Difference from Existing Methods
+
+| Method | Priority | Returns |
+|--------|----------|---------|
+| `getEmployerName()` | Verified → Reported | Verified first, fallback to reported |
+| **`getEmployerNameSIDB2()`** | **Reported → Verified** | **Reported first, fallback to verified** |
+
+
+---
+
+## Step 3: Database Changes
+
+### 3.1 Create New Template Record
+
+```sql
+-- INSERT INTO INFO_REQUEST_TEMPLATE (
     ID,
     TITLE,
     TYPE,
@@ -31,10 +56,17 @@ WHERE ID = 2245;
 UPDATE info_request_template
 SET title = 'INT''L - Unacceptable Employment SIDB2 Documentation received - generic'
 WHERE id = '1137022';
+```
 
+**Result**: New template ID **1137022** created
 
+---
 
-2. INSERT INTO INFO_REQUEST_DESCRIPTION (
+### 3.2 Copy and Modify Descriptions
+
+```sql
+-- Copy English description from template 2245
+INSERT INTO INFO_REQUEST_DESCRIPTION (
     ID,
     TEMPLATE_ID,
     SHORT_DESCRIPTION,
@@ -44,7 +76,7 @@ WHERE id = '1137022';
     APPLICANT_DESCRIPTION
 )
 SELECT 
-(SELECT MAX(ID) + 1 FROM INFO_REQUEST_DESCRIPTION),
+    (SELECT MAX(ID) + 1 FROM INFO_REQUEST_DESCRIPTION),
     1137022, 
     SHORT_DESCRIPTION,
     DESCRIPTION,
@@ -52,21 +84,36 @@ SELECT
     SHORT_APPLICANT_DESCRIPTION,
     APPLICANT_DESCRIPTION
 FROM INFO_REQUEST_DESCRIPTION
-WHERE TEMPLATE_ID = 2245 and language='en';
+WHERE TEMPLATE_ID = 2245 
+  AND LANGUAGE = 'en';
 
-
-UPDATE info_request_description
+-- Replace variable: employerName → employerNameSIDB2
+UPDATE INFO_REQUEST_DESCRIPTION
 SET 
-    short_description = REPLACE(short_description, '$employment:employerName$', '$employment:employerNameSIDB2$'),
-    description = REPLACE(description, '$employment:employerName$', '$employment:employerNameSIDB2$'),
-    short_applicant_description = REPLACE(short_applicant_description, '$employment:employerName$', '$employment:employerNameSIDB2$'),
-    applicant_description = REPLACE(applicant_description, '$employment:employerName$', '$employment:employerNameSIDB2$')
-WHERE template_id = '1137022'
-  AND language = 'en';
+    SHORT_DESCRIPTION = REPLACE(SHORT_DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    DESCRIPTION = REPLACE(DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    SHORT_APPLICANT_DESCRIPTION = REPLACE(SHORT_APPLICANT_DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    APPLICANT_DESCRIPTION = REPLACE(APPLICANT_DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$')
+WHERE TEMPLATE_ID = 1137022
+  AND LANGUAGE = 'en';
+```
 
+**Before**:
+```
+Unacceptable EMP Docs for _$employment:employerName$_
+```
 
+**After**:
+```
+Unacceptable EMP Docs for _$employment:employerNameSIDB2$_
+```
 
-3. 
+---
+
+### 3.3 Copy Service Mappings
+
+```sql
+-- Copy all service/object mappings from template 2245
 INSERT INTO INFO_REQUEST_MAPPINGS (
     ID,
     TEMPLATE_ID,
@@ -83,12 +130,175 @@ SELECT
     USAGE
 FROM INFO_REQUEST_MAPPINGS
 WHERE TEMPLATE_ID = 2245;
+```
 
+---
 
+### 3.4 Commit Changes
 
+```sql
+COMMIT;
+```
 
-short_description='Unacceptable EMP Docs for _$employment:employerName$_' and 
-description='HireRight has received your documentation 
-for _$employment:employerName$_ that we are unable to accept. Please resend your documentation that covers both your starting date and your ending date. Acceptable documentation: 
-copy of contract; contract termination or termination decision; contract annex, appendix, addendum; reference letter, pay slips, tax documents,  work certificate, employment/experience
- letter; salary certificate.  '
+---
+
+## Step 4: Verification
+
+### 4.1 Verify Template Created
+
+```sql
+SELECT ID, TITLE, TYPE, STATE
+FROM INFO_REQUEST_TEMPLATE
+WHERE ID = 1137022;
+```
+
+**Expected Output**:
+```
+ID       | TITLE                                                      | TYPE  | STATE
+---------|-----------------------------------------------------------|-------|-------
+1137022  | INT'L - Unacceptable Employment SIDB2 Documentation...    | EMAIL | ACTIVE
+```
+
+---
+
+### 4.2 Verify Variable Replacement
+
+```sql
+SELECT 
+    LANGUAGE,
+    SHORT_DESCRIPTION,
+    DESCRIPTION
+FROM INFO_REQUEST_DESCRIPTION
+WHERE TEMPLATE_ID = 1137022;
+```
+
+**Expected Output** (should contain `$employment:employerNameSIDB2$`):
+```
+SHORT_DESCRIPTION: Unacceptable EMP Docs for _$employment:employerNameSIDB2$_
+DESCRIPTION: HireRight has received your documentation for _$employment:employerNameSIDB2$_...
+```
+
+---
+
+### 4.3 Verify Service Mappings
+
+```sql
+SELECT COUNT(*) AS MAPPING_COUNT
+FROM INFO_REQUEST_MAPPINGS
+WHERE TEMPLATE_ID = 1137022;
+
+-- Compare with original
+SELECT COUNT(*) AS ORIGINAL_COUNT
+FROM INFO_REQUEST_MAPPINGS
+WHERE TEMPLATE_ID = 2245;
+```
+
+Both counts should match.
+
+---
+
+## Step 5: Testing
+
+### Test Case 1: Reported Name Available
+**Scenario**: Employment record has `COMPANY_NAME` populated
+
+**Expected Result**: `${employment:employerNameSIDB2}` resolves to reported company name
+
+---
+
+### Test Case 2: Reported Name Empty, Verified Available
+**Scenario**: `COMPANY_NAME` is null, but `EMPLOYER_ID` or `ORG_UNIT_ID` exists
+
+**Expected Result**: `${employment:employerNameSIDB2}` resolves to verified employer name
+
+---
+
+### Test Case 3: Both Empty
+**Scenario**: No reported or verified employer data
+
+**Expected Result**: `${employment:employerNameSIDB2}` resolves to empty string or null
+
+---
+
+## Complete SQL Script
+
+```sql
+-- ============================================
+-- Clone Template 2245 with employerNameSIDB2
+-- ============================================
+
+-- 1. Create new template
+INSERT INTO INFO_REQUEST_TEMPLATE (
+    ID, TITLE, TYPE, STATE, STATE_DTTM, FORMAT, OPERATOR_ID, PROPERTIES, REFERENCE
+)
+SELECT 
+    (SELECT MAX(ID) + 1 FROM INFO_REQUEST_TEMPLATE),
+    TITLE, TYPE, STATE, STATE_DTTM, FORMAT, OPERATOR_ID, PROPERTIES, REFERENCE
+FROM INFO_REQUEST_TEMPLATE
+WHERE ID = 2245;
+
+UPDATE INFO_REQUEST_TEMPLATE
+SET TITLE = 'INT''L - Unacceptable Employment SIDB2 Documentation received - generic'
+WHERE ID = 1137022;
+
+-- 2. Copy and modify descriptions
+INSERT INTO INFO_REQUEST_DESCRIPTION (
+    ID, TEMPLATE_ID, SHORT_DESCRIPTION, DESCRIPTION, LANGUAGE,
+    SHORT_APPLICANT_DESCRIPTION, APPLICANT_DESCRIPTION
+)
+SELECT 
+    (SELECT MAX(ID) + 1 FROM INFO_REQUEST_DESCRIPTION),
+    1137022, SHORT_DESCRIPTION, DESCRIPTION, LANGUAGE,
+    SHORT_APPLICANT_DESCRIPTION, APPLICANT_DESCRIPTION
+FROM INFO_REQUEST_DESCRIPTION
+WHERE TEMPLATE_ID = 2245 AND LANGUAGE = 'en';
+
+UPDATE INFO_REQUEST_DESCRIPTION
+SET 
+    SHORT_DESCRIPTION = REPLACE(SHORT_DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    DESCRIPTION = REPLACE(DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    SHORT_APPLICANT_DESCRIPTION = REPLACE(SHORT_APPLICANT_DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$'),
+    APPLICANT_DESCRIPTION = REPLACE(APPLICANT_DESCRIPTION, '$employment:employerName$', '$employment:employerNameSIDB2$')
+WHERE TEMPLATE_ID = 1137022 AND LANGUAGE = 'en';
+
+-- 3. Copy service mappings
+INSERT INTO INFO_REQUEST_MAPPINGS (ID, TEMPLATE_ID, OBJECT_CLASS, OBJECT_ID, USAGE)
+SELECT 
+    (SELECT MAX(ID) FROM INFO_REQUEST_MAPPINGS) + ROW_NUMBER() OVER (ORDER BY ID),
+    1137022, OBJECT_CLASS, OBJECT_ID, USAGE
+FROM INFO_REQUEST_MAPPINGS
+WHERE TEMPLATE_ID = 2245;
+
+COMMIT;
+```
+
+---
+
+## Summary of Changes
+
+| Component | Change | Details |
+|-----------|--------|---------|
+| **Java Code** | Added `getEmployerNameSIDB2()` | Returns reported name first, verified as fallback |
+| **Template** | Created ID 1137022 | Clone of template 2245 |
+| **Variable** | `$employment:employerNameSIDB2$` | Replaces `$employment:employerName$` |
+| **Priority** | Reported → Verified | Opposite of standard `employerName` logic |
+| **Mappings** | Copied from 2245 | Same services/groups |
+
+---
+
+## Key Differences: employerName vs employerNameSIDB2
+
+| Aspect | `employerName` | `employerNameSIDB2` |
+|--------|----------------|---------------------|
+| **Priority** | Verified first | **Reported first** |
+| **Fallback** | Reported | Verified |
+| **Use Case** | Trust verified data | Trust applicant input |
+| **Method** | `getEmployerName()` | `getEmployerNameSIDB2()` |
+
+---
+
+**Document Version**: 1.0  
+**Template ID**: 1137022  
+**Source Template**: 2245  
+**New Variable**: `${employment:employerNameSIDB2}`  
+**Date**: 2026-04-06
