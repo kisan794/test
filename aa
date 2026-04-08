@@ -1,7 +1,6 @@
 package com.hireright.sourceintelligence.service.extraction;
 
 import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,19 +17,18 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class DataExtractionProcessorFactoryTest {
 
-    @Mock(lenient = true)
+    @Mock
     private DataExtractionProcessor parchmentProcessor;
 
-    @Mock(lenient = true)
+    @Mock
     private DataExtractionProcessor clearinghouseProcessor;
 
-    @Mock(lenient = true)
+    @Mock
     private DataExtractionProcessor nscProcessor;
 
     private DataExtractionProcessorFactory factory;
 
-    @BeforeEach
-    void setUp() {
+    private void setupProcessors() {
         // Setup parchment processor
         when(parchmentProcessor.getDataExtractionTypeType()).thenReturn("parchment");
         when(parchmentProcessor.supports(anyString())).thenAnswer(invocation -> {
@@ -58,6 +56,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void constructor_WithMultipleProcessors_ShouldInitializeSuccessfully() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
 
         factory = new DataExtractionProcessorFactory(processors);
@@ -67,6 +66,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void constructor_WithSingleProcessor_ShouldInitializeSuccessfully() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
 
         factory = new DataExtractionProcessorFactory(processors);
@@ -85,6 +85,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_WithValidType_ShouldReturnCorrectProcessor() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -96,6 +97,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_WithDifferentValidType_ShouldReturnCorrectProcessor() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -107,6 +109,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_WithCaseInsensitiveType_ShouldReturnCorrectProcessor() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -118,6 +121,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_WithInvalidType_ShouldThrowException() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -130,6 +134,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_WithNullType_ShouldThrowException() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -141,6 +146,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_WithEmptyStringType_ShouldThrowException() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -153,6 +159,7 @@ class DataExtractionProcessorFactoryTest {
     @ParameterizedTest
     @ValueSource(strings = {"   ", "\t", "\n", "  \t\n  "})
     void getProcessor_WithWhitespaceType_ShouldThrowException(String whitespace) {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -176,6 +183,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getSupportedTypes_WithMultipleProcessors_ShouldReturnAllTypes() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -189,6 +197,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getSupportedTypes_WithSingleProcessor_ShouldReturnSingleType() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -209,6 +218,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getSupportedTypes_WithThreeProcessors_ShouldReturnAllTypes() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor, nscProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -222,6 +232,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void isSupported_WithValidType_ShouldReturnTrue() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -232,6 +243,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void isSupported_WithDifferentValidType_ShouldReturnTrue() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -242,6 +254,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void isSupported_WithInvalidType_ShouldReturnFalse() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -252,6 +265,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void isSupported_WithNullType_ShouldReturnFalse() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -262,6 +276,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void isSupported_WithEmptyStringType_ShouldReturnFalse() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -273,6 +288,7 @@ class DataExtractionProcessorFactoryTest {
     @ParameterizedTest
     @ValueSource(strings = {"   ", "\t", "\n", "  \t\n  "})
     void isSupported_WithWhitespaceType_ShouldReturnFalse(String whitespace) {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -283,6 +299,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void isSupported_WithCaseInsensitiveType_ShouldReturnTrue() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -293,6 +310,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_CalledMultipleTimes_ShouldReturnSameInstance() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -304,6 +322,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_WithMultipleProcessors_ShouldReturnFirstMatchingProcessor() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor, nscProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
@@ -325,6 +344,7 @@ class DataExtractionProcessorFactoryTest {
 
     @Test
     void getProcessor_ErrorMessage_ShouldIncludeAvailableTypes() {
+        setupProcessors();
         List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
         factory = new DataExtractionProcessorFactory(processors);
 
