@@ -171,6 +171,7 @@ class ParchmentDataExtractionProcessorTest {
 
     @Test
     void testProcessInstitutionRecords_VendorNotFound() {
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.empty());
 
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
@@ -184,6 +185,7 @@ class ParchmentDataExtractionProcessorTest {
 
     @Test
     void testProcessInstitutionRecords_EmptyList() {
+        Vendors parchmentVendor = createParchmentVendor();
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
         Map<String, Object> result = processor.processInstitutionRecords(Collections.emptyList());
@@ -200,6 +202,8 @@ class ParchmentDataExtractionProcessorTest {
 
     @Test
     void testProcessInstitutionRecords_ProcessingError() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
         when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
@@ -221,6 +225,8 @@ class ParchmentDataExtractionProcessorTest {
 
     @Test
     void testProcessInstitutionRecords_PartialSuccess() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
         Source source1 = createMockSource("EDU123", "Harvard University");
@@ -256,6 +262,8 @@ class ParchmentDataExtractionProcessorTest {
 
     @Test
     void testProcessInstitutionRecords_UpdatesPayload() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
         Source source = createMockSource("EDU123", "Harvard University");
@@ -282,6 +290,7 @@ class ParchmentDataExtractionProcessorTest {
 
     @Test
     void testProcessInstitutionRecords_StateMapping() {
+        Vendors parchmentVendor = createParchmentVendor();
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
         ParchmentRecord recordWithStateAbbr = ParchmentRecord.builder()
@@ -309,7 +318,7 @@ class ParchmentDataExtractionProcessorTest {
                 Collections.singletonList(recordWithStateAbbr)
         );
 
-        assertEquals(1, result.get("updatedRecords"));
+        assertEquals(1, result.get("totalSourcesUpdated"));
         verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source_parchment_test"));
     }
 
@@ -377,6 +386,8 @@ class ParchmentDataExtractionProcessorTest {
         when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
                 .thenReturn(mockBulkOps);
         when(mockBulkOps.execute()).thenThrow(new RuntimeException("Bulk operation failed"));
+
+        when(mongoTemplate.save(any(Source.class), anyString())).thenAnswer(invocation -> invocation.getArgument(0));
 
         Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
 
@@ -453,7 +464,6 @@ class ParchmentDataExtractionProcessorTest {
 
         assertNotNull(result);
         assertEquals(1, result.get("totalRecords"));
-        assertEquals(1, result.get("totalSourcesUpdated"));
         assertEquals(3, result.get("totalSourcesUpdated"));
         assertEquals(0, result.get("notFoundRecords"));
 
