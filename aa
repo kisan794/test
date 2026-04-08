@@ -13,40 +13,46 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class DataExtractionProcessorFactoryTest {
 
-    @Mock
+    @Mock(lenient = true)
     private DataExtractionProcessor parchmentProcessor;
 
-    @Mock
+    @Mock(lenient = true)
     private DataExtractionProcessor clearinghouseProcessor;
 
-    @Mock
+    @Mock(lenient = true)
     private DataExtractionProcessor nscProcessor;
 
     private DataExtractionProcessorFactory factory;
 
     @BeforeEach
     void setUp() {
+        // Setup parchment processor
         when(parchmentProcessor.getDataExtractionTypeType()).thenReturn("parchment");
         when(parchmentProcessor.supports(anyString())).thenAnswer(invocation -> {
             String type = invocation.getArgument(0);
-            return type != null && "parchment".equalsIgnoreCase(type);
+            if (type == null) return false;
+            return "parchment".equalsIgnoreCase(type);
         });
 
+        // Setup clearinghouse processor
         when(clearinghouseProcessor.getDataExtractionTypeType()).thenReturn("clearinghouse");
         when(clearinghouseProcessor.supports(anyString())).thenAnswer(invocation -> {
             String type = invocation.getArgument(0);
-            return type != null && "clearinghouse".equalsIgnoreCase(type);
+            if (type == null) return false;
+            return "clearinghouse".equalsIgnoreCase(type);
         });
 
+        // Setup NSC processor
         when(nscProcessor.getDataExtractionTypeType()).thenReturn("nsc");
         when(nscProcessor.supports(anyString())).thenAnswer(invocation -> {
             String type = invocation.getArgument(0);
-            return type != null && "nsc".equalsIgnoreCase(type);
+            if (type == null) return false;
+            return "nsc".equalsIgnoreCase(type);
         });
     }
 
