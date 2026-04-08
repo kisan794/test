@@ -1,360 +1,502 @@
 package com.hireright.sourceintelligence.service.extraction;
 
 import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
+import com.hireright.sourceintelligence.domain.entity.Source;
+import com.hireright.sourceintelligence.domain.entity.Vendors;
+import com.hireright.sourceintelligence.domain.repository.VendorsRepository;
+import com.mongodb.BasicDBObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Query;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class DataExtractionProcessorFactoryTest {
+class ParchmentDataExtractionProcessorTest {
 
     @Mock
-    private DataExtractionProcessor parchmentProcessor;
+    private VendorsRepository vendorsRepository;
 
     @Mock
-    private DataExtractionProcessor clearinghouseProcessor;
+    private MongoTemplate mongoTemplate;
 
     @Mock
-    private DataExtractionProcessor nscProcessor;
+    private com.hireright.sourceintelligence.service.impl.elasticsearch.ElasticsearchService elasticsearchService;
 
-    private DataExtractionProcessorFactory factory;
+    @InjectMocks
+    private ParchmentDataExtractionProcessor processor;
 
-    private void setupProcessors() {
-        // Setup parchment processor
-        when(parchmentProcessor.getDataExtractionTypeType()).thenReturn("parchment");
-        when(parchmentProcessor.supports(anyString())).thenAnswer(invocation -> {
-            String type = invocation.getArgument(0);
-            if (type == null) return false;
-            return "parchment".equalsIgnoreCase(type);
+    private Vendors createParchmentVendor() {
+        Vendors vendor = new Vendors();
+        vendor.setVendor("Parchment Exchange");
+        vendor.setProviderId(123);
+        vendor.setWebsite("https://www.parchment.com");
+        return vendor;
+    }
+
+    private List<ParchmentRecord> createSampleRecords() {
+        return Arrays.asList(
+                ParchmentRecord.builder()
+                        .institutionName("Harvard University")
+                        .country("USA")
+                        .city("Cambridge")
+                        .stateCountyRegion("MA")
+                        .serviceProvider("Parchment Exchange")
+                        .surchargeAmount("5.00")
+                        .paymentMethod("Credit Card")
+                        .code("HARV001")
+                        .turnaroundTime("3")
+                        .followUpAllowed("Yes")
+                        .build(),
+                ParchmentRecord.builder()
+                        .institutionName("MIT")
+                        .country("USA")
+                        .city("Cambridge")
+                        .stateCountyRegion("MA")
+                        .serviceProvider("Parchment Exchange")
+                        .surchargeAmount("5.00")
+                        .paymentMethod("Credit Card")
+                        .code("MIT001")
+                        .turnaroundTime("3")
+                        .followUpAllowed("Yes")
+                        .build()
+        );
+    }
+
+    @Test
+    void testGetDataExtractionTypeType() {
+        String dataExtractionType = processor.getDataExtractionTypeType();
+        assertEquals("parchment", dataExtractionType);
+    }
+
+    @Test
+    void testSupports_Parchment() {
+        boolean supports = processor.supports("parchment");
+        assertTrue(supports);
+    }
+
+    @Test
+    void testSupports_OtherType() {
+        boolean supports = processor.supports("clearinghouse");
+        assertFalse(supports);
+    }
+
+    @Test
+    void testProcessInstitutionRecords_Success() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
+
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Arrays.asList(source1, source2));
+
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
+
+        assertNotNull(result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(2, result.get("totalSourcesUpdated"));
+        assertEquals(0, result.get("notFoundRecords"));
+        assertTrue(((List<?>) result.get("notFoundRecordsData")).isEmpty());
+
+        verify(vendorsRepository).findByVendor("Parchment Exchange");
+        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source_parchment_test"));
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps, times(2)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
+        verify(mockBulkOps).execute();
+    }
+
+    @Test
+    void testProcessInstitutionRecords_InstitutionNotFound() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
+
+        Source source1 = createMockSource("EDU123", "Harvard University");
+
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Collections.singletonList(source1));
+
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
+
+        assertNotNull(result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(1, result.get("totalSourcesUpdated"));
+        assertEquals(1, result.get("notFoundRecords"));
+
+        List<Map<String, Object>> notFoundRecordsData = (List<Map<String, Object>>) result.get("notFoundRecordsData");
+        assertEquals(1, notFoundRecordsData.size());
+        assertEquals("MIT", notFoundRecordsData.get(0).get("institutionName"));
+
+        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source_parchment_test"));
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
+        verify(mockBulkOps).execute();
+    }
+
+    @Test
+    void testProcessInstitutionRecords_VendorNotFound() {
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.empty());
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            processor.processInstitutionRecords(sampleRecords);
         });
 
-        // Setup clearinghouse processor
-        when(clearinghouseProcessor.getDataExtractionTypeType()).thenReturn("clearinghouse");
-        when(clearinghouseProcessor.supports(anyString())).thenAnswer(invocation -> {
-            String type = invocation.getArgument(0);
-            if (type == null) return false;
-            return "clearinghouse".equalsIgnoreCase(type);
-        });
-
-        // Setup NSC processor
-        when(nscProcessor.getDataExtractionTypeType()).thenReturn("nsc");
-        when(nscProcessor.supports(anyString())).thenAnswer(invocation -> {
-            String type = invocation.getArgument(0);
-            if (type == null) return false;
-            return "nsc".equalsIgnoreCase(type);
-        });
+        assertTrue(exception.getMessage().contains("Vendor 'Parchment Exchange' not found"));
+        verify(vendorsRepository).findByVendor("Parchment Exchange");
+        verifyNoInteractions(mongoTemplate);
     }
 
     @Test
-    void constructor_WithMultipleProcessors_ShouldInitializeSuccessfully() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
+    void testProcessInstitutionRecords_EmptyList() {
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        factory = new DataExtractionProcessorFactory(processors);
-
-        assertNotNull(factory);
-    }
-
-    @Test
-    void constructor_WithSingleProcessor_ShouldInitializeSuccessfully() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-
-        factory = new DataExtractionProcessorFactory(processors);
-
-        assertNotNull(factory);
-    }
-
-    @Test
-    void constructor_WithEmptyList_ShouldInitializeSuccessfully() {
-        List<DataExtractionProcessor> processors = Collections.emptyList();
-
-        factory = new DataExtractionProcessorFactory(processors);
-
-        assertNotNull(factory);
-    }
-
-    @Test
-    void getProcessor_WithValidType_ShouldReturnCorrectProcessor() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        DataExtractionProcessor result = factory.getProcessor("parchment");
+        Map<String, Object> result = processor.processInstitutionRecords(Collections.emptyList());
 
         assertNotNull(result);
-        assertSame(parchmentProcessor, result);
+        assertEquals(0, result.get("totalRecords"));
+        assertEquals(0, result.get("totalSourcesUpdated"));
+        assertEquals(0, result.get("notFoundRecords"));
+        assertTrue(((List<?>) result.get("notFoundRecordsData")).isEmpty());
+
+        verify(vendorsRepository).findByVendor("Parchment Exchange");
+        verifyNoMoreInteractions(mongoTemplate);
     }
 
     @Test
-    void getProcessor_WithDifferentValidType_ShouldReturnCorrectProcessor() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_ProcessingError() {
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        DataExtractionProcessor result = factory.getProcessor("clearinghouse");
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenThrow(new RuntimeException("Database connection failed"));
+
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
 
         assertNotNull(result);
-        assertSame(clearinghouseProcessor, result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(0, result.get("totalSourcesUpdated"));
+        assertEquals(2, result.get("notFoundRecords"));
+
+        List<Map<String, Object>> notFoundRecordsData = (List<Map<String, Object>>) result.get("notFoundRecordsData");
+        assertEquals(2, notFoundRecordsData.size());
+
+        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source_parchment_test"));
+        verify(mongoTemplate, never()).bulkOps(any(), anyString());
     }
 
     @Test
-    void getProcessor_WithCaseInsensitiveType_ShouldReturnCorrectProcessor() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_PartialSuccess() {
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        DataExtractionProcessor result = factory.getProcessor("PARCHMENT");
+        Source source1 = createMockSource("EDU123", "Harvard University");
+
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Collections.singletonList(source1));
+
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
 
         assertNotNull(result);
-        assertSame(parchmentProcessor, result);
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(1, result.get("totalSourcesUpdated"));
+        assertEquals(1, result.get("notFoundRecords"));
+
+        List<Map<String, Object>> notFoundRecordsData = (List<Map<String, Object>>) result.get("notFoundRecordsData");
+        assertEquals(1, notFoundRecordsData.size());
+        assertEquals("MIT", notFoundRecordsData.get(0).get("institutionName"));
+
+        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source_parchment_test"));
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps).execute();
     }
 
     @Test
-    void getProcessor_WithInvalidType_ShouldThrowException() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_UpdatesPayload() {
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> factory.getProcessor("nonexistent"));
+        Source source = createMockSource("EDU123", "Harvard University");
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Collections.singletonList(source));
 
-        assertTrue(exception.getMessage().contains("Unsupported Data Extraction type: 'nonexistent'"));
-        assertTrue(exception.getMessage().contains("Available types:"));
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        processor.processInstitutionRecords(Collections.singletonList(sampleRecords.get(0)));
+
+        verify(mockBulkOps).upsert(any(Query.class), argThat(update -> {
+            return true;
+        }));
+        verify(mockBulkOps).execute();
     }
 
     @Test
-    void getProcessor_WithNullType_ShouldThrowException() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_StateMapping() {
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> factory.getProcessor(null));
+        ParchmentRecord recordWithStateAbbr = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA")
+                .build();
 
-        assertEquals("Data Extraction type cannot be null or empty", exception.getMessage());
+        Source source = createMockSource("EDU125", "Test University");
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Collections.singletonList(source));
+
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        Map<String, Object> result = processor.processInstitutionRecords(
+                Collections.singletonList(recordWithStateAbbr)
+        );
+
+        assertEquals(1, result.get("updatedRecords"));
+        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source_parchment_test"));
     }
 
     @Test
-    void getProcessor_WithEmptyStringType_ShouldThrowException() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_BulkSaveOptimization() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> factory.getProcessor(""));
+        List<ParchmentRecord> multipleRecords = Arrays.asList(
+                sampleRecords.get(0),
+                sampleRecords.get(1),
+                ParchmentRecord.builder()
+                        .institutionName("Stanford University")
+                        .country("USA")
+                        .city("Stanford")
+                        .stateCountyRegion("CA")
+                        .build()
+        );
 
-        assertEquals("Data Extraction type cannot be null or empty", exception.getMessage());
-    }
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-    @ParameterizedTest
-    @ValueSource(strings = {"   ", "\t", "\n", "  \t\n  "})
-    void getProcessor_WithWhitespaceType_ShouldThrowException(String whitespace) {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+        Source source3 = createMockSource("EDU125", "Stanford University");
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> factory.getProcessor(whitespace));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Arrays.asList(source1, source2, source3));
 
-        assertEquals("Data Extraction type cannot be null or empty", exception.getMessage());
-    }
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
 
-    @Test
-    void getProcessor_WithEmptyProcessorsList_ShouldThrowException() {
-        List<DataExtractionProcessor> processors = Collections.emptyList();
-        factory = new DataExtractionProcessorFactory(processors);
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> factory.getProcessor("parchment"));
+        Map<String, Object> result = processor.processInstitutionRecords(multipleRecords);
 
-        assertTrue(exception.getMessage().contains("Unsupported Data Extraction type: 'parchment'"));
-        assertTrue(exception.getMessage().contains("Available types: none"));
-    }
+        assertEquals(3, result.get("totalRecords"));
+        assertEquals(3, result.get("totalSourcesUpdated"));
 
-    @Test
-    void getSupportedTypes_WithMultipleProcessors_ShouldReturnAllTypes() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        String supportedTypes = factory.getSupportedTypes();
-
-        assertNotNull(supportedTypes);
-        assertTrue(supportedTypes.contains("parchment"));
-        assertTrue(supportedTypes.contains("clearinghouse"));
-        assertTrue(supportedTypes.contains(", "));
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
+        verify(mockBulkOps, times(1)).execute();
+        verify(mongoTemplate, never()).save(any(Source.class), anyString());
     }
 
     @Test
-    void getSupportedTypes_WithSingleProcessor_ShouldReturnSingleType() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_BulkSaveFallback() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
 
-        String supportedTypes = factory.getSupportedTypes();
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        assertEquals("parchment", supportedTypes);
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Arrays.asList(source1, source2));
+
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+        when(mockBulkOps.execute()).thenThrow(new RuntimeException("Bulk operation failed"));
+
+        Map<String, Object> result = processor.processInstitutionRecords(sampleRecords);
+
+        assertEquals(2, result.get("totalRecords"));
+        assertEquals(2, result.get("totalSourcesUpdated"));
+
+        verify(mongoTemplate).bulkOps(any(), anyString());
+        verify(mockBulkOps).execute();
+
+        verify(mongoTemplate, times(2)).save(any(Source.class), anyString());
     }
 
     @Test
-    void getSupportedTypes_WithEmptyProcessors_ShouldReturnNone() {
-        List<DataExtractionProcessor> processors = Collections.emptyList();
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_MultipleCollections() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
 
-        String supportedTypes = factory.getSupportedTypes();
+        ParchmentRecord record1 = sampleRecords.get(0);
+        ParchmentRecord record2 = sampleRecords.get(1);
 
-        assertEquals("none", supportedTypes);
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
+
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU124", "MIT");
+
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Arrays.asList(source1, source2));
+
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(2);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        Map<String, Object> result = processor.processInstitutionRecords(Arrays.asList(record1, record2));
+
+        assertEquals(2, result.get("totalSourcesUpdated"));
+
+        verify(mongoTemplate, atLeastOnce()).bulkOps(any(), anyString());
+        verify(mockBulkOps, atLeastOnce()).execute();
     }
 
     @Test
-    void getSupportedTypes_WithThreeProcessors_ShouldReturnAllTypes() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor, nscProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_MultipleMatches() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
 
-        String supportedTypes = factory.getSupportedTypes();
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        assertNotNull(supportedTypes);
-        assertTrue(supportedTypes.contains("parchment"));
-        assertTrue(supportedTypes.contains("clearinghouse"));
-        assertTrue(supportedTypes.contains("nsc"));
-    }
+        Source source1 = createMockSource("EDU123", "Harvard University");
+        Source source2 = createMockSource("EDU456", "Harvard University");
+        Source source3 = createMockSource("EDU789", "Harvard University");
 
-    @Test
-    void isSupported_WithValidType_ShouldReturnTrue() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Arrays.asList(source1, source2, source3));
 
-        boolean result = factory.isSupported("parchment");
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
 
-        assertTrue(result);
-    }
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(3);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
 
-    @Test
-    void isSupported_WithDifferentValidType_ShouldReturnTrue() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        boolean result = factory.isSupported("clearinghouse");
-
-        assertTrue(result);
-    }
-
-    @Test
-    void isSupported_WithInvalidType_ShouldReturnFalse() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        boolean result = factory.isSupported("nonexistent");
-
-        assertFalse(result);
-    }
-
-    @Test
-    void isSupported_WithNullType_ShouldReturnFalse() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        boolean result = factory.isSupported(null);
-
-        assertFalse(result);
-    }
-
-    @Test
-    void isSupported_WithEmptyStringType_ShouldReturnFalse() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        boolean result = factory.isSupported("");
-
-        assertFalse(result);
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"   ", "\t", "\n", "  \t\n  "})
-    void isSupported_WithWhitespaceType_ShouldReturnFalse(String whitespace) {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        boolean result = factory.isSupported(whitespace);
-
-        assertFalse(result);
-    }
-
-    @Test
-    void isSupported_WithCaseInsensitiveType_ShouldReturnTrue() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        boolean result = factory.isSupported("PARCHMENT");
-
-        assertTrue(result);
-    }
-
-    @Test
-    void getProcessor_CalledMultipleTimes_ShouldReturnSameInstance() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Collections.singletonList(parchmentProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        DataExtractionProcessor result1 = factory.getProcessor("parchment");
-        DataExtractionProcessor result2 = factory.getProcessor("parchment");
-
-        assertSame(result1, result2);
-    }
-
-    @Test
-    void getProcessor_WithMultipleProcessors_ShouldReturnFirstMatchingProcessor() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor, nscProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        DataExtractionProcessor result = factory.getProcessor("parchment");
+        Map<String, Object> result = processor.processInstitutionRecords(
+                Collections.singletonList(sampleRecords.get(0))
+        );
 
         assertNotNull(result);
-        assertSame(parchmentProcessor, result);
+        assertEquals(1, result.get("totalRecords"));
+        assertEquals(1, result.get("totalSourcesUpdated"));
+        assertEquals(3, result.get("totalSourcesUpdated"));
+        assertEquals(0, result.get("notFoundRecords"));
+
+        verify(mockBulkOps, times(3)).upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class));
+        verify(mockBulkOps).execute();
     }
 
     @Test
-    void isSupported_WithEmptyProcessorsList_ShouldReturnFalse() {
-        List<DataExtractionProcessor> processors = Collections.emptyList();
-        factory = new DataExtractionProcessorFactory(processors);
+    void testProcessInstitutionRecords_MatchByAlias() {
+        Vendors parchmentVendor = createParchmentVendor();
+        List<ParchmentRecord> sampleRecords = createSampleRecords();
 
-        boolean result = factory.isSupported("parchment");
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(java.util.Optional.of(parchmentVendor));
 
-        assertFalse(result);
+        Source source = createMockSource("EDU123", "Massachusetts Institute of Technology");
+
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), eq("education_source_parchment_test")))
+                .thenReturn(Collections.singletonList(source));
+
+        var mockBulkOps = mock(org.springframework.data.mongodb.core.BulkOperations.class);
+        when(mongoTemplate.bulkOps(any(), anyString())).thenReturn(mockBulkOps);
+        when(mockBulkOps.upsert(any(Query.class), any(org.springframework.data.mongodb.core.query.Update.class)))
+                .thenReturn(mockBulkOps);
+
+        var mockBulkWriteResult = mock(com.mongodb.bulk.BulkWriteResult.class);
+        when(mockBulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(mockBulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+        when(mockBulkOps.execute()).thenReturn(mockBulkWriteResult);
+
+        Map<String, Object> result = processor.processInstitutionRecords(
+                Collections.singletonList(sampleRecords.get(1))
+        );
+
+        assertEquals(1, result.get("totalSourcesUpdated"));
+        assertEquals(0, result.get("notFoundRecords"));
+        verify(mongoTemplate).find(any(Query.class), eq(Source.class), eq("education_source_parchment_test"));
     }
 
-    @Test
-    void getProcessor_ErrorMessage_ShouldIncludeAvailableTypes() {
-        setupProcessors();
-        List<DataExtractionProcessor> processors = Arrays.asList(parchmentProcessor, clearinghouseProcessor);
-        factory = new DataExtractionProcessorFactory(processors);
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> factory.getProcessor("unknown"));
-
-        String message = exception.getMessage();
-        assertTrue(message.contains("Unsupported Data Extraction type: 'unknown'"));
-        assertTrue(message.contains("parchment"));
-        assertTrue(message.contains("clearinghouse"));
+    private Source createMockSource(String hon, String organizationName) {
+        Source source = new Source();
+        source.setHon(hon);
+        source.setOrganizationName(organizationName);
+        source.setPayload(new BasicDBObject());
+        return source;
     }
 }
-
