@@ -1,204 +1,167 @@
 package com.hireright.sourceintelligence.service.extraction;
 
+import com.hireright.sourceintelligence.api.dto.ParchmentRecord;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
-public interface DataExtractionProcessor<T> {
-    Map<String, Object> processInstitutionRecords(List<T> records);
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-    String getDataExtractionTypeType();
+@ExtendWith(MockitoExtension.class)
+class DataExtractionProcessorFactoryTest {
 
-    default boolean supports(String dataExtractionType) {
-        return getDataExtractionTypeType().equalsIgnoreCase(dataExtractionType);
-    }
-}
+    private DataExtractionProcessorFactory factory;
 
+    @Test
+    void constructor_WithEmptyList_ShouldInitializeSuccessfully() {
+        List<DataExtractionProcessor<?>> processors = Collections.emptyList();
 
+        factory = new DataExtractionProcessorFactory(processors);
 
-
-package com.hireright.sourceintelligence.service.extraction;
-
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
-import java.util.List;
-import java.util.Optional;
-
-@Slf4j
-@Component
-@RequiredArgsConstructor
-public class DataExtractionProcessorFactory {
-
-    private final List<DataExtractionProcessor<?>> processors;
-
-    @SuppressWarnings("unchecked")
-    public <T> DataExtractionProcessor<T> getProcessor(String dataExtractionType) {
-        if (dataExtractionType == null || dataExtractionType.trim().isEmpty()) {
-            throw new IllegalArgumentException("Data Extraction type cannot be null or empty");
-        }
-
-        Optional<DataExtractionProcessor<?>> processor = processors.stream()
-                .filter(p -> p.supports(dataExtractionType))
-                .findFirst();
-
-        if (processor.isEmpty()) {
-            throw new IllegalArgumentException(
-                    String.format("Unsupported Data Extraction type: '%s'. Available types: %s",
-                            dataExtractionType,
-                            getSupportedTypes())
-            );
-        }
-
-        return (DataExtractionProcessor<T>) processor.get();
+        assertNotNull(factory);
     }
 
-    public String getSupportedTypes() {
-        return processors.stream()
-                .map(DataExtractionProcessor::getDataExtractionTypeType)
-                .reduce((a, b) -> a + ", " + b)
-                .orElse("none");
+    @Test
+    void getProcessor_WithEmptyProcessorsList_ShouldThrowException() {
+        List<DataExtractionProcessor<?>> processors = Collections.emptyList();
+        factory = new DataExtractionProcessorFactory(processors);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> factory.getProcessor("parchment"));
+
+        assertTrue(exception.getMessage().contains("Unsupported Data Extraction type: 'parchment'"));
+        assertTrue(exception.getMessage().contains("Available types: none"));
     }
 
-    public boolean isSupported(String dataExtractionType) {
-        if (dataExtractionType == null || dataExtractionType.trim().isEmpty()) {
-            return false;
-        }
+    @Test
+    void getSupportedTypes_WithEmptyProcessors_ShouldReturnNone() {
+        List<DataExtractionProcessor<?>> processors = Collections.emptyList();
+        factory = new DataExtractionProcessorFactory(processors);
 
-        return processors.stream()
-                .anyMatch(p -> p.supports(dataExtractionType));
-    }
-}
+        String supportedTypes = factory.getSupportedTypes();
 
-
-
-
-package com.hireright.sourceintelligence.api.v1;
-
-import com.hireright.sourceintelligence.api.dto.DataExtractionResponseDTO;
-import com.hireright.sourceintelligence.service.excel.ExcelParserFactory;
-import com.hireright.sourceintelligence.service.excel.ExcelParserStrategy;
-import com.hireright.sourceintelligence.service.extraction.DataExtractionProcessor;
-import com.hireright.sourceintelligence.service.extraction.DataExtractionProcessorFactory;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-
-import static com.hireright.sourceintelligence.constants.ErrorConstants.*;
-import static com.hireright.sourceintelligence.domain.constants.Constants.DataExtractionConstants.*;
-import static com.hireright.sourceintelligence.util.LoggingThrowable.logAndThrowInvalidRequest;
-
-@Slf4j
-@RestController
-@RequiredArgsConstructor
-@Validated
-@CrossOrigin
-public class DataExtractionApiController implements DataExtractionApi {
-
-    private final DataExtractionProcessorFactory processorFactory;
-    private final ExcelParserFactory excelParserFactory;
-
-    @Value("${data.extraction.file.max-size-mb:10}")
-    private int maxDataExtractionFileSizeMb;
-
-    @Override
-    public ResponseEntity<DataExtractionResponseDTO> uploadDataExtractionExcelFile(MultipartFile file, String dataExtractionType) {
-        long startTime = System.currentTimeMillis();
-        String filename = file.getOriginalFilename();
-
-        log.info("Received Data Extraction file upload - filename: {}, size: {} bytes, type: {}",
-                filename, file.getSize(), dataExtractionType);
-
-        validateDataExtractionRequest(file, filename, dataExtractionType);
-
-        try {
-            Map<String, Object> processingResult = parseAndProcessRecords(file, filename, dataExtractionType);
-            processingResult.put(DATA_EXTRACTION_TYPE, dataExtractionType);
-
-            DataExtractionResponseDTO response = buildSuccessResponse(
-                    filename,
-                    dataExtractionType,
-                    processingResult,
-                    System.currentTimeMillis() - startTime
-            );
-
-            logDataExtractionSuccess(dataExtractionType, response);
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_PROCESSING_ERROR, e, e.getMessage());
-            return null;
-        }
+        assertEquals("none", supportedTypes);
     }
 
-    private void validateDataExtractionRequest(MultipartFile file, String filename, String dataExtractionType) {
-        if (!processorFactory.isSupported(dataExtractionType)) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_TYPE_UNSUPPORTED, null,
-                    dataExtractionType, processorFactory.getSupportedTypes());
-        }
+    @Test
+    void isSupported_WithEmptyProcessorsList_ShouldReturnFalse() {
+        List<DataExtractionProcessor<?>> processors = Collections.emptyList();
+        factory = new DataExtractionProcessorFactory(processors);
 
-        if (file.isEmpty()) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_EMPTY, null);
-        }
+        boolean result = factory.isSupported("parchment");
 
-        if (file.getSize() / FILE_SIZE_BYTES_PER_MB > maxDataExtractionFileSizeMb) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_TOO_LARGE, null, maxDataExtractionFileSizeMb);
-        }
-
-        if (filename == null || (!filename.endsWith(FILE_FORMAT_EXCEL_XLSX) && !filename.endsWith(FILE_FORMAT_EXCEL_XLS))) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_FILE_INVALID_FORMAT, null);
-        }
+        assertFalse(result);
     }
 
-    private <T> Map<String, Object> parseAndProcessRecords(MultipartFile file, String filename, String dataExtractionType) throws IOException {
-        log.info("Parsing Excel file: {}", filename);
+    @Test
+    void getProcessor_WithValidType_ShouldReturnCorrectProcessor() {
+        DataExtractionProcessor<ParchmentRecord> mockProcessor = mock(DataExtractionProcessor.class);
+        when(mockProcessor.getDataExtractionTypeType()).thenReturn("parchment");
+        when(mockProcessor.supports("parchment")).thenReturn(true);
 
-        ExcelParserStrategy<T> parser = excelParserFactory.getParser(dataExtractionType);
-        List<T> records = parser.parse(file);
+        List<DataExtractionProcessor<?>> processors = Arrays.asList(mockProcessor);
+        factory = new DataExtractionProcessorFactory(processors);
 
-        if (records.isEmpty()) {
-            logAndThrowInvalidRequest(DATA_EXTRACTION_NO_RECORDS_FOUND, null);
-        }
+        DataExtractionProcessor<?> result = factory.getProcessor("parchment");
 
-        DataExtractionProcessor<T> processor = processorFactory.getProcessor(dataExtractionType);
-        return processor.processInstitutionRecords(records);
+        assertNotNull(result);
+        assertEquals(mockProcessor, result);
     }
 
-    private void logDataExtractionSuccess(String dataExtractionType, DataExtractionResponseDTO response) {
-        log.info("Data Extraction completed - type: {}, total: {}, dbRecordsUpdated: {}, notFound: {}, time: {}ms",
-                dataExtractionType,
-                response.getTotalRecords(),
-                response.getTotalSourcesUpdated(),
-                response.getNotFoundRecords(),
-                response.getProcessingTimeMs());
+    @Test
+    void getProcessor_WithNullType_ShouldThrowException() {
+        List<DataExtractionProcessor<?>> processors = Collections.emptyList();
+        factory = new DataExtractionProcessorFactory(processors);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> factory.getProcessor(null));
+
+        assertTrue(exception.getMessage().contains("Data Extraction type cannot be null or empty"));
     }
 
-    private DataExtractionResponseDTO buildSuccessResponse(
-            String filename,
-            String dataExtractionType,
-            Map<String, Object> processingResult,
-            long processingTime) {
+    @Test
+    void getProcessor_WithEmptyType_ShouldThrowException() {
+        List<DataExtractionProcessor<?>> processors = Collections.emptyList();
+        factory = new DataExtractionProcessorFactory(processors);
 
-        return DataExtractionResponseDTO.builder()
-                .status(RESPONSE_STATUS_SUCCESS)
-                .message(RESPONSE_MESSAGE_FILE_PROCESSED)
-                .dataExtractionType(dataExtractionType)
-                .filename(filename)
-                .totalRecords((Integer) processingResult.get(RESULT_KEY_TOTAL_RECORDS))
-                .totalSourcesUpdated((Integer) processingResult.get(RESULT_KEY_TOTAL_SOURCES_UPDATED))
-                .notFoundRecords((Integer) processingResult.get(RESULT_KEY_NOT_FOUND_RECORDS))
-                .notFoundRecordsData((List<Map<String, Object>>) processingResult.get("notFoundRecordsData"))
-                .excelMetadata((List<Map<String, String>>) processingResult.get("excelMetadata"))
-                .processingTimeMs(processingTime)
-                .build();
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> factory.getProcessor(""));
+
+        assertTrue(exception.getMessage().contains("Data Extraction type cannot be null or empty"));
     }
+
+    @Test
+    void getProcessor_WithUnsupportedType_ShouldThrowException() {
+        DataExtractionProcessor<ParchmentRecord> mockProcessor = mock(DataExtractionProcessor.class);
+        when(mockProcessor.getDataExtractionTypeType()).thenReturn("parchment");
+        when(mockProcessor.supports("parchment")).thenReturn(true);
+        when(mockProcessor.supports("clearinghouse")).thenReturn(false);
+
+        List<DataExtractionProcessor<?>> processors = Arrays.asList(mockProcessor);
+        factory = new DataExtractionProcessorFactory(processors);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> factory.getProcessor("clearinghouse"));
+
+        assertTrue(exception.getMessage().contains("Unsupported Data Extraction type: 'clearinghouse'"));
+        assertTrue(exception.getMessage().contains("Available types: parchment"));
+    }
+
+    @Test
+    void getSupportedTypes_WithMultipleProcessors_ShouldReturnAllTypes() {
+        DataExtractionProcessor<?> processor1 = mock(DataExtractionProcessor.class);
+        when(processor1.getDataExtractionTypeType()).thenReturn("parchment");
+
+        DataExtractionProcessor<?> processor2 = mock(DataExtractionProcessor.class);
+        when(processor2.getDataExtractionTypeType()).thenReturn("clearinghouse");
+
+        List<DataExtractionProcessor<?>> processors = Arrays.asList(processor1, processor2);
+        factory = new DataExtractionProcessorFactory(processors);
+
+        String supportedTypes = factory.getSupportedTypes();
+
+        assertTrue(supportedTypes.contains("parchment"));
+        assertTrue(supportedTypes.contains("clearinghouse"));
+    }
+
+    @Test
+    void isSupported_WithSupportedType_ShouldReturnTrue() {
+        DataExtractionProcessor<ParchmentRecord> mockProcessor = mock(DataExtractionProcessor.class);
+        when(mockProcessor.supports("parchment")).thenReturn(true);
+
+        List<DataExtractionProcessor<?>> processors = Arrays.asList(mockProcessor);
+        factory = new DataExtractionProcessorFactory(processors);
+
+        boolean result = factory.isSupported("parchment");
+
+        assertTrue(result);
+    }
+
+    @Test
+    void isSupported_WithNullType_ShouldReturnFalse() {
+        DataExtractionProcessor<?> mockProcessor = mock(DataExtractionProcessor.class);
+        List<DataExtractionProcessor<?>> processors = Arrays.asList(mockProcessor);
+        factory = new DataExtractionProcessorFactory(processors);
+
+        boolean result = factory.isSupported(null);
+
+        assertFalse(result);
+    }
+
+    @Test
+    void isSupported_WithEmptyType_ShouldReturnFalse() {
+        DataExtractionProcessor<?> mockProcessor = mock(DataExtractionProcessor.class);
+        List<DataExtractionProcessor<?>> processors = Arrays.asList(mockProcessor);
+        factory = new DataExtractionProcessorFactory(processors);
+
+        boolean result = factory.isSupported("");
+
+        assertFalse(result);
+    }
+
 }
