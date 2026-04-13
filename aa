@@ -1,35 +1,99 @@
-<Action name="comm2_get_form_fields">
-  <Parameters>
-    <Parameter name="formData">
-      <![CDATA[
-      <Form>
-        <InformationRequestTemplate>
-          <ID><![CDATA[2245]]></ID>
-          <Type><![CDATA[DOC REQ APPLICANT]]></Type>
-          <Title><![CDATA[]]></Title>
-          <ShortText><![CDATA[
-            Unacceptable EMP Docs for _$employment:employerName$_
-          ]]></ShortText>
-          <LongText><![CDATA[
-            HireRight has received your documentation for _$employment:employerName$_ that we are unable to accept.
-            Please resend your documentation that covers both your starting date and your ending date.
+  public Map<String, Object> extractAutomatedServiceAndCode(Source source) {
+        Map<String, Object> result = new HashMap<>();
+        List<String> automatedService = new ArrayList<>();
+        List<String> codes = new ArrayList<>();
 
-            Acceptable documentation:
-            - copy of contract
-            - contract termination or termination decision
-            - contract annex, appendix, addendum
-            - reference letter
-            - pay slips
-            - tax documents
-            - work certificate
-            - employment/experience letter
-            - salary certificate
-          ]]></LongText>
-          <Properties>
-          </Properties>
-        </InformationRequestTemplate>
-      </Form>
-      ]]>
-    </Parameter>
-  </Parameters>
-</Action>
+        if (source.getPayload() == null) {
+            result.put("automatedService", automatedService);
+            result.put("code", codes);
+            return result;
+        }
+
+        JSONObject payload = mapToJSONObject(source.getPayload());
+        if (!payload.has(CONTACTS) || payload.get(CONTACTS) == null) {
+            result.put("automatedService", automatedService);
+            result.put("code", codes);
+            return result;
+        }
+
+        JSONArray contacts = (JSONArray) payload.get(CONTACTS);
+        if (contacts.isEmpty()) {
+            result.put("automatedService", automatedService);
+            result.put("code", codes);
+            return result;
+        }
+
+        JSONObject firstContact = (JSONObject) contacts.get(0);
+        if (!firstContact.has(CONTACT_DETAILS)) {
+            result.put("automatedService", automatedService);
+            result.put("code", codes);
+            return result;
+        }
+
+        JSONArray contactDetails = (JSONArray) firstContact.get(CONTACT_DETAILS);
+        if (contactDetails == null || contactDetails.isEmpty()) {
+            result.put("automatedService", automatedService);
+            result.put("code", codes);
+            return result;
+        }
+
+        // Process contact details to extract automated services and codes
+        for (Object contactDetail : contactDetails) {
+            JSONObject contactDetailJson = (JSONObject) contactDetail;
+            if (!contactDetailJson.has(TYPE) || contactDetailJson.isNull(TYPE)) continue;
+
+            String type = (String) contactDetailJson.get(TYPE);
+            if (!CONTACT_AUTOMATED_SERVICES.equals(type)) continue;
+
+            if (!contactDetailJson.has(COMMUNICATION) || contactDetailJson.get(COMMUNICATION) == null) continue;
+
+            JSONArray communication = (JSONArray) contactDetailJson.get(COMMUNICATION);
+            if (communication.isEmpty()) continue;
+
+            // Extract automated service names and codes
+            for (Object item : communication) {
+                JSONObject communicationObj = (JSONObject) item;
+
+                // Extract automated service name
+                if (communicationObj.has(NAME)) {
+                    automatedService.add(((String) communicationObj.get(NAME)).trim());
+                }
+
+                // Extract codes from communication info
+                if (communicationObj.has(COMMUNICATION_INFO)) {
+                    JSONArray communicationInfoDetails = (JSONArray) communicationObj.get(COMMUNICATION_INFO);
+                    if (communicationInfoDetails != null && !communicationInfoDetails.isEmpty()) {
+                        for (Object info : communicationInfoDetails) {
+                            if (!(info instanceof JSONObject communicationInfoJson)) continue;
+                            if (!communicationInfoJson.has(TYPE)) continue;
+
+                            String infoType = (String) communicationInfoJson.get(TYPE);
+                            if (CODES.equals(infoType)) {
+                                Object value = !communicationInfoJson.isNull(VALUE) ? communicationInfoJson.get(VALUE) : "";
+                                if (!value.toString().isEmpty()) {
+                                    Collections.addAll(codes, ((String) value).trim().toLowerCase().split(";"));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        result.put("automatedService", automatedService.isEmpty() ? null : automatedService);
+        result.put("code", codes.isEmpty() ? null : codes);
+        return result;
+    }
+
+
+
+
+
+
+
+
+
+ Map<String, Object> updateFields = elasticsearchMapper.extractAutomatedServiceAndCode(source);
+
+            // Only add to bulk update if there are fields to update
+            if (updateFields.get("automatedService") != null || updateFields.get("code") != null) {
