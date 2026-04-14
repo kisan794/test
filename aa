@@ -1,1 +1,21 @@
-Caused by: com.mongodb.MongoCommandException: Command failed with error 251 (NoSuchTransaction): 'Transaction with { txnNumber: 1 } has been aborted.' on server infra-vm-shared-us-mongodev.data.hireright.com:27017. The full response is {"errorLabels": ["TransientTransactionError"], "ok": 0.0, "errmsg": "Transaction with { txnNumber: 1 } has been aborted.", "code": 251, "codeName": "NoSuchTransaction", "$clusterTime": {"clusterTime": {"$timestamp": {"t": 1776083002, "i": 1}}, "signature": {"hash": {"$binary": {"base64": "pV5/EGYcaAjAtQ3oBK0jWVI6Qtc=", "subType": "00"}}, "keyId": 7595642546215190529}}, "operationTime": {"$timestamp": {"t": 1776083002, "i": 1}}}
+private void incrementAllPriorities(List<BasicDBObject> items) {
+        // Find max priority value first
+        int maxPriority = items.stream()
+                .map(item -> item.get(PRIORITY))
+                .filter(priorityObj -> priorityObj != null)
+                .mapToInt(this::toInt)
+                .max()
+                .orElse(0);
+
+        int sequenceNumber = maxPriority + 1;
+
+        for (BasicDBObject item : items) {
+            Object priorityObj = item.get(PRIORITY);
+            if (priorityObj != null) {
+                int currentPriority = toInt(priorityObj);
+                item.put(PRIORITY, currentPriority + 1);
+            } else {
+                item.put(PRIORITY, sequenceNumber++);
+            }
+        }
+    }
