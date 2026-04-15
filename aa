@@ -1,21 +1,14 @@
-private void incrementAllPriorities(List<BasicDBObject> items) {
-        // Find max priority value first
-        int maxPriority = items.stream()
-                .map(item -> item.get(PRIORITY))
-                .filter(priorityObj -> priorityObj != null)
-                .mapToInt(this::toInt)
-                .max()
-                .orElse(0);
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - [trace_id=%X{trace_id:-NO_TRACE} span_id=%X{span_id:-NO_SPAN}] - %msg%n</pattern>
+        </encoder>
+    </appender>
 
-        int sequenceNumber = maxPriority + 1;
-
-        for (BasicDBObject item : items) {
-            Object priorityObj = item.get(PRIORITY);
-            if (priorityObj != null) {
-                int currentPriority = toInt(priorityObj);
-                item.put(PRIORITY, currentPriority + 1);
-            } else {
-                item.put(PRIORITY, sequenceNumber++);
-            }
-        }
-    }
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
