@@ -1,70 +1,345 @@
-private Map<String, Source> bulkQueryBy8Params(MongoTemplate mongoTemplate, String collectionName, List<Source> sources) {
-    Map<String, Source> result = new HashMap<>();
+# Education Source Migration Project - JIRA Requirements
 
-    for (Source source : sources) {
-        Criteria criteria = new Criteria();
-        List<Criteria> andCriteria = new ArrayList<>();
+## Epic: Education Source Data Migration System
 
-        andCriteria.add(Criteria.where("organizationName").regex("^" + Pattern.quote(source.getOrganizationName()) + "$", "i"));
-        andCriteria.add(Criteria.where("country").regex("^" + Pattern.quote(source.getCountry()) + "$", "i"));
-        andCriteria.add(Criteria.where("state").regex("^" + Pattern.quote(source.getState()) + "$", "i"));
-        andCriteria.add(Criteria.where("city").regex("^" + Pattern.quote(source.getCity()) + "$", "i"));
-        andCriteria.add(Criteria.where("postalCode").regex("^" + Pattern.quote(source.getPostalCode()) + "$", "i"));
+### Story 1: HON-Based Migration Implementation
+**Priority:** High  
+**Story Points:** 8
 
-        if (source.getOrganizationAlias() != null && source.getOrganizationAlias().length > 0) {
-            andCriteria.add(Criteria.where("organizationAlias").is(source.getOrganizationAlias()));
-        }
+**Description:**
+Implement migration logic to consolidate education source records from dev and test databases into a final collection using HON (unique identifier) as the primary matching key.
 
-        String deptName = getPayloadString(source, "departmentName");
-        if (deptName != null) {
-            andCriteria.add(Criteria.where("payload.departmentName").regex("^" + Pattern.quote(deptName) + "$", "i"));
-        }
+**Acceptance Criteria:**
+- Records are fetched from `dev_db.education_source_temp` and `test_db.education_source`
+- Matching is performed using HON field
+- When record exists in both dev and test, select the one with higher `usedCount`
+- If `usedCount` is equal, select the one with more recent `lastActionDate`
+- Insert new records into `dev_db.education_source_final_collection`
+- Update existing records if incoming record is better quality
+- Skip records if existing record is better quality
+- Process records in configurable batches (default: 1000)
+- Log progress at configurable intervals (default: 5000 records)
 
-        String addressLine = getAddressLine(source);
-        if (addressLine != null) {
-            andCriteria.add(Criteria.where("payload.address.0.line").regex("^" + Pattern.quote(addressLine) + "$", "i"));
-        }
+**Technical Notes:**
+- Use Spring Data MongoDB bulk operations for performance
+- Implement retry mechanism with exponential backoff (max 3 retries)
+- Create indexes on HON field for all collections
 
-        criteria.andOperator(andCriteria.toArray(new Criteria[0]));
-        // ... rest of method
-    }
+---
 
-    return result;
-}
+### Story 2: 8-Parameter Matching Migration
+**Priority:** High  
+**Story Points:** 13
 
+**Description:**
+Implement secondary migration phase for records without HON or requiring fuzzy matching based on 8 organizational parameters.
 
+**Acceptance Criteria:**
+- Match records using 8 parameters:
+  1. Organization Name (case-insensitive)
+  2. Country (case-insensitive)
+  3. State (case-insensitive)
+  4. City (case-insensitive)
+  5. Postal Code (case-insensitive)
+  6. Organization Alias (exact match)
+  7. Department Name from payload (case-insensitive)
+  8. Address Line from payload.address[0].line (case-insensitive)
+- All string comparisons must be case-insensitive using regex matching
+- Use `Pattern.quote()` to escape special characters in regex
+- Apply same quality comparison logic as HON-based migration
+- Handle null values gracefully in all 8 parameters
+- Build composite key for efficient lookup
 
+**Technical Notes:**
+- Implement `bulkQueryBy8Params()` with case-insensitive regex
+- Implement `build8ParamsQuery()` with case-insensitive regex
+- Use MongoDB regex with "i" flag for case-insensitive matching
 
+---
 
+### Story 3: Migration Statistics and Monitoring
+**Priority:** Medium  
+**Story Points:** 5
 
+**Description:**
+Implement comprehensive statistics tracking and logging for migration process monitoring.
 
+**Acceptance Criteria:**
+- Track the following metrics:
+  - Total records processed
+  - Records inserted from dev database
+  - Records inserted from test database
+  - Records updated from dev database
+  - Records updated from test database
+  - Records skipped (better existing record)
+  - Records skipped (similar records)
+  - Error count
+- Log progress at configurable intervals with percentage completion
+- Log final summary with all statistics
+- Log execution time for each migration phase
+- Log total execution time
 
+**Technical Notes:**
+- Use `MigrationStats` inner class with Lombok @Data
+- Implement `logProgress()` and `logFinalStats()` methods
+- Use SLF4J logger
 
+---
 
-private Query build8ParamsQuery(Source source) {
-    Criteria criteria = new Criteria();
-    List<Criteria> andCriteria = new ArrayList<>();
+### Story 4: Database Configuration and Connection Management
+**Priority:** High  
+**Story Points:** 5
 
-    andCriteria.add(Criteria.where("organizationName").regex("^" + Pattern.quote(source.getOrganizationName()) + "$", "i"));
-    andCriteria.add(Criteria.where("country").regex("^" + Pattern.quote(source.getCountry()) + "$", "i"));
-    andCriteria.add(Criteria.where("state").regex("^" + Pattern.quote(source.getState()) + "$", "i"));
-    andCriteria.add(Criteria.where("city").regex("^" + Pattern.quote(source.getCity()) + "$", "i"));
-    andCriteria.add(Criteria.where("postalCode").regex("^" + Pattern.quote(source.getPostalCode()) + "$", "i"));
+**Description:**
+Configure multiple MongoDB connections with optimized settings for migration performance.
 
-    if (source.getOrganizationAlias() != null && source.getOrganizationAlias().length > 0) {
-        andCriteria.add(Criteria.where("organizationAlias").is(source.getOrganizationAlias()));
-    }
+**Acceptance Criteria:**
+- Configure separate MongoTemplate beans for dev and test databases
+- Connection pool settings:
+  - Min pool size: 10
+  - Max pool size: 100
+  - Connection timeout: 30 seconds
+  - Socket timeout: 60 seconds
+  - Server selection timeout: 30 seconds
+- Support configurable MongoDB URIs
+- Support configurable database names
+- Support configurable collection names
 
-    String deptName = getPayloadString(source, "departmentName");
-    if (deptName != null) {
-        andCriteria.add(Criteria.where("payload.departmentName").regex("^" + Pattern.quote(deptName) + "$", "i"));
-    }
+**Technical Notes:**
+- Create `MongoDBConfig` configuration class
+- Create `MongoDBConstants` for all configuration values
+- Use Spring @Configuration and @Bean annotations
+- Use @Qualifier for multiple MongoTemplate beans
 
-    String addressLine = getAddressLine(source);
-    if (addressLine != null) {
-        andCriteria.add(Criteria.where("payload.address.0.line").regex("^" + Pattern.quote(addressLine) + "$", "i"));
-    }
+---
 
-    criteria.andOperator(andCriteria.toArray(new Criteria[0]));
-    return new Query(criteria);
-}
+### Story 5: Bulk Operations and Performance Optimization
+**Priority:** High  
+**Story Points:** 8
+
+**Description:**
+Implement efficient bulk operations for high-volume data migration with retry logic.
+
+**Acceptance Criteria:**
+- Process records in configurable batches (default: 1000)
+- Use MongoDB unordered bulk operations for parallel processing
+- Implement retry mechanism:
+  - Max retries: 3
+  - Exponential backoff starting at 1 second
+  - Log retry attempts
+- Separate bulk inserts and updates in single operation
+- Handle partial failures gracefully
+- Create indexes before migration starts
+
+**Technical Notes:**
+- Use Spring Data MongoDB `BulkOperations.BulkMode.UNORDERED`
+- Implement `executeBulkOperations()` with retry logic
+- Implement `createIndexes()` for HON field
+- Use `Thread.sleep()` for retry delays
+
+---
+
+### Story 6: Record Quality Comparison Logic
+**Priority:** High  
+**Story Points:** 5
+
+**Description:**
+Implement logic to determine which record is of higher quality when duplicates are found.
+
+**Acceptance Criteria:**
+- Primary comparison: `usedCount` from payload (higher is better)
+- Secondary comparison: `lastActionDate` (more recent is better)
+- Handle null values:
+  - Null `usedCount` treated as 0
+  - If both `lastActionDate` are null, keep first record
+  - If one `lastActionDate` is null, prefer non-null
+- Return reference to winning record (not a copy)
+
+**Technical Notes:**
+- Implement `compareRecords()` method
+- Implement `getUsedCount()` helper method
+- Extract `usedCount` from DBObject payload
+- Use `Instant.isAfter()` for date comparison
+
+---
+
+### Story 7: Similarity Detection for Duplicate Prevention
+**Priority:** Medium  
+**Story Points:** 5
+
+**Description:**
+Implement similarity detection to identify and skip near-duplicate records.
+
+**Acceptance Criteria:**
+- Compare all 8 parameters for similarity:
+  - Organization Name (case-insensitive, trimmed)
+  - Organization Alias (array comparison)
+  - Department Name (case-insensitive, trimmed)
+  - Country (case-insensitive, trimmed)
+  - State (case-insensitive, trimmed)
+  - City (case-insensitive, trimmed)
+  - Address Line (case-insensitive, trimmed)
+  - Postal Code (case-insensitive, trimmed)
+- Records are similar only if ALL parameters match
+- Handle null values (null == null is true, null != value is false)
+- Track skipped similar records separately in statistics
+
+**Technical Notes:**
+- Implement `isSimilar()` method
+- Implement `areFieldsEqual()` for string comparison
+- Implement `areAliasesEqual()` for array comparison
+- Use `trim()` and `equalsIgnoreCase()` for strings
+
+---
+
+### Story 8: Command Line Runner and Application Entry Point
+**Priority:** High  
+**Story Points:** 3
+
+**Description:**
+Create Spring Boot application with command line runner to execute migration on startup.
+
+**Acceptance Criteria:**
+- Execute Phase 1 (HON-based migration) first
+- Execute Phase 2 (8-parameter migration) second
+- Log phase start and completion with timing
+- Log total execution time
+- Exit with error code 1 on failure
+- Exit normally on success
+
+**Technical Notes:**
+- Use Spring Boot `CommandLineRunner`
+- Inject `MongoDBConfig` and both `MongoTemplate` beans
+- Use `@Qualifier` for bean injection
+- Implement proper exception handling
+
+---
+
+### Story 9: Error Handling and Resilience
+**Priority:** High  
+**Story Points:** 5
+
+**Description:**
+Implement comprehensive error handling throughout the migration process.
+
+**Acceptance Criteria:**
+- Catch and log errors at batch level (continue processing)
+- Catch and log errors at record level (continue processing)
+- Track error count in statistics
+- Log error details with context (HON, parameters, etc.)
+- Implement retry logic for transient failures
+- Handle interrupted exceptions during retry delays
+- Fail fast on critical errors (configuration, connection)
+
+**Technical Notes:**
+- Use try-catch blocks at multiple levels
+- Log errors with SLF4J at ERROR level
+- Include exception stack traces in logs
+- Increment error counter in stats
+- Re-throw critical exceptions
+
+---
+
+### Story 10: Helper Methods for Data Extraction
+**Priority:** Medium  
+**Story Points:** 3
+
+**Description:**
+Implement helper methods to extract nested data from Source entity payload.
+
+**Acceptance Criteria:**
+- Extract string values from DBObject payload by key
+- Extract address line from payload.address[0].line
+- Handle null payloads gracefully
+- Handle missing keys gracefully
+- Handle array index out of bounds gracefully
+
+**Technical Notes:**
+- Implement `getPayloadString()` method
+- Implement `getAddressLine()` method
+- Check for null before accessing nested properties
+- Return null if data not found
+
+---
+
+## Technical Debt Stories
+
+### TD-1: Add Unit Tests
+**Priority:** Medium  
+**Story Points:** 8
+
+**Description:**
+Add comprehensive unit tests for all migration logic.
+
+**Tasks:**
+- Test `compareRecords()` with various scenarios
+- Test `isSimilar()` with edge cases
+- Test bulk query methods
+- Test record processing methods
+- Test error handling
+- Mock MongoDB operations
+
+---
+
+### TD-2: Add Integration Tests
+**Priority:** Medium  
+**Story Points:** 13
+
+**Description:**
+Add integration tests with embedded MongoDB.
+
+**Tasks:**
+- Test end-to-end HON migration
+- Test end-to-end 8-parameter migration
+- Test with real MongoDB instance
+- Verify final collection state
+- Test with large datasets
+
+---
+
+### TD-3: Performance Optimization
+**Priority:** Low  
+**Story Points:** 8
+
+**Description:**
+Optimize migration performance for very large datasets.
+
+**Tasks:**
+- Profile memory usage
+- Optimize batch sizes
+- Add parallel processing where safe
+- Optimize MongoDB queries
+- Add compound indexes
+
+---
+
+## Non-Functional Requirements
+
+### NFR-1: Performance
+- Process at least 10,000 records per minute
+- Memory usage should not exceed 2GB for datasets up to 1M records
+- Batch size configurable for different environments
+
+### NFR-2: Reliability
+- Handle network interruptions gracefully
+- Retry transient failures automatically
+- Maintain data consistency (no partial updates)
+
+### NFR-3: Observability
+- Log all significant events
+- Provide progress indicators
+- Track detailed statistics
+- Log execution times
+
+### NFR-4: Maintainability
+- Use clear naming conventions
+- Add JavaDoc for public methods
+- Follow Spring Boot best practices
+- Use Lombok to reduce boilerplate
+
+### NFR-5: Configurability
+- All MongoDB URIs configurable
+- All collection names configurable
+- Batch sizes configurable
+- Retry settings configurable
+- Log frequency configurable
