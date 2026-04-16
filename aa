@@ -164,7 +164,7 @@ public class EducationSourceMigrationService {
                 Source testSource = testRecordsMap.get(hon);
                 Source existingFinal = finalRecordsMap.get(hon);
 
-                processRecord(devSource, testSource, existingFinal, updates, inserts, stats);
+                processRecord(devSource, testSource, existingFinal, updates, inserts, stats, finalRecordsMap);
             }
 
             executeBulkOperations(updates, inserts, true);
@@ -184,14 +184,14 @@ public class EducationSourceMigrationService {
             List<Source> inserts = new ArrayList<>();
 
             for (Source devSource : batch) {
-              //  logger.info("Processing By 8 Param HON: {}", devSource.getHon());
+                //  logger.info("Processing By 8 Param HON: {}", devSource.getHon());
                 stats.setTotalProcessed(stats.getTotalProcessed() + 1);
 
                 String key = buildParamsKey(devSource);
                 Source testSource = testRecordsMap.get(key);
                 Source existingFinal = finalRecordsMap.get(key);
 
-                processRecordBy8Params(devSource, testSource, existingFinal, updates, inserts, stats);
+                processRecordBy8Params(devSource, testSource, existingFinal, updates, inserts, stats, finalRecordsMap);
             }
 
             executeBulkOperations(updates, inserts, false);
@@ -339,12 +339,12 @@ public class EducationSourceMigrationService {
 
     private void processRecord(Source devSource, Source testSource, Source existingFinal,
                                List<Pair<Query, Source>> updates, List<Source> inserts,
-                               MigrationStats stats) {
+                               MigrationStats stats, Map<String, Source> finalRecordsMap) {
         try {
             if (testSource == null) {
-                handleRecordNotInTest(devSource, existingFinal, updates, inserts, stats);
+                handleRecordNotInTest(devSource, existingFinal, updates, inserts, stats, finalRecordsMap);
             } else {
-                handleRecordInTest(devSource, testSource, existingFinal, updates, inserts, stats);
+                handleRecordInTest(devSource, testSource, existingFinal, updates, inserts, stats, finalRecordsMap);
             }
         } catch (Exception e) {
             logger.error("Error processing record for HON: {}", devSource.getHon(), e);
@@ -354,12 +354,12 @@ public class EducationSourceMigrationService {
 
     private void processRecordBy8Params(Source devSource, Source testSource, Source existingFinal,
                                         List<Pair<Query, Source>> updates, List<Source> inserts,
-                                        MigrationStats stats) {
+                                        MigrationStats stats, Map<String, Source> finalRecordsMap) {
         try {
             if (testSource == null) {
-                handleRecordNotInTestBy8Params(devSource, existingFinal, updates, inserts, stats);
+                handleRecordNotInTestBy8Params(devSource, existingFinal, updates, inserts, stats, finalRecordsMap);
             } else {
-                handleRecordInTestBy8Params(devSource, testSource, existingFinal, updates, inserts, stats);
+                handleRecordInTestBy8Params(devSource, testSource, existingFinal, updates, inserts, stats, finalRecordsMap);
             }
         } catch (Exception e) {
             logger.error("Error processing record by 8 params", e);
@@ -369,10 +369,12 @@ public class EducationSourceMigrationService {
 
     private void handleRecordNotInTest(Source devSource, Source existingFinal,
                                        List<Pair<Query, Source>> updates, List<Source> inserts,
-                                       MigrationStats stats) {
+                                       MigrationStats stats, Map<String, Source> finalRecordsMap) {
         if (existingFinal == null) {
             inserts.add(devSource);
             stats.setInsertedFromDev(stats.getInsertedFromDev() + 1);
+            // Update finalRecordsMap to track this insert within the same batch
+            finalRecordsMap.put(devSource.getHon(), devSource);
         } else {
 
             Source winner = compareRecords(devSource, existingFinal);
@@ -381,6 +383,8 @@ public class EducationSourceMigrationService {
                 Query query = new Query(Criteria.where("hon").is(devSource.getHon()));
                 updates.add(Pair.of(query, devSource));
                 stats.setUpdatedFromDev(stats.getUpdatedFromDev() + 1);
+                // Update finalRecordsMap to track this update within the same batch
+                finalRecordsMap.put(devSource.getHon(), devSource);
             } else {
                 stats.setSkipped(stats.getSkipped() + 1);
             }
@@ -389,7 +393,7 @@ public class EducationSourceMigrationService {
 
     private void handleRecordInTest(Source devSource, Source testSource, Source existingFinal,
                                     List<Pair<Query, Source>> updates, List<Source> inserts,
-                                    MigrationStats stats) {
+                                    MigrationStats stats, Map<String, Source> finalRecordsMap) {
         Source chosenSource = compareRecords(devSource, testSource);
         boolean isFromDev = (chosenSource == devSource);
 
@@ -400,6 +404,8 @@ public class EducationSourceMigrationService {
             } else {
                 stats.setInsertedFromTest(stats.getInsertedFromTest() + 1);
             }
+            // Update finalRecordsMap to track this insert within the same batch
+            finalRecordsMap.put(chosenSource.getHon(), chosenSource);
         } else {
 
             Source winner = compareRecords(chosenSource, existingFinal);
@@ -412,6 +418,8 @@ public class EducationSourceMigrationService {
                 } else {
                     stats.setUpdatedFromTest(stats.getUpdatedFromTest() + 1);
                 }
+                // Update finalRecordsMap to track this update within the same batch
+                finalRecordsMap.put(chosenSource.getHon(), chosenSource);
             } else {
                 stats.setSkipped(stats.getSkipped() + 1);
             }
@@ -420,10 +428,13 @@ public class EducationSourceMigrationService {
 
     private void handleRecordNotInTestBy8Params(Source devSource, Source existingFinal,
                                                 List<Pair<Query, Source>> updates, List<Source> inserts,
-                                                MigrationStats stats) {
+                                                MigrationStats stats, Map<String, Source> finalRecordsMap) {
         if (existingFinal == null) {
             inserts.add(devSource);
             stats.setInsertedFromDev(stats.getInsertedFromDev() + 1);
+            // Update finalRecordsMap to track this insert within the same batch
+            String key = buildParamsKey(devSource);
+            finalRecordsMap.put(key, devSource);
         } else {
             Source winner = compareRecords(devSource, existingFinal);
 
@@ -431,6 +442,9 @@ public class EducationSourceMigrationService {
                 Query query = build8ParamsQuery(devSource);
                 updates.add(Pair.of(query, devSource));
                 stats.setUpdatedFromDev(stats.getUpdatedFromDev() + 1);
+                // Update finalRecordsMap to track this update within the same batch
+                String key = buildParamsKey(devSource);
+                finalRecordsMap.put(key, devSource);
             } else {
                 stats.setSkipped(stats.getSkipped() + 1);
             }
@@ -439,7 +453,7 @@ public class EducationSourceMigrationService {
 
     private void handleRecordInTestBy8Params(Source devSource, Source testSource, Source existingFinal,
                                              List<Pair<Query, Source>> updates, List<Source> inserts,
-                                             MigrationStats stats) {
+                                             MigrationStats stats, Map<String, Source> finalRecordsMap) {
         Source chosenSource = compareRecords(devSource, testSource);
         boolean isFromDev = (chosenSource == devSource);
 
@@ -450,6 +464,9 @@ public class EducationSourceMigrationService {
             } else {
                 stats.setInsertedFromTest(stats.getInsertedFromTest() + 1);
             }
+            // Update finalRecordsMap to track this insert within the same batch
+            String key = buildParamsKey(chosenSource);
+            finalRecordsMap.put(key, chosenSource);
         } else {
             Source winner = compareRecords(chosenSource, existingFinal);
 
@@ -461,6 +478,9 @@ public class EducationSourceMigrationService {
                 } else {
                     stats.setUpdatedFromTest(stats.getUpdatedFromTest() + 1);
                 }
+                // Update finalRecordsMap to track this update within the same batch
+                String key = buildParamsKey(chosenSource);
+                finalRecordsMap.put(key, chosenSource);
             } else {
                 stats.setSkipped(stats.getSkipped() + 1);
             }
@@ -529,8 +549,8 @@ public class EducationSourceMigrationService {
         while (retries <= maxRetries) {
             try {
                 BulkOperations bulkOps = devMongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED,
-                                                                   Source.class,
-                                                                   MongoDBConstants.DEV_FINAL_COLLECTION);
+                        Source.class,
+                        MongoDBConstants.DEV_FINAL_COLLECTION);
 
                 if (insertApply && !inserts.isEmpty()) {
                     bulkOps.insert(inserts);
