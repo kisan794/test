@@ -1,279 +1,339 @@
-{
-  "_id": {
-    "$oid": "69a828eb0f9d847060c0fec5"
-  },
-  "hon": "OUEDU-052704-F34SS",
-  "organizationName": "University of North Carolina at Chapel Hill",
-  "status": "ACTIVE",
-  "version": 122,
-  "organizationType": "EDUCATION",
-  "city": "Chapel Hill",
-  "country": "USA",
-  "state": "North Carolina",
-  "organizationAlias": [
-    {
-      "name": "UNC Chapel Hill"
-    },
-    {
-      "name": "The University of North Carolina at Chapel Hill"
-    },
-    {
-      "name": "University of North Carolina, Chapel Hill"
-    },
-    {
-      "name": "Kenan–Flagler Business School"
-    },
-    {
-      "name": "UNC Eshelman School of Pharmacy"
+package com.hireright.sourceintelligence.domain.entity;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.hireright.sourceintelligence.api.dto.Alias;
+import com.hireright.sourceintelligence.api.dto.HighlightDTO;
+import com.hireright.sourceintelligence.domain.enums.*;
+import com.mongodb.DBObject;
+import lombok.*;
+import lombok.Builder;
+import org.apache.commons.lang3.builder.*;
+import org.bson.types.ObjectId;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.util.StringUtils;
+
+import java.time.Instant;
+import java.util.List;
+
+import static com.hireright.sourceintelligence.constants.ApplicationConstants.UNASSIGNED;
+
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@Data
+@JsonInclude(value = JsonInclude.Include.NON_EMPTY, content = JsonInclude.Include.NON_NULL)
+public class Source {
+
+    @Id
+    private ObjectId id;
+
+    private String hon;
+
+    private String organizationName;
+
+    private SourceOrganizationStatus status;
+
+    private double version;
+
+    private OrganizationType organizationType;
+
+    private String city;
+
+    private String country;
+
+    private String state;
+
+    private Alias[] organizationAlias;
+
+    private DBObject payload;
+
+    private ApprovalStatus approvalStatus;
+
+    private String reviewRequired;
+
+    private String postalCode;
+
+    private List<HighlightDTO> highlight;
+
+    private String location;
+
+    private Boolean outOfBusiness;
+
+    private String comments;
+    private List<FieldErrors> generalErrors;
+    private List<FieldErrors> fieldErrors;
+    private String searchOrg;
+    private Boolean flagPriority;
+    private String logFlag;
+    private String action;
+    @Builder.Default
+    private Boolean isLockEnabled= Boolean.FALSE;
+
+    private String createdBy;
+
+    private String creatorId;
+
+    @Field("created_date")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    private Instant createdDate;
+
+    private String lastModifiedBy;
+
+    private String lastModifierId;
+
+    @Field("last_modified_date")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    private Instant lastModifiedDate;
+
+    private String requestedBy;
+
+    private String requesterId;
+
+    private String approvedBy;
+
+    private String approverId;
+
+    private String assignedTo;
+
+    private String assignedId;
+
+    private String lastLockedBy;
+    private String lastLockedId;
+
+    private String lastUnLockedBy;
+    private String lastUnLockedId;
+
+    @Field("last_locked_date")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    private Instant lastLockedDate;
+
+    @Field("last_unlocked_date")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    private Instant lastUnLockedDate;
+
+    @Field("last_approved_date")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    private Instant lastApprovedDate;
+    private double tempVersion;
+
+    @Field("approval_start_date")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    private Instant approvalStartDate;
+
+    @Field("last_action_date")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
+    private Instant lastActionDate;
+
+    private String systemComments;
+
+
+    public String getAssignedTo() {
+        if(StringUtils.hasText(assignedTo)) {
+            return assignedTo;
+        }else{
+            return UNASSIGNED;
+        }
     }
-  ],
-  "payload": {
-    "departmentName": "",
-    "website": "",
-    "address": [
-      {
-        "availablePeriod": {
-          "start": "",
-          "end": ""
-        },
-        "city": "Chapel Hill",
-        "countrySubDivisions": [
-          {
-            "type": "Country",
-            "value": "USA"
-          },
-          {
-            "type": "Region",
-            "value": "North Carolina"
-          }
-        ],
-        "line": "",
-        "postalCode": "27599-3490",
-        "noPhysicalAddress": "false"
-      }
-    ],
-    "notes": " <p>Per research, this school is accredited and/or recognized by the Southern Association of Colleges and Schools. -CSM Meg Brown 4/9/2025</p> <p>&nbsp;</p>",
-    "contactPersonTitle": "",
-    "infoRequestIDs": [],
-    "addionalInfo": [
-      {
-        "contactPersonName": "",
-        "contactTimeFrom": "",
-        "contactTimeZone": "",
-        "releaseType": "econsent",
-        "hasChildren": "false",
-        "verificationValidationProcess": "02/13/2026",
-        "contactPersonTitle": "",
-        "doNotContact": "Source Out Of Business",
-        "contactTimeTo": "",
-        "sourceLanguage": "",
-        "releaseWebAddress": ""
-      }
-    ],
-    "contactPersonName": "",
-    "dotRegulated": true,
-    "lastValidatedDateTime": "",
-    "documentationRequired": true,
-    "unAccreditedSource": true,
-    "lastUsedDateTime": "2026-03-03T17:21:44Z",
-    "contacts": [
-      {
-        "purpose": "",
-        "purposeRule": [
-          {
-            "name": "",
-            "value": ""
-          }
-        ],
-        "contactDetails": [
-          {
-            "type": "contactAutomatedServices",
-            "priority": 1,
-            "communication": [
-              {
-                "communicationInfo": [
-                  {
-                    "type": "companyNames",
-                    "value": ""
-                  },
-                  {
-                    "type": "codes",
-                    "value": "002974"
-                  },
-                  {
-                    "type": "branch",
-                    "value": ""
-                  },
-                  {
-                    "type": "uri",
-                    "value": "https://theworknumber.com/login-help"
-                  },
-                  {
-                    "type": "sourceType",
-                    "value": "EDUCATION"
-                  },
-                  {
-                    "type": "cevApproved",
-                    "value": ""
-                  },
-                  {
-                    "type": "followUpAllowed",
-                    "value": "false"
-                  },
-                  {
-                    "type": "followUpAllowedAfter",
-                    "value": ""
-                  },
-                  {
-                    "type": "surChargeAmount",
-                    "value": ""
-                  },
-                  {
-                    "type": "surChargeCurrency",
-                    "value": ""
-                  },
-                  {
-                    "type": "paymentMethod",
-                    "value": ""
-                  },
-                  {
-                    "type": "turnAroundTime",
-                    "value": ""
-                  },
-                  {
-                    "type": "turnAroundTimeUnit",
-                    "value": "days"
-                  }
-                ],
-                "providerID": "59",
-                "name": "Equifax Education"
-              },
-              {
-                "communicationInfo": [
-                  {
-                    "type": "companyNames",
-                    "value": ""
-                  },
-                  {
-                    "type": "codes",
-                    "value": ""
-                  },
-                  {
-                    "type": "branch",
-                    "value": ""
-                  },
-                  {
-                    "type": "uri",
-                    "value": "https://exchange.parchment.com/u/auth/login"
-                  },
-                  {
-                    "type": "sourceType",
-                    "value": "EDUCATION"
-                  },
-                  {
-                    "type": "cevApproved",
-                    "value": ""
-                  },
-                  {
-                    "type": "followUpAllowed",
-                    "value": "false"
-                  },
-                  {
-                    "type": "followUpAllowedAfter",
-                    "value": ""
-                  },
-                  {
-                    "type": "surChargeAmount",
-                    "value": ""
-                  },
-                  {
-                    "type": "surChargeCurrency",
-                    "value": ""
-                  },
-                  {
-                    "type": "paymentMethod",
-                    "value": ""
-                  },
-                  {
-                    "type": "turnAroundTime",
-                    "value": ""
-                  },
-                  {
-                    "type": "turnAroundTimeUnit",
-                    "value": "days"
-                  }
-                ],
-                "providerID": "52",
-                "name": "Parchment Exchange"
-              }
-            ],
-            "version": ""
-          }
-        ]
-      }
-    ],
-    "usedCount": 2071
-  },
-  "approvalStatus": "APPROVED",
-  "postalCode": "27599-3490",
-  "searchOrg": "university of north carolina at chapel hill",
-  "action": "Create",
-  "created_date": {
-    "$date": "2004-05-27T22:52:07.000Z"
-  },
-  "lastModifiedBy": "Karthic Rajesh K",
-  "lastModifierId": "",
-  "last_modified_date": {
-    "$date": "2026-02-13T11:44:11.000Z"
-  },
-  "approvedBy": "Karthic Rajesh K",
-  "approverId": "",
-  "assignedTo": "Karthic Rajesh K",
-  "assignedId": "",
-  "last_approved_date": {
-    "$date": "2026-02-13T11:44:11.000Z"
-  },
-  "_class": "com.hireright.migrationservice.domain.entity.Source",
-  "logFlag": "New Record",
-  "last_action_date": {
-    "$date": "2026-02-13T11:44:11.000Z"
-  },
-  "flagPriority": false
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || this.getClass() != o.getClass()) {
+            return false;
+        }
+        Source that = (Source) o;
+
+        EqualsBuilder eb = new EqualsBuilder();
+        eb.append(this.hon, that.getHon());
+        return eb.isEquals();
+    }
+
+    @Override
+    public int hashCode() {
+        HashCodeBuilder hcb = new HashCodeBuilder();
+        hcb.append(hon).append(organizationName);
+        return hcb.toHashCode();
+    }
+
 }
 
 
 
 
+package com.hireright.sourceintelligence.domain.enums;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum SourceOrganizationStatus {
+    ACTIVE("ACTIVE"), INACTIVE("INACTIVE");
+
+    private final String status;
+
+    SourceOrganizationStatus(String status) {
+        this.status = status;
+    }
+
+    @JsonCreator
+    public static SourceOrganizationStatus fromString(String status) {
+        return status == null ? null : SourceOrganizationStatus.valueOf(status.toUpperCase());
+    }
+
+    @Override
+    public String toString() {
+        return status;
+    }
+
+    @JsonValue
+    public String getStatus() {
+        return this.status.toUpperCase();
+    }
+}
 
 
 
+package com.hireright.sourceintelligence.domain.enums;
+
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum OrganizationType {
+    EDUCATION("EDUCATION"), EMPLOYMENT("EMPLOYMENT");
+
+    private final String type;
+
+    OrganizationType(String type) {
+        this.type = type;
+    }
+
+    public static OrganizationType fromString(String type) {
+        return type == null ? null : OrganizationType.valueOf(type.toUpperCase());
+    }
+
+    @Override
+    public String toString() {
+        return this.type;
+    }
+
+    @JsonValue
+    public String getType() {
+        return this.type.toUpperCase();
+    }
+}
 
 
 
+package com.hireright.sourceintelligence.api.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@AllArgsConstructor
+@NoArgsConstructor
+@Getter
+@Setter
+public class Alias {
+  private String name;
+  private String language;
+}
+
+package com.hireright.sourceintelligence.domain.enums;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum ApprovalStatus {
+
+	IN_PROGRESS("IN_PROGRESS"), PENDING_APPROVAL("PENDING_APPROVAL"),
+	APPROVED("APPROVED"), REJECTED("REJECTED"),
+	ONHOLD("ONHOLD"),
+	SAVE_PENDING_APPROVAL("SAVE_PENDING_APPROVAL");
+
+	private final String status;
+
+	ApprovalStatus(String status) {
+		this.status = status;
+	}
+
+	@JsonCreator
+	public static ApprovalStatus fromString(String status) {
+		return status == null ? null : ApprovalStatus.valueOf(status.toUpperCase());
+	}
+
+	@Override
+	public String toString() {
+		return status;
+	}
+
+	@JsonValue
+	public String getStatus() {
+		return this.status.toUpperCase();
+	}
+}
+
+package com.hireright.sourceintelligence.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.util.List;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(value = JsonInclude.Include.NON_EMPTY, content = JsonInclude.Include.NON_NULL)
+public class HighlightDTO {
+
+  private Float score;
+
+  private String path;
+
+  private List<HitText> texts;
+}
 
 
+package com.hireright.sourceintelligence.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(value = JsonInclude.Include.NON_EMPTY, content = JsonInclude.Include.NON_NULL)
+public class HitText{
+  private String type;
+
+  private String value;
+}
 
 
+package com.hireright.sourceintelligence.domain.entity;
+import lombok.*;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class FieldErrors {
+    private String label;
+    private String value;
+}
 
 
-
-
-dev:
- 
-education_source_temp -> migration data
- 
-test env:
- 
-education_source
- 
- 
--> REad dev collection and test collection -> comparision
- 
-New collection(education_source_final_collection) in dev env:
-record not found test collection  -> Insert
-record found in test collection -> compare both records and take the latest -> insert
- 
- 
-Duplicate: same hon  ->pick one record with highest usedcount or last_action_date
- 
-7 parameters(orgname -> ignore, alias -> ignore, dept -> ignore, country, state, city -> ignore, addressline -> ignore, postalcode -> ignore) -> with different hons -> pick one record with highest usedcount or last_action_date
