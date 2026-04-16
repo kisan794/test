@@ -1,14 +1,279 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<configuration>
-    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-    
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - [trace_id=%X{trace_id:-NO_TRACE} span_id=%X{span_id:-NO_SPAN}] - %msg%n</pattern>
-        </encoder>
-    </appender>
+{
+  "_id": {
+    "$oid": "69a828eb0f9d847060c0fec5"
+  },
+  "hon": "OUEDU-052704-F34SS",
+  "organizationName": "University of North Carolina at Chapel Hill",
+  "status": "ACTIVE",
+  "version": 122,
+  "organizationType": "EDUCATION",
+  "city": "Chapel Hill",
+  "country": "USA",
+  "state": "North Carolina",
+  "organizationAlias": [
+    {
+      "name": "UNC Chapel Hill"
+    },
+    {
+      "name": "The University of North Carolina at Chapel Hill"
+    },
+    {
+      "name": "University of North Carolina, Chapel Hill"
+    },
+    {
+      "name": "Kenan–Flagler Business School"
+    },
+    {
+      "name": "UNC Eshelman School of Pharmacy"
+    }
+  ],
+  "payload": {
+    "departmentName": "",
+    "website": "",
+    "address": [
+      {
+        "availablePeriod": {
+          "start": "",
+          "end": ""
+        },
+        "city": "Chapel Hill",
+        "countrySubDivisions": [
+          {
+            "type": "Country",
+            "value": "USA"
+          },
+          {
+            "type": "Region",
+            "value": "North Carolina"
+          }
+        ],
+        "line": "",
+        "postalCode": "27599-3490",
+        "noPhysicalAddress": "false"
+      }
+    ],
+    "notes": " <p>Per research, this school is accredited and/or recognized by the Southern Association of Colleges and Schools. -CSM Meg Brown 4/9/2025</p> <p>&nbsp;</p>",
+    "contactPersonTitle": "",
+    "infoRequestIDs": [],
+    "addionalInfo": [
+      {
+        "contactPersonName": "",
+        "contactTimeFrom": "",
+        "contactTimeZone": "",
+        "releaseType": "econsent",
+        "hasChildren": "false",
+        "verificationValidationProcess": "02/13/2026",
+        "contactPersonTitle": "",
+        "doNotContact": "Source Out Of Business",
+        "contactTimeTo": "",
+        "sourceLanguage": "",
+        "releaseWebAddress": ""
+      }
+    ],
+    "contactPersonName": "",
+    "dotRegulated": true,
+    "lastValidatedDateTime": "",
+    "documentationRequired": true,
+    "unAccreditedSource": true,
+    "lastUsedDateTime": "2026-03-03T17:21:44Z",
+    "contacts": [
+      {
+        "purpose": "",
+        "purposeRule": [
+          {
+            "name": "",
+            "value": ""
+          }
+        ],
+        "contactDetails": [
+          {
+            "type": "contactAutomatedServices",
+            "priority": 1,
+            "communication": [
+              {
+                "communicationInfo": [
+                  {
+                    "type": "companyNames",
+                    "value": ""
+                  },
+                  {
+                    "type": "codes",
+                    "value": "002974"
+                  },
+                  {
+                    "type": "branch",
+                    "value": ""
+                  },
+                  {
+                    "type": "uri",
+                    "value": "https://theworknumber.com/login-help"
+                  },
+                  {
+                    "type": "sourceType",
+                    "value": "EDUCATION"
+                  },
+                  {
+                    "type": "cevApproved",
+                    "value": ""
+                  },
+                  {
+                    "type": "followUpAllowed",
+                    "value": "false"
+                  },
+                  {
+                    "type": "followUpAllowedAfter",
+                    "value": ""
+                  },
+                  {
+                    "type": "surChargeAmount",
+                    "value": ""
+                  },
+                  {
+                    "type": "surChargeCurrency",
+                    "value": ""
+                  },
+                  {
+                    "type": "paymentMethod",
+                    "value": ""
+                  },
+                  {
+                    "type": "turnAroundTime",
+                    "value": ""
+                  },
+                  {
+                    "type": "turnAroundTimeUnit",
+                    "value": "days"
+                  }
+                ],
+                "providerID": "59",
+                "name": "Equifax Education"
+              },
+              {
+                "communicationInfo": [
+                  {
+                    "type": "companyNames",
+                    "value": ""
+                  },
+                  {
+                    "type": "codes",
+                    "value": ""
+                  },
+                  {
+                    "type": "branch",
+                    "value": ""
+                  },
+                  {
+                    "type": "uri",
+                    "value": "https://exchange.parchment.com/u/auth/login"
+                  },
+                  {
+                    "type": "sourceType",
+                    "value": "EDUCATION"
+                  },
+                  {
+                    "type": "cevApproved",
+                    "value": ""
+                  },
+                  {
+                    "type": "followUpAllowed",
+                    "value": "false"
+                  },
+                  {
+                    "type": "followUpAllowedAfter",
+                    "value": ""
+                  },
+                  {
+                    "type": "surChargeAmount",
+                    "value": ""
+                  },
+                  {
+                    "type": "surChargeCurrency",
+                    "value": ""
+                  },
+                  {
+                    "type": "paymentMethod",
+                    "value": ""
+                  },
+                  {
+                    "type": "turnAroundTime",
+                    "value": ""
+                  },
+                  {
+                    "type": "turnAroundTimeUnit",
+                    "value": "days"
+                  }
+                ],
+                "providerID": "52",
+                "name": "Parchment Exchange"
+              }
+            ],
+            "version": ""
+          }
+        ]
+      }
+    ],
+    "usedCount": 2071
+  },
+  "approvalStatus": "APPROVED",
+  "postalCode": "27599-3490",
+  "searchOrg": "university of north carolina at chapel hill",
+  "action": "Create",
+  "created_date": {
+    "$date": "2004-05-27T22:52:07.000Z"
+  },
+  "lastModifiedBy": "Karthic Rajesh K",
+  "lastModifierId": "",
+  "last_modified_date": {
+    "$date": "2026-02-13T11:44:11.000Z"
+  },
+  "approvedBy": "Karthic Rajesh K",
+  "approverId": "",
+  "assignedTo": "Karthic Rajesh K",
+  "assignedId": "",
+  "last_approved_date": {
+    "$date": "2026-02-13T11:44:11.000Z"
+  },
+  "_class": "com.hireright.migrationservice.domain.entity.Source",
+  "logFlag": "New Record",
+  "last_action_date": {
+    "$date": "2026-02-13T11:44:11.000Z"
+  },
+  "flagPriority": false
+}
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
-</configuration>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+dev:
+ 
+education_source_temp -> migration data
+ 
+test env:
+ 
+education_source
+ 
+ 
+-> REad dev collection and test collection -> comparision
+ 
+New collection(education_source_final_collection) in dev env:
+record not found test collection  -> Insert
+record found in test collection -> compare both records and take the latest -> insert
+ 
+ 
+Duplicate: same hon  ->pick one record with highest usedcount or last_action_date
+ 
+7 parameters(orgname -> ignore, alias -> ignore, dept -> ignore, country, state, city -> ignore, addressline -> ignore, postalcode -> ignore) -> with different hons -> pick one record with highest usedcount or last_action_date
