@@ -1,12 +1,19 @@
- DBObject payload = source.getPayload();
+@SuppressWarnings("unchecked")
+    private String getAddressLine(Source source) {
+        DBObject payload = source.getPayload();
         if (payload != null) {
             Object addressObj = payload.get("address");
             if (addressObj instanceof List) {
                 List<?> addresses = (List<?>) addressObj;
-                if (!addresses.isEmpty() && addresses.get(0) instanceof DBObject) {
-                    DBObject firstAddress = (DBObject) addresses.get(0);
-                    return (String) firstAddress.get("line");
+                if (!addresses.isEmpty()) {
+                    Object firstAddr = addresses.get(0);
+                    if (firstAddr instanceof DBObject) {
+                        return (String) ((DBObject) firstAddr).get("line");
+                    } else if (firstAddr instanceof java.util.Map) {
+                        return (String) ((java.util.Map<?, ?>) firstAddr).get("line");
+                    }
                 }
             }
         }
         return null;
+    }
