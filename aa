@@ -1,339 +1,37 @@
-package com.hireright.sourceintelligence.domain.entity;
-
-import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.hireright.sourceintelligence.api.dto.Alias;
-import com.hireright.sourceintelligence.api.dto.HighlightDTO;
-import com.hireright.sourceintelligence.domain.enums.*;
-import com.mongodb.DBObject;
-import lombok.*;
-import lombok.Builder;
-import org.apache.commons.lang3.builder.*;
-import org.bson.types.ObjectId;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Field;
-import org.springframework.util.StringUtils;
-
-import java.time.Instant;
-import java.util.List;
-
-import static com.hireright.sourceintelligence.constants.ApplicationConstants.UNASSIGNED;
-
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-@Data
-@JsonInclude(value = JsonInclude.Include.NON_EMPTY, content = JsonInclude.Include.NON_NULL)
-public class Source {
-
-    @Id
-    private ObjectId id;
-
-    private String hon;
-
-    private String organizationName;
-
-    private SourceOrganizationStatus status;
-
-    private double version;
-
-    private OrganizationType organizationType;
-
-    private String city;
-
-    private String country;
-
-    private String state;
-
-    private Alias[] organizationAlias;
-
-    private DBObject payload;
-
-    private ApprovalStatus approvalStatus;
-
-    private String reviewRequired;
-
-    private String postalCode;
-
-    private List<HighlightDTO> highlight;
-
-    private String location;
-
-    private Boolean outOfBusiness;
-
-    private String comments;
-    private List<FieldErrors> generalErrors;
-    private List<FieldErrors> fieldErrors;
-    private String searchOrg;
-    private Boolean flagPriority;
-    private String logFlag;
-    private String action;
-    @Builder.Default
-    private Boolean isLockEnabled= Boolean.FALSE;
-
-    private String createdBy;
-
-    private String creatorId;
-
-    @Field("created_date")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    private Instant createdDate;
-
-    private String lastModifiedBy;
-
-    private String lastModifierId;
-
-    @Field("last_modified_date")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    private Instant lastModifiedDate;
-
-    private String requestedBy;
-
-    private String requesterId;
-
-    private String approvedBy;
-
-    private String approverId;
-
-    private String assignedTo;
-
-    private String assignedId;
-
-    private String lastLockedBy;
-    private String lastLockedId;
-
-    private String lastUnLockedBy;
-    private String lastUnLockedId;
-
-    @Field("last_locked_date")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    private Instant lastLockedDate;
-
-    @Field("last_unlocked_date")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    private Instant lastUnLockedDate;
-
-    @Field("last_approved_date")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    private Instant lastApprovedDate;
-    private double tempVersion;
-
-    @Field("approval_start_date")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    private Instant approvalStartDate;
-
-    @Field("last_action_date")
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    private Instant lastActionDate;
-
-    private String systemComments;
-
-
-    public String getAssignedTo() {
-        if(StringUtils.hasText(assignedTo)) {
-            return assignedTo;
-        }else{
-            return UNASSIGNED;
-        }
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || this.getClass() != o.getClass()) {
-            return false;
-        }
-        Source that = (Source) o;
-
-        EqualsBuilder eb = new EqualsBuilder();
-        eb.append(this.hon, that.getHon());
-        return eb.isEquals();
-    }
-
-    @Override
-    public int hashCode() {
-        HashCodeBuilder hcb = new HashCodeBuilder();
-        hcb.append(hon).append(organizationName);
-        return hcb.toHashCode();
-    }
-
+plugins {
+    id("java")
+    id("org.springframework.boot") version "3.2.5"
+    id("io.spring.dependency-management") version "1.1.4"
 }
 
+group = "org.hireright"
+version = "1.0-SNAPSHOT"
 
-
-
-package com.hireright.sourceintelligence.domain.enums;
-
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
-
-public enum SourceOrganizationStatus {
-    ACTIVE("ACTIVE"), INACTIVE("INACTIVE");
-
-    private final String status;
-
-    SourceOrganizationStatus(String status) {
-        this.status = status;
-    }
-
-    @JsonCreator
-    public static SourceOrganizationStatus fromString(String status) {
-        return status == null ? null : SourceOrganizationStatus.valueOf(status.toUpperCase());
-    }
-
-    @Override
-    public String toString() {
-        return status;
-    }
-
-    @JsonValue
-    public String getStatus() {
-        return this.status.toUpperCase();
-    }
+repositories {
+    mavenCentral()
 }
 
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
+    implementation("org.springframework.boot:spring-boot-starter")
 
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
 
-package com.hireright.sourceintelligence.domain.enums;
+    implementation("com.fasterxml.jackson.core:jackson-databind")
+    implementation("com.fasterxml.jackson.core:jackson-annotations")
+    implementation("org.apache.commons:commons-lang3:3.14.0")
 
-import com.fasterxml.jackson.annotation.JsonValue;
-
-public enum OrganizationType {
-    EDUCATION("EDUCATION"), EMPLOYMENT("EMPLOYMENT");
-
-    private final String type;
-
-    OrganizationType(String type) {
-        this.type = type;
-    }
-
-    public static OrganizationType fromString(String type) {
-        return type == null ? null : OrganizationType.valueOf(type.toUpperCase());
-    }
-
-    @Override
-    public String toString() {
-        return this.type;
-    }
-
-    @JsonValue
-    public String getType() {
-        return this.type.toUpperCase();
-    }
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation(platform("org.junit:junit-bom:5.10.0"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
 }
 
-
-
-package com.hireright.sourceintelligence.api.dto;
-
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
-@AllArgsConstructor
-@NoArgsConstructor
-@Getter
-@Setter
-public class Alias {
-  private String name;
-  private String language;
+tasks.test {
+    useJUnitPlatform()
 }
 
-package com.hireright.sourceintelligence.domain.enums;
-
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
-
-public enum ApprovalStatus {
-
-	IN_PROGRESS("IN_PROGRESS"), PENDING_APPROVAL("PENDING_APPROVAL"),
-	APPROVED("APPROVED"), REJECTED("REJECTED"),
-	ONHOLD("ONHOLD"),
-	SAVE_PENDING_APPROVAL("SAVE_PENDING_APPROVAL");
-
-	private final String status;
-
-	ApprovalStatus(String status) {
-		this.status = status;
-	}
-
-	@JsonCreator
-	public static ApprovalStatus fromString(String status) {
-		return status == null ? null : ApprovalStatus.valueOf(status.toUpperCase());
-	}
-
-	@Override
-	public String toString() {
-		return status;
-	}
-
-	@JsonValue
-	public String getStatus() {
-		return this.status.toUpperCase();
-	}
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
-
-package com.hireright.sourceintelligence.api.dto;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
-
-import java.util.List;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-@JsonIgnoreProperties(ignoreUnknown = true)
-@JsonInclude(value = JsonInclude.Include.NON_EMPTY, content = JsonInclude.Include.NON_NULL)
-public class HighlightDTO {
-
-  private Float score;
-
-  private String path;
-
-  private List<HitText> texts;
-}
-
-
-package com.hireright.sourceintelligence.api.dto;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-@Data
-@Builder
-@AllArgsConstructor
-@NoArgsConstructor
-@JsonIgnoreProperties(ignoreUnknown = true)
-@JsonInclude(value = JsonInclude.Include.NON_EMPTY, content = JsonInclude.Include.NON_NULL)
-public class HitText{
-  private String type;
-
-  private String value;
-}
-
-
-package com.hireright.sourceintelligence.domain.entity;
-import lombok.*;
-
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-public class FieldErrors {
-    private String label;
-    private String value;
-}
-
-
