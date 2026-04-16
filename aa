@@ -1,345 +1,580 @@
-# Education Source Migration Project - JIRA Requirements
-
-## Epic: Education Source Data Migration System
-
-### Story 1: HON-Based Migration Implementation
-**Priority:** High  
-**Story Points:** 8
-
-**Description:**
-Implement migration logic to consolidate education source records from dev and test databases into a final collection using HON (unique identifier) as the primary matching key.
-
-**Acceptance Criteria:**
-- Records are fetched from `dev_db.education_source_temp` and `test_db.education_source`
-- Matching is performed using HON field
-- When record exists in both dev and test, select the one with higher `usedCount`
-- If `usedCount` is equal, select the one with more recent `lastActionDate`
-- Insert new records into `dev_db.education_source_final_collection`
-- Update existing records if incoming record is better quality
-- Skip records if existing record is better quality
-- Process records in configurable batches (default: 1000)
-- Log progress at configurable intervals (default: 5000 records)
-
-**Technical Notes:**
-- Use Spring Data MongoDB bulk operations for performance
-- Implement retry mechanism with exponential backoff (max 3 retries)
-- Create indexes on HON field for all collections
-
----
-
-### Story 2: 8-Parameter Matching Migration
-**Priority:** High  
-**Story Points:** 13
-
-**Description:**
-Implement secondary migration phase for records without HON or requiring fuzzy matching based on 8 organizational parameters.
-
-**Acceptance Criteria:**
-- Match records using 8 parameters:
-  1. Organization Name (case-insensitive)
-  2. Country (case-insensitive)
-  3. State (case-insensitive)
-  4. City (case-insensitive)
-  5. Postal Code (case-insensitive)
-  6. Organization Alias (exact match)
-  7. Department Name from payload (case-insensitive)
-  8. Address Line from payload.address[0].line (case-insensitive)
-- All string comparisons must be case-insensitive using regex matching
-- Use `Pattern.quote()` to escape special characters in regex
-- Apply same quality comparison logic as HON-based migration
-- Handle null values gracefully in all 8 parameters
-- Build composite key for efficient lookup
-
-**Technical Notes:**
-- Implement `bulkQueryBy8Params()` with case-insensitive regex
-- Implement `build8ParamsQuery()` with case-insensitive regex
-- Use MongoDB regex with "i" flag for case-insensitive matching
-
----
-
-### Story 3: Migration Statistics and Monitoring
-**Priority:** Medium  
-**Story Points:** 5
-
-**Description:**
-Implement comprehensive statistics tracking and logging for migration process monitoring.
-
-**Acceptance Criteria:**
-- Track the following metrics:
-  - Total records processed
-  - Records inserted from dev database
-  - Records inserted from test database
-  - Records updated from dev database
-  - Records updated from test database
-  - Records skipped (better existing record)
-  - Records skipped (similar records)
-  - Error count
-- Log progress at configurable intervals with percentage completion
-- Log final summary with all statistics
-- Log execution time for each migration phase
-- Log total execution time
-
-**Technical Notes:**
-- Use `MigrationStats` inner class with Lombok @Data
-- Implement `logProgress()` and `logFinalStats()` methods
-- Use SLF4J logger
-
----
-
-### Story 4: Database Configuration and Connection Management
-**Priority:** High  
-**Story Points:** 5
-
-**Description:**
-Configure multiple MongoDB connections with optimized settings for migration performance.
-
-**Acceptance Criteria:**
-- Configure separate MongoTemplate beans for dev and test databases
-- Connection pool settings:
-  - Min pool size: 10
-  - Max pool size: 100
-  - Connection timeout: 30 seconds
-  - Socket timeout: 60 seconds
-  - Server selection timeout: 30 seconds
-- Support configurable MongoDB URIs
-- Support configurable database names
-- Support configurable collection names
-
-**Technical Notes:**
-- Create `MongoDBConfig` configuration class
-- Create `MongoDBConstants` for all configuration values
-- Use Spring @Configuration and @Bean annotations
-- Use @Qualifier for multiple MongoTemplate beans
-
----
-
-### Story 5: Bulk Operations and Performance Optimization
-**Priority:** High  
-**Story Points:** 8
-
-**Description:**
-Implement efficient bulk operations for high-volume data migration with retry logic.
-
-**Acceptance Criteria:**
-- Process records in configurable batches (default: 1000)
-- Use MongoDB unordered bulk operations for parallel processing
-- Implement retry mechanism:
-  - Max retries: 3
-  - Exponential backoff starting at 1 second
-  - Log retry attempts
-- Separate bulk inserts and updates in single operation
-- Handle partial failures gracefully
-- Create indexes before migration starts
-
-**Technical Notes:**
-- Use Spring Data MongoDB `BulkOperations.BulkMode.UNORDERED`
-- Implement `executeBulkOperations()` with retry logic
-- Implement `createIndexes()` for HON field
-- Use `Thread.sleep()` for retry delays
-
----
-
-### Story 6: Record Quality Comparison Logic
-**Priority:** High  
-**Story Points:** 5
-
-**Description:**
-Implement logic to determine which record is of higher quality when duplicates are found.
-
-**Acceptance Criteria:**
-- Primary comparison: `usedCount` from payload (higher is better)
-- Secondary comparison: `lastActionDate` (more recent is better)
-- Handle null values:
-  - Null `usedCount` treated as 0
-  - If both `lastActionDate` are null, keep first record
-  - If one `lastActionDate` is null, prefer non-null
-- Return reference to winning record (not a copy)
-
-**Technical Notes:**
-- Implement `compareRecords()` method
-- Implement `getUsedCount()` helper method
-- Extract `usedCount` from DBObject payload
-- Use `Instant.isAfter()` for date comparison
-
----
-
-### Story 7: Similarity Detection for Duplicate Prevention
-**Priority:** Medium  
-**Story Points:** 5
-
-**Description:**
-Implement similarity detection to identify and skip near-duplicate records.
-
-**Acceptance Criteria:**
-- Compare all 8 parameters for similarity:
-  - Organization Name (case-insensitive, trimmed)
-  - Organization Alias (array comparison)
-  - Department Name (case-insensitive, trimmed)
-  - Country (case-insensitive, trimmed)
-  - State (case-insensitive, trimmed)
-  - City (case-insensitive, trimmed)
-  - Address Line (case-insensitive, trimmed)
-  - Postal Code (case-insensitive, trimmed)
-- Records are similar only if ALL parameters match
-- Handle null values (null == null is true, null != value is false)
-- Track skipped similar records separately in statistics
-
-**Technical Notes:**
-- Implement `isSimilar()` method
-- Implement `areFieldsEqual()` for string comparison
-- Implement `areAliasesEqual()` for array comparison
-- Use `trim()` and `equalsIgnoreCase()` for strings
-
----
-
-### Story 8: Command Line Runner and Application Entry Point
-**Priority:** High  
-**Story Points:** 3
-
-**Description:**
-Create Spring Boot application with command line runner to execute migration on startup.
-
-**Acceptance Criteria:**
-- Execute Phase 1 (HON-based migration) first
-- Execute Phase 2 (8-parameter migration) second
-- Log phase start and completion with timing
-- Log total execution time
-- Exit with error code 1 on failure
-- Exit normally on success
-
-**Technical Notes:**
-- Use Spring Boot `CommandLineRunner`
-- Inject `MongoDBConfig` and both `MongoTemplate` beans
-- Use `@Qualifier` for bean injection
-- Implement proper exception handling
-
----
-
-### Story 9: Error Handling and Resilience
-**Priority:** High  
-**Story Points:** 5
-
-**Description:**
-Implement comprehensive error handling throughout the migration process.
-
-**Acceptance Criteria:**
-- Catch and log errors at batch level (continue processing)
-- Catch and log errors at record level (continue processing)
-- Track error count in statistics
-- Log error details with context (HON, parameters, etc.)
-- Implement retry logic for transient failures
-- Handle interrupted exceptions during retry delays
-- Fail fast on critical errors (configuration, connection)
-
-**Technical Notes:**
-- Use try-catch blocks at multiple levels
-- Log errors with SLF4J at ERROR level
-- Include exception stack traces in logs
-- Increment error counter in stats
-- Re-throw critical exceptions
-
----
-
-### Story 10: Helper Methods for Data Extraction
-**Priority:** Medium  
-**Story Points:** 3
-
-**Description:**
-Implement helper methods to extract nested data from Source entity payload.
-
-**Acceptance Criteria:**
-- Extract string values from DBObject payload by key
-- Extract address line from payload.address[0].line
-- Handle null payloads gracefully
-- Handle missing keys gracefully
-- Handle array index out of bounds gracefully
-
-**Technical Notes:**
-- Implement `getPayloadString()` method
-- Implement `getAddressLine()` method
-- Check for null before accessing nested properties
-- Return null if data not found
-
----
-
-## Technical Debt Stories
-
-### TD-1: Add Unit Tests
-**Priority:** Medium  
-**Story Points:** 8
-
-**Description:**
-Add comprehensive unit tests for all migration logic.
-
-**Tasks:**
-- Test `compareRecords()` with various scenarios
-- Test `isSimilar()` with edge cases
-- Test bulk query methods
-- Test record processing methods
-- Test error handling
-- Mock MongoDB operations
-
----
-
-### TD-2: Add Integration Tests
-**Priority:** Medium  
-**Story Points:** 13
-
-**Description:**
-Add integration tests with embedded MongoDB.
-
-**Tasks:**
-- Test end-to-end HON migration
-- Test end-to-end 8-parameter migration
-- Test with real MongoDB instance
-- Verify final collection state
-- Test with large datasets
-
----
-
-### TD-3: Performance Optimization
-**Priority:** Low  
-**Story Points:** 8
-
-**Description:**
-Optimize migration performance for very large datasets.
-
-**Tasks:**
-- Profile memory usage
-- Optimize batch sizes
-- Add parallel processing where safe
-- Optimize MongoDB queries
-- Add compound indexes
-
----
-
-## Non-Functional Requirements
-
-### NFR-1: Performance
-- Process at least 10,000 records per minute
-- Memory usage should not exceed 2GB for datasets up to 1M records
-- Batch size configurable for different environments
-
-### NFR-2: Reliability
-- Handle network interruptions gracefully
-- Retry transient failures automatically
-- Maintain data consistency (no partial updates)
-
-### NFR-3: Observability
-- Log all significant events
-- Provide progress indicators
-- Track detailed statistics
-- Log execution times
-
-### NFR-4: Maintainability
-- Use clear naming conventions
-- Add JavaDoc for public methods
-- Follow Spring Boot best practices
-- Use Lombok to reduce boilerplate
-
-### NFR-5: Configurability
-- All MongoDB URIs configurable
-- All collection names configurable
-- Batch sizes configurable
-- Retry settings configurable
-- Log frequency configurable
+package org.hireright.service;
+
+import com.mongodb.DBObject;
+import com.mongodb.bulk.BulkWriteResult;
+import lombok.Data;
+import org.hireright.api.dto.Alias;
+import org.hireright.config.MongoDBConfig;
+import org.hireright.config.MongoDBConstants;
+import org.hireright.domain.entity.Source;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.util.Pair;
+
+import java.time.Instant;
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+public class EducationSourceMigrationService {
+    private static final Logger logger = LoggerFactory.getLogger(EducationSourceMigrationService.class);
+
+    private final MongoDBConfig config;
+    private final MongoTemplate devMongoTemplate;
+    private final MongoTemplate testMongoTemplate;
+
+    @Data
+    public static class MigrationStats {
+        private long totalProcessed = 0;
+        private long insertedFromDev = 0;
+        private long insertedFromTest = 0;
+        private long updatedFromDev = 0;
+        private long updatedFromTest = 0;
+        private long skipped = 0;
+        private long skippedSimilar = 0;
+        private long errors = 0;
+    }
+
+    public EducationSourceMigrationService(MongoDBConfig config,
+                                           MongoTemplate devMongoTemplate,
+                                           MongoTemplate testMongoTemplate) {
+        this.config = config;
+        this.devMongoTemplate = devMongoTemplate;
+        this.testMongoTemplate = testMongoTemplate;
+    }
+
+    public void migrateByHon() {
+        MigrationStats stats = new MigrationStats();
+
+        Query query = new Query();
+        long totalRecords = devMongoTemplate.count(query, Source.class, MongoDBConstants.DEV_SOURCE_COLLECTION);
+        logger.info("Total records to process by HON: {}", totalRecords);
+
+        List<Source> batch = new ArrayList<>();
+        int batchSize = config.getBatchSize();
+        int skip = 0;
+
+        try {
+            while (true) {
+                Query paginatedQuery = new Query().skip(skip).limit(batchSize);
+                List<Source> records = devMongoTemplate.find(paginatedQuery, Source.class, MongoDBConstants.DEV_SOURCE_COLLECTION);
+
+                if (records.isEmpty()) {
+                    break;
+                }
+
+                batch.addAll(records);
+
+                if (batch.size() >= batchSize) {
+                    processBatchByHon(batch, stats);
+                    batch.clear();
+                }
+
+                skip += records.size();
+
+            }
+
+            if (!batch.isEmpty()) {
+                processBatchByHon(batch, stats);
+            }
+
+        } catch (Exception e) {
+            logger.error("Error during HON migration", e);
+            stats.setErrors(stats.getErrors() + 1);
+        }
+
+        logFinalStats(stats);
+    }
+
+    public void migrateBy8Params() {
+        MigrationStats stats = new MigrationStats();
+
+        Query query = new Query();
+        long totalRecords = devMongoTemplate.count(query, Source.class, MongoDBConstants.DEV_SOURCE_COLLECTION);
+        logger.info("Total records to process by 8 params: {}", totalRecords);
+
+        List<Source> batch = new ArrayList<>();
+        int batchSize = config.getBatchSize();
+        int skip = 0;
+
+        try {
+            while (true) {
+                Query paginatedQuery = new Query().skip(skip).limit(batchSize);
+                List<Source> records = devMongoTemplate.find(paginatedQuery, Source.class, MongoDBConstants.DEV_SOURCE_COLLECTION);
+
+                if (records.isEmpty()) {
+                    break;
+                }
+
+                batch.addAll(records);
+
+                if (batch.size() >= batchSize) {
+                    processBatchBy8Params(batch, stats);
+                    batch.clear();
+                }
+
+                skip += records.size();
+
+            }
+
+            if (!batch.isEmpty()) {
+                processBatchBy8Params(batch, stats);
+            }
+
+        } catch (Exception e) {
+            logger.error("Error during 8-params migration", e);
+            stats.setErrors(stats.getErrors() + 1);
+        }
+
+        logFinalStats(stats);
+    }
+
+    private void processBatchByHon(List<Source> batch, MigrationStats stats) {
+        try {
+            List<String> hons = batch.stream()
+                    .map(Source::getHon)
+                    .filter(Objects::nonNull)
+                    .filter(h -> !h.trim().isEmpty())
+                    .collect(Collectors.toList());
+
+            if (hons.isEmpty()) {
+                stats.setTotalProcessed(stats.getTotalProcessed() + batch.size());
+                stats.setSkipped(stats.getSkipped() + batch.size());
+                return;
+            }
+
+            Map<String, Source> testRecordsMap = bulkQueryByHons(testMongoTemplate, MongoDBConstants.TEST_SOURCE_COLLECTION, hons);
+            Map<String, Source> finalRecordsMap = bulkQueryByHons(devMongoTemplate, MongoDBConstants.DEV_FINAL_COLLECTION, hons);
+
+            List<Pair<Query, Source>> updates = new ArrayList<>();
+            List<Source> inserts = new ArrayList<>();
+            for (Source devSource : batch) {
+                stats.setTotalProcessed(stats.getTotalProcessed() + 1);
+
+                String hon = devSource.getHon();
+                if (hon == null || hon.trim().isEmpty()) {
+                    stats.setSkipped(stats.getSkipped() + 1);
+                    continue;
+                }
+
+                Source testSource = testRecordsMap.get(hon);
+                Source existingFinal = finalRecordsMap.get(hon);
+
+                processRecord(devSource, testSource, existingFinal, updates, inserts, stats);
+            }
+
+            executeBulkOperations(updates, inserts, true);
+
+        } catch (Exception e) {
+            logger.error("Error processing batch by HON", e);
+            stats.setErrors(stats.getErrors() + 1);
+        }
+    }
+
+    private void processBatchBy8Params(List<Source> batch, MigrationStats stats) {
+        try {
+            Map<String, Source> testRecordsMap = bulkQueryBy8Params(testMongoTemplate, MongoDBConstants.TEST_SOURCE_COLLECTION, batch);
+            Map<String, Source> finalRecordsMap = bulkQueryBy8Params(devMongoTemplate, MongoDBConstants.DEV_FINAL_COLLECTION, batch);
+
+            List<Pair<Query, Source>> updates = new ArrayList<>();
+            List<Source> inserts = new ArrayList<>();
+
+            for (Source devSource : batch) {
+              //  logger.info("Processing By 8 Param HON: {}", devSource.getHon());
+                stats.setTotalProcessed(stats.getTotalProcessed() + 1);
+
+                String key = buildParamsKey(devSource);
+                Source testSource = testRecordsMap.get(key);
+                Source existingFinal = finalRecordsMap.get(key);
+
+                processRecordBy8Params(devSource, testSource, existingFinal, updates, inserts, stats);
+            }
+
+            executeBulkOperations(updates, inserts, false);
+
+        } catch (Exception e) {
+            logger.error("Error processing batch by 8 params", e);
+            stats.setErrors(stats.getErrors() + 1);
+        }
+    }
+
+    private Map<String, Source> bulkQueryByHons(MongoTemplate mongoTemplate, String collectionName, List<String> hons) {
+        Map<String, Source> result = new HashMap<>();
+        int chunkSize = config.getBatchSize();
+
+        for (int i = 0; i < hons.size(); i += chunkSize) {
+            List<String> chunk = hons.subList(i, Math.min(hons.size(), i + chunkSize));
+            Query query = new Query(Criteria.where("hon").in(chunk));
+            List<Source> sources = mongoTemplate.find(query, Source.class, collectionName);
+
+            for (Source source : sources) {
+                if (source.getHon() != null) {
+                    String hon = source.getHon();
+                    Source existing = result.get(hon);
+
+                    if (existing == null) {
+                        result.put(hon, source);
+                    } else {
+                        Source better = compareRecords(source, existing);
+                        result.put(hon, better);
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+
+
+    private Map<String, Source> bulkQueryBy8Params(MongoTemplate mongoTemplate, String collectionName, List<Source> sources) {
+        Map<String, Source> result = new HashMap<>();
+        int chunkSize = config.getBatchSize();
+
+        for (int i = 0; i < sources.size(); i += chunkSize) {
+            List<Source> chunk = sources.subList(i, Math.min(sources.size(), i + chunkSize));
+
+            List<Criteria> orCriteria = new ArrayList<>();
+            for (Source source : chunk) {
+                List<Criteria> andCriteria = new ArrayList<>();
+
+                andCriteria.add(Criteria.where("organizationName").regex("^" + Pattern.quote(source.getOrganizationName()) + "$", "i"));
+                andCriteria.add(Criteria.where("country").regex("^" + Pattern.quote(source.getCountry()) + "$", "i"));
+                andCriteria.add(Criteria.where("state").regex("^" + Pattern.quote(source.getState()) + "$", "i"));
+                andCriteria.add(Criteria.where("city").regex("^" + Pattern.quote(source.getCity()) + "$", "i"));
+                andCriteria.add(Criteria.where("postalCode").regex("^" + Pattern.quote(source.getPostalCode()) + "$", "i"));
+
+                if (source.getOrganizationAlias() != null && source.getOrganizationAlias().length > 0) {
+                    andCriteria.add(Criteria.where("organizationAlias").is(source.getOrganizationAlias()));
+                }
+
+                String deptName = getPayloadString(source, "departmentName");
+                if (deptName != null) {
+                    andCriteria.add(Criteria.where("payload.departmentName").regex("^" + Pattern.quote(deptName) + "$", "i"));
+                }
+
+                String addressLine = getAddressLine(source);
+                if (addressLine != null) {
+                    andCriteria.add(Criteria.where("payload.address.0.line").regex("^" + Pattern.quote(addressLine) + "$", "i"));
+                }
+
+                Criteria combinedCriteria = new Criteria().andOperator(andCriteria.toArray(new Criteria[0]));
+                orCriteria.add(combinedCriteria);
+            }
+
+            Query bulkQuery = new Query(new Criteria().orOperator(orCriteria.toArray(new Criteria[0])));
+            List<Source> matches = mongoTemplate.find(bulkQuery, Source.class, collectionName);
+
+            for (Source match : matches) {
+                String key = buildParamsKey(match);
+                Source existing = result.get(key);
+
+                if (existing == null) {
+                    result.put(key, match);
+                } else {
+                    Source better = compareRecords(match, existing);
+                    result.put(key, better);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private String buildParamsKey(Source source) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(source.getOrganizationName()).append("|");
+        sb.append(source.getCountry()).append("|");
+        sb.append(source.getState()).append("|");
+        sb.append(source.getCity()).append("|");
+        sb.append(source.getPostalCode()).append("|");
+
+        if (source.getOrganizationAlias() != null && source.getOrganizationAlias().length > 0) {
+            for (Alias alias : source.getOrganizationAlias()) {
+                sb.append(alias.getName()).append(",");
+            }
+        }
+        sb.append("|");
+
+        String deptName = getPayloadString(source, "departmentName");
+        sb.append(deptName != null ? deptName : "").append("|");
+
+        String addressLine = getAddressLine(source);
+        sb.append(addressLine != null ? addressLine : "");
+
+        return sb.toString();
+    }
+
+    private Query build8ParamsQuery(Source source) {
+        Criteria criteria = new Criteria();
+        List<Criteria> andCriteria = new ArrayList<>();
+
+        andCriteria.add(Criteria.where("organizationName").regex("^" + Pattern.quote(source.getOrganizationName()) + "$", "i"));
+        andCriteria.add(Criteria.where("country").regex("^" + Pattern.quote(source.getCountry()) + "$", "i"));
+        andCriteria.add(Criteria.where("state").regex("^" + Pattern.quote(source.getState()) + "$", "i"));
+        andCriteria.add(Criteria.where("city").regex("^" + Pattern.quote(source.getCity()) + "$", "i"));
+        andCriteria.add(Criteria.where("postalCode").regex("^" + Pattern.quote(source.getPostalCode()) + "$", "i"));
+
+        if (source.getOrganizationAlias() != null && source.getOrganizationAlias().length > 0) {
+            andCriteria.add(Criteria.where("organizationAlias").is(source.getOrganizationAlias()));
+        }
+
+        String deptName = getPayloadString(source, "departmentName");
+        if (deptName != null) {
+            andCriteria.add(Criteria.where("payload.departmentName").regex("^" + Pattern.quote(deptName) + "$", "i"));
+        }
+
+        String addressLine = getAddressLine(source);
+        if (addressLine != null) {
+            andCriteria.add(Criteria.where("payload.address.0.line").regex("^" + Pattern.quote(addressLine) + "$", "i"));
+        }
+
+        criteria.andOperator(andCriteria.toArray(new Criteria[0]));
+        return new Query(criteria);
+    }
+
+    private void processRecord(Source devSource, Source testSource, Source existingFinal,
+                               List<Pair<Query, Source>> updates, List<Source> inserts,
+                               MigrationStats stats) {
+        try {
+            if (testSource == null) {
+                handleRecordNotInTest(devSource, existingFinal, updates, inserts, stats);
+            } else {
+                handleRecordInTest(devSource, testSource, existingFinal, updates, inserts, stats);
+            }
+        } catch (Exception e) {
+            logger.error("Error processing record for HON: {}", devSource.getHon(), e);
+            stats.setErrors(stats.getErrors() + 1);
+        }
+    }
+
+    private void processRecordBy8Params(Source devSource, Source testSource, Source existingFinal,
+                                        List<Pair<Query, Source>> updates, List<Source> inserts,
+                                        MigrationStats stats) {
+        try {
+            if (testSource == null) {
+                handleRecordNotInTestBy8Params(devSource, existingFinal, updates, inserts, stats);
+            } else {
+                handleRecordInTestBy8Params(devSource, testSource, existingFinal, updates, inserts, stats);
+            }
+        } catch (Exception e) {
+            logger.error("Error processing record by 8 params", e);
+            stats.setErrors(stats.getErrors() + 1);
+        }
+    }
+
+    private void handleRecordNotInTest(Source devSource, Source existingFinal,
+                                       List<Pair<Query, Source>> updates, List<Source> inserts,
+                                       MigrationStats stats) {
+        if (existingFinal == null) {
+            inserts.add(devSource);
+            stats.setInsertedFromDev(stats.getInsertedFromDev() + 1);
+        } else {
+
+            Source winner = compareRecords(devSource, existingFinal);
+
+            if (winner == devSource) {
+                Query query = new Query(Criteria.where("hon").is(devSource.getHon()));
+                updates.add(Pair.of(query, devSource));
+                stats.setUpdatedFromDev(stats.getUpdatedFromDev() + 1);
+            } else {
+                stats.setSkipped(stats.getSkipped() + 1);
+            }
+        }
+    }
+
+    private void handleRecordInTest(Source devSource, Source testSource, Source existingFinal,
+                                    List<Pair<Query, Source>> updates, List<Source> inserts,
+                                    MigrationStats stats) {
+        Source chosenSource = compareRecords(devSource, testSource);
+        boolean isFromDev = (chosenSource == devSource);
+
+        if (existingFinal == null) {
+            inserts.add(chosenSource);
+            if (isFromDev) {
+                stats.setInsertedFromDev(stats.getInsertedFromDev() + 1);
+            } else {
+                stats.setInsertedFromTest(stats.getInsertedFromTest() + 1);
+            }
+        } else {
+
+            Source winner = compareRecords(chosenSource, existingFinal);
+
+            if (winner == chosenSource) {
+                Query query = new Query(Criteria.where("hon").is(chosenSource.getHon()));
+                updates.add(Pair.of(query, chosenSource));
+                if (isFromDev) {
+                    stats.setUpdatedFromDev(stats.getUpdatedFromDev() + 1);
+                } else {
+                    stats.setUpdatedFromTest(stats.getUpdatedFromTest() + 1);
+                }
+            } else {
+                stats.setSkipped(stats.getSkipped() + 1);
+            }
+        }
+    }
+
+    private void handleRecordNotInTestBy8Params(Source devSource, Source existingFinal,
+                                                List<Pair<Query, Source>> updates, List<Source> inserts,
+                                                MigrationStats stats) {
+        if (existingFinal == null) {
+            inserts.add(devSource);
+            stats.setInsertedFromDev(stats.getInsertedFromDev() + 1);
+        } else {
+            Source winner = compareRecords(devSource, existingFinal);
+
+            if (winner == devSource) {
+                Query query = build8ParamsQuery(devSource);
+                updates.add(Pair.of(query, devSource));
+                stats.setUpdatedFromDev(stats.getUpdatedFromDev() + 1);
+            } else {
+                stats.setSkipped(stats.getSkipped() + 1);
+            }
+        }
+    }
+
+    private void handleRecordInTestBy8Params(Source devSource, Source testSource, Source existingFinal,
+                                             List<Pair<Query, Source>> updates, List<Source> inserts,
+                                             MigrationStats stats) {
+        Source chosenSource = compareRecords(devSource, testSource);
+        boolean isFromDev = (chosenSource == devSource);
+
+        if (existingFinal == null) {
+            inserts.add(chosenSource);
+            if (isFromDev) {
+                stats.setInsertedFromDev(stats.getInsertedFromDev() + 1);
+            } else {
+                stats.setInsertedFromTest(stats.getInsertedFromTest() + 1);
+            }
+        } else {
+            Source winner = compareRecords(chosenSource, existingFinal);
+
+            if (winner == chosenSource) {
+                Query query = build8ParamsQuery(chosenSource);
+                updates.add(Pair.of(query, chosenSource));
+                if (isFromDev) {
+                    stats.setUpdatedFromDev(stats.getUpdatedFromDev() + 1);
+                } else {
+                    stats.setUpdatedFromTest(stats.getUpdatedFromTest() + 1);
+                }
+            } else {
+                stats.setSkipped(stats.getSkipped() + 1);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String getPayloadString(Source source, String field) {
+        DBObject payload = source.getPayload();
+        return payload != null ? (String) payload.get(field) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private String getAddressLine(Source source) {
+        DBObject payload = source.getPayload();
+        if (payload != null) {
+            Object addressObj = payload.get("address");
+            if (addressObj instanceof List) {
+                List<?> addresses = (List<?>) addressObj;
+                if (!addresses.isEmpty()) {
+                    Object firstAddr = addresses.get(0);
+                    if (firstAddr instanceof DBObject) {
+                        return (String) ((DBObject) firstAddr).get("line");
+                    } else if (firstAddr instanceof java.util.Map) {
+                        return (String) ((java.util.Map<?, ?>) firstAddr).get("line");
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Source compareRecords(Source source1, Source source2) {
+        Integer usedCount1 = getUsedCount(source1);
+        Integer usedCount2 = getUsedCount(source2);
+
+        if (!usedCount1.equals(usedCount2)) {
+            return usedCount1 > usedCount2 ? source1 : source2;
+        }
+
+        Instant date1 = source1.getLastActionDate();
+        Instant date2 = source2.getLastActionDate();
+
+        if (date1 == null && date2 == null) return source1;
+        if (date1 == null) return source2;
+        if (date2 == null) return source1;
+
+        return date1.isAfter(date2) ? source1 : source2;
+    }
+
+    private Integer getUsedCount(Source source) {
+        DBObject payload = source.getPayload();
+        if (payload != null) {
+            Object count = payload.get("usedCount");
+            return count != null ? (Integer) count : 0;
+        }
+        return 0;
+    }
+
+    private void executeBulkOperations(List<Pair<Query, Source>> updates, List<Source> inserts, boolean insertApply) {
+        if (inserts.isEmpty() && updates.isEmpty()) return;
+        int retries = 0;
+        int maxRetries = config.getMaxRetries();
+        long retryDelay = config.getRetryDelayMs();
+
+        while (retries <= maxRetries) {
+            try {
+                BulkOperations bulkOps = devMongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED,
+                                                                   Source.class,
+                                                                   MongoDBConstants.DEV_FINAL_COLLECTION);
+
+                if (insertApply && !inserts.isEmpty()) {
+                    bulkOps.insert(inserts);
+                }
+
+                for (Pair<Query, Source> update : updates) {
+                    bulkOps.replaceOne(update.getFirst(), update.getSecond());
+                }
+
+                bulkOps.execute();
+                return;
+            } catch (Exception e) {
+                retries++;
+                if (retries > maxRetries) {
+                    logger.error("Bulk write failed after {} retries", maxRetries, e);
+                    throw e;
+                }
+                try {
+                    Thread.sleep(retryDelay * retries);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted during retry", ie);
+                }
+            }
+        }
+    }
+
+
+    private void logFinalStats(MigrationStats stats) {
+        logger.info("=== Migration Complete ===");
+        logger.info("Total Processed: {}", stats.getTotalProcessed());
+        logger.info("Inserted from Dev: {}", stats.getInsertedFromDev());
+        logger.info("Inserted from Test: {}", stats.getInsertedFromTest());
+        logger.info("Updated from Dev: {}", stats.getUpdatedFromDev());
+        logger.info("Updated from Test: {}", stats.getUpdatedFromTest());
+        logger.info("Skipped (better existing): {}", stats.getSkipped());
+        logger.info("Skipped (similar records): {}", stats.getSkippedSimilar());
+        logger.info("Errors: {}", stats.getErrors());
+
+        long totalInserted = stats.getInsertedFromDev() + stats.getInsertedFromTest();
+        long totalUpdated = stats.getUpdatedFromDev() + stats.getUpdatedFromTest();
+        long totalSkipped = stats.getSkipped() + stats.getSkippedSimilar();
+
+        logger.info("Summary: {} inserted, {} updated, {} skipped, {} errors",
+                totalInserted, totalUpdated, totalSkipped, stats.getErrors());
+    }
+}
