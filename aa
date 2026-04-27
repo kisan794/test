@@ -28,3 +28,96 @@ public class RestTemplateConfig {
     //     return new RestTemplate(factory);
     // }
 }
+
+
+package com.hireright.sourceintelligence.config;
+
+import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
+
+@Configuration
+public class RestTemplateConfig {
+
+    @Bean("defaultRestTemplate")
+    public RestTemplate restTemplate(RestTemplateBuilder builder) {
+        return builder
+                .setConnectTimeout(Duration.ofSeconds(10))
+                .setReadTimeout(Duration.ofSeconds(30))
+                .build();
+    }
+
+    @Bean("longTimeoutRestTemplate")
+    public RestTemplate longTimeoutRestTemplate(RestTemplateBuilder builder) {
+        return builder
+                .setConnectTimeout(Duration.ofSeconds(15))
+                .setReadTimeout(Duration.ofSeconds(60))  // For slower APIs
+                .build();
+    }
+}
+
+
+@Qualifier("defaultRestTemplate")
+private final RestTemplate restTemplate;
+
+// Or for DMS uploads:
+@Qualifier("longTimeoutRestTemplate")
+private final RestTemplate dmsRestTemplate;
+
+
+
+
+# RestTemplate timeout configuration (in milliseconds)
+rest.client.connect-timeout=10000
+rest.client.read-timeout=30000
+
+# DMS specific timeout (for file uploads)
+rest.client.dms.connect-timeout=15000
+rest.client.dms.read-timeout=60000
+
+
+
+package com.hireright.sourceintelligence.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
+
+@Configuration
+public class RestTemplateConfig {
+
+    @Value("${rest.client.connect-timeout:10000}")
+    private int connectTimeout;
+
+    @Value("${rest.client.read-timeout:30000}")
+    private int readTimeout;
+
+    @Value("${rest.client.dms.connect-timeout:15000}")
+    private int dmsConnectTimeout;
+
+    @Value("${rest.client.dms.read-timeout:60000}")
+    private int dmsReadTimeout;
+
+    @Bean("defaultRestTemplate")
+    public RestTemplate restTemplate(RestTemplateBuilder builder) {
+        return builder
+                .setConnectTimeout(Duration.ofMillis(connectTimeout))
+                .setReadTimeout(Duration.ofMillis(readTimeout))
+                .build();
+    }
+
+    @Bean("dmsRestTemplate")
+    public RestTemplate dmsRestTemplate(RestTemplateBuilder builder) {
+        return builder
+                .setConnectTimeout(Duration.ofMillis(dmsConnectTimeout))
+                .setReadTimeout(Duration.ofMillis(dmsReadTimeout))
+                .build();
+    }
+}
