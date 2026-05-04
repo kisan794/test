@@ -2,3 +2,12 @@ ExternalServiceImpl                      :RestClientException for URL http://us0
 
 
 Can't find EntryPoint for key <22C48CD5B97AE719D9CEE2A0B7D966C3:>
+
+
+/sourceintelligence-service/api/v1/entry?ot_key=22C48CD5B97AE719D9CEE2A0B7D966C3&entry=ot_source_mngm&api_host=us01iapip.data.hireright.com, client=172.21.212.152]
+
+26-04-30 Thu 08:38:30.100 INFO  13 --- [nio-8080-exec-4] ExternalApiController                    :Cached token key  : 22C48CD5B97AE719D9CEE2A0B7D966C3 and api host : us01iapip.data.hireright.com in getCachedToken method
+
+ExternalApiController                    :HRG1 API url http://us01iapip.data.hireright.com/AccessPoint/AccessPointRestService/access_points/22C48CD5B97AE719D9CEE2A0B7D966C3
+ExternalServiceImpl                      :RestClientException (retry #0) for url http://us01iapip.data.hireright.com/AccessPoint/AccessPointRestService/access_points/22C48CD5B97AE719D9CEE2A0B7D966C3: 404 : "<!doctype html><html 
+26-04-30 Thu 08:38:33.221 DEBUG 13 --- [nio-8080-exec-4] CustomRequestLoggingFilter               :After request [GET /sourceintelligence-service/api/v1/entry?ot_key=22C48CD5B97AE719D9CEE2A0B7D966C3&entry=ot_source_mngm&api_host=us01iapip.data.hireright.com, client=172.21.212.152]
