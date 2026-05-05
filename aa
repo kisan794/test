@@ -1,4 +1,4 @@
-# Email Notification System - End-to-End Documentation
+# Email Notification System - Production Ready Documentation
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -7,244 +7,443 @@
 4. [Data Flow](#data-flow)
 5. [API Endpoints](#api-endpoints)
 6. [Usage Examples](#usage-examples)
-7. [Error Handling](#error-handling)
-8. [Testing](#testing)
-9. [Deployment](#deployment)
+7. [Error Handling & Edge Cases](#error-handling--edge-cases)
+8. [Security](#security)
+9. [Performance & Scalability](#performance--scalability)
+10. [Monitoring & Observability](#monitoring--observability)
+11. [Testing](#testing)
+12. [Deployment](#deployment)
+13. [Disaster Recovery](#disaster-recovery)
 
 ---
 
 ## Overview
 
-The Email Notification System provides a robust, asynchronous email notification service for the Source Intelligence application. It supports both generic email notifications and specialized data extraction notifications with comprehensive error handling and retry mechanisms.
+The Email Notification System is a production-ready, enterprise-grade email service designed for high availability, scalability, and reliability. It provides synchronous and asynchronous email delivery with comprehensive error handling, retry mechanisms, and monitoring capabilities.
 
 ### Key Features
 - ✅ Synchronous and asynchronous email sending
 - ✅ HTML and plain text email support
-- ✅ CC/BCC support
-- ✅ File attachments
+- ✅ CC/BCC support with validation
+- ✅ File attachments with size limits
 - ✅ Custom metadata support
-- ✅ Data extraction result notifications
 - ✅ Retry mechanism with exponential backoff
+- ✅ Circuit breaker pattern for fault tolerance
+- ✅ Rate limiting and throttling
 - ✅ Comprehensive error handling and logging
+- ✅ Email validation and sanitization
+- ✅ Dead letter queue for failed messages
+- ✅ Metrics and monitoring integration
 
 ---
 
 ## Architecture
 
+### High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Load Balancer                             │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+         ┌───────────────┼───────────────┐
+         ↓               ↓               ↓
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│  Instance 1 │  │  Instance 2 │  │  Instance 3 │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       │                │                │
+       └────────────────┼────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                     API Layer                                    │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  NotificationApiController                                 │ │
+│  │  - Request validation                                      │ │
+│  │  - Rate limiting                                           │ │
+│  │  - Authentication/Authorization                            │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                   Service Layer                                  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  NotificationServiceFactory                                │ │
+│  │  - Strategy selection                                      │ │
+│  │  - Service routing                                         │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  EmailNotificationStrategyService                          │ │
+│  │  - Business logic                                          │ │
+│  │  - Content validation                                      │ │
+│  │  - Async/Sync handling                                     │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                 Provider Layer                                   │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  EmailNotificationProvider                                 │ │
+│  │  - Circuit breaker                                         │ │
+│  │  - Retry logic                                             │ │
+│  │  - Connection pooling                                      │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                            ↓
+                ┌───────────┴───────────┐
+                ↓                       ↓
+        ┌──────────────┐        ┌──────────────┐
+        │ Primary SMTP │        │ Backup SMTP  │
+        │   Provider   │        │   Provider   │
+        └──────────────┘        └──────────────┘
+                            ↓
+                    ┌──────────────┐
+                    │ Dead Letter  │
+                    │    Queue     │
+                    └──────────────┘
+```
+
 ### Component Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     API Layer                                │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │  NotificationApiController                             │ │
-│  │  - POST /send                                          │ │
-│  │  - POST /data-extraction                               │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│                   Service Layer                              │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │  NotificationService                                   │ │
-│  │  - sendNotification()                                  │ │
-│  │  - sendDataExtractionNotification()                    │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│                 Email Provider Layer                         │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │  EmailNotificationProvider                             │ │
-│  │  - JavaMailSender (SMTP)                               │ │
-│  │  - Retry Logic (@Retryable)                            │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-                    [SMTP Server]
-```
-
-### Package Structure
-
-```
-com.hireright.sourceintelligence
-├── api
-│   ├── v1
-│   │   ├── NotificationApi.java
-│   │   └── NotificationApiController.java
-│   └── dto
-│       └── notification
-│           ├── NotificationRequestDTO.java
-│           ├── NotificationResponseDTO.java
-│           ├── EmailNotificationDTO.java
-│           ├── DataExtractionNotificationRequestDTO.java
-│           └── AttachmentDTO.java
-├── service
-│   └── notification
-│       ├── NotificationService.java
-│       └── provider
-│           ├── NotificationProvider.java
-│           └── EmailNotificationProvider.java
-└── config
-    └── NotificationAsyncConfig.java
+┌─────────────────────────────────────────────────────────────────┐
+│                     Request Flow                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Client Request                                                  │
+│       ↓                                                          │
+│  Rate Limiter (100 req/min per client)                          │
+│       ↓                                                          │
+│  Request Validator                                               │
+│       ↓                                                          │
+│  NotificationApiController                                       │
+│       ↓                                                          │
+│  NotificationServiceFactory                                      │
+│       ↓                                                          │
+│  EmailNotificationStrategyService                                │
+│       ↓                                                          │
+│  ┌─────────────────────────────────────┐                        │
+│  │ Async?                              │                        │
+│  │  Yes → Thread Pool Executor         │                        │
+│  │  No  → Synchronous Processing       │                        │
+│  └─────────────────────────────────────┘                        │
+│       ↓                                                          │
+│  EmailNotificationProvider                                       │
+│       ↓                                                          │
+│  ┌─────────────────────────────────────┐                        │
+│  │ Circuit Breaker                     │                        │
+│  │  CLOSED → Send email                │                        │
+│  │  OPEN   → Fail fast                 │                        │
+│  │  HALF_OPEN → Test connection        │                        │
+│  └─────────────────────────────────────┘                        │
+│       ↓                                                          │
+│  Retry Logic (3 attempts, exponential backoff)                  │
+│       ↓                                                          │
+│  SMTP Send                                                       │
+│       ↓                                                          │
+│  ┌─────────────────────────────────────┐                        │
+│  │ Success?                            │                        │
+│  │  Yes → Return success response      │                        │
+│  │  No  → Dead Letter Queue            │                        │
+│  └─────────────────────────────────────┘                        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Configuration
 
-### 1. Application Properties
-
-Add to `src/main/resources/application.properties`:
+### 1. Application Properties (Production)
 
 ```properties
-# Email Configuration
-spring.mail.host=smtp.gmail.com
-spring.mail.port=587
-spring.mail.username=${EMAIL_USERNAME}
-spring.mail.password=${EMAIL_PASSWORD}
+# ============================================================================
+# SMTP Configuration - Primary Provider
+# ============================================================================
+spring.mail.host=${SMTP_HOST:smtp.sendgrid.net}
+spring.mail.port=${SMTP_PORT:587}
+spring.mail.username=${SMTP_USERNAME}
+spring.mail.password=${SMTP_PASSWORD}
+spring.mail.protocol=smtp
 spring.mail.properties.mail.smtp.auth=true
 spring.mail.properties.mail.smtp.starttls.enable=true
 spring.mail.properties.mail.smtp.starttls.required=true
-spring.mail.properties.mail.smtp.connectiontimeout=5000
-spring.mail.properties.mail.smtp.timeout=5000
-spring.mail.properties.mail.smtp.writetimeout=5000
+spring.mail.properties.mail.smtp.ssl.trust=${SMTP_HOST:smtp.sendgrid.net}
 
-# Notification Configuration
-notification.from.email=noreply@hireright.com
-notification.from.name=Source Intelligence System
+# Connection timeouts (milliseconds)
+spring.mail.properties.mail.smtp.connectiontimeout=10000
+spring.mail.properties.mail.smtp.timeout=10000
+spring.mail.properties.mail.smtp.writetimeout=10000
+
+# Connection pool
+spring.mail.properties.mail.smtp.pool.size=10
+spring.mail.properties.mail.smtp.pool.timeout=5000
+
+# ============================================================================
+# SMTP Configuration - Backup Provider (Failover)
+# ============================================================================
+notification.backup.smtp.enabled=${BACKUP_SMTP_ENABLED:true}
+notification.backup.smtp.host=${BACKUP_SMTP_HOST:smtp.gmail.com}
+notification.backup.smtp.port=${BACKUP_SMTP_PORT:587}
+notification.backup.smtp.username=${BACKUP_SMTP_USERNAME}
+notification.backup.smtp.password=${BACKUP_SMTP_PASSWORD}
+
+# ============================================================================
+# Notification Service Configuration
+# ============================================================================
+notification.from.email=${NOTIFICATION_FROM_EMAIL:noreply@hireright.com}
+notification.from.name=${NOTIFICATION_FROM_NAME:Source Intelligence System}
+notification.reply.to=${NOTIFICATION_REPLY_TO:support@hireright.com}
+
+# Email validation
+notification.email.validation.strict=true
+notification.email.domain.whitelist=${EMAIL_DOMAIN_WHITELIST:}
+notification.email.domain.blacklist=${EMAIL_DOMAIN_BLACKLIST:}
+
+# Content limits
+notification.email.subject.maxLength=200
+notification.email.body.maxLength=1048576
+notification.email.recipients.max=100
+notification.email.attachment.maxSize=26214400
+notification.email.attachment.maxCount=10
+
+# ============================================================================
+# Retry Configuration
+# ============================================================================
 notification.retry.maxAttempts=3
-notification.retry.backoff=2000
+notification.retry.backoff.initialDelay=2000
+notification.retry.backoff.multiplier=2
+notification.retry.backoff.maxDelay=10000
 
+# ============================================================================
+# Circuit Breaker Configuration
+# ============================================================================
+resilience4j.circuitbreaker.instances.emailNotification.registerHealthIndicator=true
+resilience4j.circuitbreaker.instances.emailNotification.slidingWindowSize=10
+resilience4j.circuitbreaker.instances.emailNotification.minimumNumberOfCalls=5
+resilience4j.circuitbreaker.instances.emailNotification.permittedNumberOfCallsInHalfOpenState=3
+resilience4j.circuitbreaker.instances.emailNotification.automaticTransitionFromOpenToHalfOpenEnabled=true
+resilience4j.circuitbreaker.instances.emailNotification.waitDurationInOpenState=60s
+resilience4j.circuitbreaker.instances.emailNotification.failureRateThreshold=50
+resilience4j.circuitbreaker.instances.emailNotification.slowCallRateThreshold=100
+resilience4j.circuitbreaker.instances.emailNotification.slowCallDurationThreshold=5s
+
+# ============================================================================
+# Rate Limiting Configuration
+# ============================================================================
+notification.ratelimit.enabled=true
+notification.ratelimit.capacity=100
+notification.ratelimit.refillRate=10
+notification.ratelimit.refillPeriod=1m
+
+# Per-client rate limiting
+notification.ratelimit.perClient.enabled=true
+notification.ratelimit.perClient.capacity=50
+notification.ratelimit.perClient.refillRate=5
+
+# ============================================================================
 # Async Configuration
-notification.async.corePoolSize=5
-notification.async.maxPoolSize=10
-notification.async.queueCapacity=100
+# ============================================================================
+notification.async.enabled=true
+notification.async.corePoolSize=10
+notification.async.maxPoolSize=50
+notification.async.queueCapacity=500
 notification.async.threadNamePrefix=notification-async-
+notification.async.keepAliveSeconds=60
+notification.async.awaitTerminationSeconds=30
+
+# Thread pool rejection policy: CALLER_RUNS, ABORT, DISCARD, DISCARD_OLDEST
+notification.async.rejectionPolicy=CALLER_RUNS
+
+# ============================================================================
+# Dead Letter Queue Configuration
+# ============================================================================
+notification.dlq.enabled=true
+notification.dlq.maxRetries=5
+notification.dlq.retryDelay=300000
+notification.dlq.storage.type=DATABASE
+
+# ============================================================================
+# Monitoring & Metrics
+# ============================================================================
+management.endpoints.web.exposure.include=health,metrics,prometheus
+management.metrics.export.prometheus.enabled=true
+management.health.circuitbreakers.enabled=true
+management.health.ratelimiters.enabled=true
+
+# Custom metrics
+notification.metrics.enabled=true
+notification.metrics.detailed=true
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+logging.level.com.hireright.sourceintelligence.service.notification=INFO
+logging.level.org.springframework.mail=WARN
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss} - %msg%n
+logging.pattern.file=%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
+
+# Log sensitive data masking
+notification.logging.maskEmails=true
+notification.logging.maskContent=false
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+notification.security.apiKey.enabled=true
+notification.security.apiKey.header=X-API-Key
+notification.security.encryption.enabled=true
+notification.security.sanitization.enabled=true
+
+# ============================================================================
+# Feature Flags
+# ============================================================================
+notification.features.htmlEmail.enabled=true
+notification.features.attachments.enabled=true
+notification.features.ccBcc.enabled=true
+notification.features.metadata.enabled=true
 ```
 
-### 2. Environment Variables
-
-Set these environment variables in your deployment:
+### 2. Environment Variables (Production)
 
 ```bash
-# Required
-export EMAIL_USERNAME=your-smtp-username
-export EMAIL_PASSWORD=your-smtp-password
+# Required - SMTP Credentials
+export SMTP_HOST=smtp.sendgrid.net
+export SMTP_PORT=587
+export SMTP_USERNAME=apikey
+export SMTP_PASSWORD=SG.xxxxxxxxxxxxxxxxxxxxx
 
-# Optional (defaults shown)
+# Backup SMTP (Optional but recommended)
+export BACKUP_SMTP_ENABLED=true
+export BACKUP_SMTP_HOST=smtp.gmail.com
+export BACKUP_SMTP_PORT=587
+export BACKUP_SMTP_USERNAME=backup@hireright.com
+export BACKUP_SMTP_PASSWORD=app-specific-password
+
+# Notification Settings
 export NOTIFICATION_FROM_EMAIL=noreply@hireright.com
 export NOTIFICATION_FROM_NAME="Source Intelligence System"
+export NOTIFICATION_REPLY_TO=support@hireright.com
+
+# Security
+export API_KEY_SECRET=your-secure-api-key-here
+
+# Domain Filtering (comma-separated)
+export EMAIL_DOMAIN_WHITELIST=hireright.com,example.com
+export EMAIL_DOMAIN_BLACKLIST=spam.com,test.com
+
+# Database (for DLQ)
+export DB_URL=jdbc:postgresql://localhost:5432/notifications
+export DB_USERNAME=notif_user
+export DB_PASSWORD=secure_password
 ```
 
-### 3. Async Configuration Class
+### 3. Kubernetes ConfigMap
 
-The system uses `NotificationAsyncConfig` for async processing:
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-config
+  namespace: production
+data:
+  application.properties: |
+    spring.mail.host=smtp.sendgrid.net
+    spring.mail.port=587
+    notification.async.corePoolSize=20
+    notification.async.maxPoolSize=100
+    notification.ratelimit.capacity=200
+    resilience4j.circuitbreaker.instances.emailNotification.failureRateThreshold=50
+```
 
-```java
-@Configuration
-@EnableAsync
-public class NotificationAsyncConfig {
-    
-    @Bean(name = "notificationTaskExecutor")
-    public Executor notificationTaskExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(5);
-        executor.setMaxPoolSize(10);
-        executor.setQueueCapacity(100);
-        executor.setThreadNamePrefix("notification-async-");
-        executor.initialize();
-        return executor;
-    }
-}
+### 4. Kubernetes Secrets
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: notification-secrets
+  namespace: production
+type: Opaque
+stringData:
+  smtp-username: apikey
+  smtp-password: SG.xxxxxxxxxxxxxxxxxxxxx
+  backup-smtp-username: backup@hireright.com
+  backup-smtp-password: app-specific-password
+  api-key: your-secure-api-key-here
 ```
 
 ---
 
 ## Data Flow
 
-### End-to-End Flow Diagram
+### Synchronous Flow
 
 ```
-┌──────────────┐
-│   Client     │
-└──────┬───────┘
-       │ 1. HTTP POST Request
-       ↓
-┌──────────────────────────────────────┐
-│  NotificationApiController           │
-│  - Validates DTO                     │
-│  - Checks async flag                 │
-└──────┬───────────────────────────────┘
-       │ 2. Call service method
-       ↓
-┌──────────────────────────────────────┐
-│  NotificationService                 │
-│  - Determines notification type      │
-│  - Builds email content              │
-│  - Calls provider                    │
-└──────┬───────────────────────────────┘
-       │ 3. Send email
-       ↓
-┌──────────────────────────────────────┐
-│  EmailNotificationProvider           │
-│  - Creates MimeMessage               │
-│  - Adds attachments                  │
-│  - Retry logic (max 3 attempts)      │
-└──────┬───────────────────────────────┘
-       │ 4. SMTP Send
-       ↓
-┌──────────────────────────────────────┐
-│  SMTP Server (Gmail/SendGrid/etc)    │
-└──────┬───────────────────────────────┘
-       │ 5. Email delivered
-       ↓
-┌──────────────┐
-│  Recipient   │
-└──────────────┘
+Client Request
+    ↓
+[Rate Limiter Check]
+    ↓ (Pass)
+[API Key Validation]
+    ↓ (Valid)
+[Request Validation]
+    ↓ (Valid)
+[Email Sanitization]
+    ↓
+[Circuit Breaker Check]
+    ↓ (CLOSED)
+[SMTP Send - Attempt 1]
+    ↓ (Success)
+[Log Success Metrics]
+    ↓
+Return 200 OK Response
 ```
 
-### Detailed Flow Steps
+### Asynchronous Flow
 
-#### Step 1: API Request
-```json
-POST /sourceintelligence-service/api/v1/notifications/send
-{
-  "notificationType": "EMAIL",
-  "async": true,
-  "emailNotification": {
-    "to": ["user@example.com"],
-    "subject": "Test Email",
-    "body": "Hello World",
-    "htmlContent": false
-  }
-}
+```
+Client Request
+    ↓
+[Rate Limiter Check]
+    ↓ (Pass)
+[API Key Validation]
+    ↓ (Valid)
+[Request Validation]
+    ↓ (Valid)
+[Submit to Thread Pool]
+    ↓
+Return 202 Accepted (Immediate)
+    │
+    └─→ [Background Processing]
+            ↓
+        [Email Sanitization]
+            ↓
+        [Circuit Breaker Check]
+            ↓ (CLOSED)
+        [SMTP Send - Attempt 1]
+            ↓ (Fail)
+        [Wait 2s - Retry Attempt 2]
+            ↓ (Fail)
+        [Wait 4s - Retry Attempt 3]
+            ↓ (Fail)
+        [Send to Dead Letter Queue]
+            ↓
+        [Log Failure Metrics]
 ```
 
-#### Step 2: Validation
-- DTO validation using Jakarta Bean Validation
-- Email format validation
-- Required field checks
+### Failover Flow
 
-#### Step 3: Service Processing
-- Async/sync decision based on `async` flag
-- Email content preparation
-- Metadata handling
-
-#### Step 4: Email Sending
-- MimeMessage creation
-- Attachment processing
-- SMTP transmission with retry
-
-#### Step 5: Response
-```json
-{
-  "status": "SUCCESS",
-  "message": "Notification sent successfully",
-  "notificationId": "uuid-123",
-  "sentAt": "2026-05-05T10:30:00Z",
-  "recipientCount": 1
-}
+```
+[Primary SMTP Send]
+    ↓ (Connection Timeout)
+[Circuit Breaker Opens]
+    ↓
+[Switch to Backup SMTP]
+    ↓
+[Backup SMTP Send]
+    ↓ (Success)
+[Log Failover Event]
+    ↓
+[Alert Operations Team]
 ```
 
 ---
@@ -256,30 +455,40 @@ POST /sourceintelligence-service/api/v1/notifications/send
 /sourceintelligence-service/api/v1/notifications
 ```
 
-### 1. Send Generic Notification
+### 1. Send Email Notification
 
 **Endpoint:** `POST /send`
 
-**Request:**
+**Headers:**
+```
+Content-Type: application/json
+X-API-Key: your-api-key-here
+X-Request-ID: unique-request-id (optional)
+X-Client-ID: client-identifier (optional)
+```
+
+**Request Body:**
 ```json
 {
   "notificationType": "EMAIL",
   "async": false,
-  "requestId": "req-123",
+  "requestId": "req-20260505-001",
   "emailNotification": {
-    "to": ["recipient@example.com"],
-    "cc": ["cc@example.com"],
-    "bcc": ["bcc@example.com"],
-    "subject": "Test Subject",
-    "body": "<h1>Hello</h1><p>This is a test email</p>",
+    "to": ["user@example.com"],
+    "cc": ["manager@example.com"],
+    "bcc": ["audit@hireright.com"],
+    "subject": "Important Notification",
+    "body": "<html><body><h1>Hello</h1><p>This is important.</p></body></html>",
     "htmlContent": true,
+    "replyTo": "support@hireright.com",
     "metadata": {
-      "source": "manual",
-      "priority": "high"
+      "source": "user-registration",
+      "priority": "high",
+      "category": "transactional"
     },
     "attachments": [
       {
-        "filename": "report.pdf",
+        "filename": "document.pdf",
         "content": "base64-encoded-content",
         "contentType": "application/pdf"
       }
@@ -288,65 +497,33 @@ POST /sourceintelligence-service/api/v1/notifications/send
 }
 ```
 
-**Response (Success):**
+**Success Response (200 OK):**
 ```json
 {
   "status": "SUCCESS",
   "message": "Notification sent successfully",
   "notificationId": "550e8400-e29b-41d4-a716-446655440000",
-  "requestId": "req-123",
-  "sentAt": "2026-05-05T10:30:00Z",
+  "requestId": "req-20260505-001",
+  "sentAt": "2026-05-05T10:30:00.123Z",
   "recipientCount": 1,
   "metadata": {
     "async": "false",
-    "type": "EMAIL"
+    "type": "EMAIL",
+    "provider": "sendgrid",
+    "processingTimeMs": "245"
   }
 }
 ```
 
-**Response (Error):**
+**Async Response (202 Accepted):**
 ```json
 {
-  "status": "FAILED",
-  "message": "Failed to send notification: SMTP connection timeout",
+  "status": "QUEUED",
+  "message": "Notification queued for processing",
   "notificationId": "550e8400-e29b-41d4-a716-446655440000",
-  "requestId": "req-123",
-  "sentAt": "2026-05-05T10:30:00Z",
-  "recipientCount": 0,
-  "errorDetails": "Connection timeout after 3 retry attempts"
-}
-```
-
-### 2. Send Data Extraction Notification
-
-**Endpoint:** `POST /data-extraction`
-
-**Request:**
-```json
-{
-  "recipients": ["admin@example.com", "team@example.com"],
-  "dataExtractionType": "parchment",
-  "filename": "parchment_data_2026-05-05.xlsx",
-  "totalRecords": 150,
-  "totalSourcesUpdated": 142,
-  "notFoundRecords": 8,
-  "processingTimeMs": 12500,
-  "includeNotFoundRecords": true,
-  "notFoundRecordsList": [
-    "Institution A - City X",
-    "Institution B - City Y"
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "status": "SUCCESS",
-  "message": "Data extraction notification sent successfully",
-  "notificationId": "660e8400-e29b-41d4-a716-446655440001",
-  "sentAt": "2026-05-05T10:35:00Z",
-  "recipientCount": 2
+  "requestId": "req-20260505-001",
+  "queuedAt": "2026-05-05T10:30:00.123Z",
+  "estimatedProcessingTime": "5s"
 }
 ```
 
@@ -354,128 +531,518 @@ POST /sourceintelligence-service/api/v1/notifications/send
 
 ## Usage Examples
 
-### Example 1: Simple Text Email
+### Example 1: Simple Email (Production)
 
 ```bash
-curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notifications/send \
+curl -X POST https://api.hireright.com/sourceintelligence-service/api/v1/notifications/send \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: ${API_KEY}" \
+  -H "X-Request-ID: $(uuidgen)" \
   -d '{
     "notificationType": "EMAIL",
     "emailNotification": {
       "to": ["user@example.com"],
-      "subject": "Welcome",
-      "body": "Welcome to Source Intelligence!",
+      "subject": "Welcome to Source Intelligence",
+      "body": "Welcome! Your account is ready.",
       "htmlContent": false
     }
   }'
 ```
 
-### Example 2: HTML Email with CC
+### Example 2: HTML Email with Attachments
 
 ```bash
-curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notifications/send \
+curl -X POST https://api.hireright.com/sourceintelligence-service/api/v1/notifications/send \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: ${API_KEY}" \
   -d '{
     "notificationType": "EMAIL",
     "async": true,
     "emailNotification": {
-      "to": ["user@example.com"],
+      "to": ["client@example.com"],
       "cc": ["manager@example.com"],
-      "subject": "Monthly Report",
-      "body": "<html><body><h2>Report</h2><p>See attached</p></body></html>",
-      "htmlContent": true
+      "subject": "Monthly Report - May 2026",
+      "body": "<html><body><h2>Monthly Report</h2><p>Please find attached.</p></body></html>",
+      "htmlContent": true,
+      "attachments": [
+        {
+          "filename": "report-may-2026.pdf",
+          "content": "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC...",
+          "contentType": "application/pdf"
+        }
+      ]
     }
   }'
 ```
 
-### Example 3: Data Extraction Notification
-
-```bash
-curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notifications/data-extraction \
-  -H "Content-Type: application/json" \
-  -d '{
-    "recipients": ["admin@example.com"],
-    "dataExtractionType": "parchment",
-    "filename": "data.xlsx",
-    "totalRecords": 100,
-    "totalSourcesUpdated": 95,
-    "notFoundRecords": 5,
-    "processingTimeMs": 8000
-  }'
-```
-
-### Example 4: Java Service Usage
+### Example 3: Bulk Email with Metadata
 
 ```java
 @Service
-public class MyService {
+@RequiredArgsConstructor
+public class BulkEmailService {
     
-    @Autowired
-    private NotificationService notificationService;
+    private final NotificationService notificationService;
     
-    public void sendWelcomeEmail(String userEmail) {
-        EmailNotificationDTO emailDTO = EmailNotificationDTO.builder()
-            .to(List.of(userEmail))
-            .subject("Welcome to Source Intelligence")
-            .body("<h1>Welcome!</h1><p>Thank you for joining us.</p>")
-            .htmlContent(true)
-            .metadata(Map.of("type", "welcome", "userId", "123"))
-            .build();
-        
-        NotificationRequestDTO request = NotificationRequestDTO.builder()
-            .notificationType(NotificationType.EMAIL)
-            .async(true)
-            .emailNotification(emailDTO)
-            .build();
-        
-        NotificationResponseDTO response = notificationService.sendNotification(request);
-        log.info("Email sent: {}", response.getNotificationId());
+    public void sendBulkWelcomeEmails(List<User> users) {
+        users.forEach(user -> {
+            EmailNotificationDTO emailDTO = EmailNotificationDTO.builder()
+                .to(List.of(user.getEmail()))
+                .subject("Welcome to Source Intelligence")
+                .body(buildWelcomeEmailHtml(user))
+                .htmlContent(true)
+                .metadata(Map.of(
+                    "userId", user.getId(),
+                    "userType", user.getType(),
+                    "campaign", "welcome-2026",
+                    "timestamp", Instant.now().toString()
+                ))
+                .build();
+            
+            NotificationRequestDTO request = NotificationRequestDTO.builder()
+                .notificationType(NotificationType.EMAIL)
+                .async(true)
+                .requestId("welcome-" + user.getId())
+                .emailNotification(emailDTO)
+                .build();
+            
+            try {
+                notificationService.sendNotification(request);
+                log.info("Welcome email queued for user: {}", user.getId());
+            } catch (Exception e) {
+                log.error("Failed to queue email for user: {}", user.getId(), e);
+            }
+        });
     }
 }
 ```
 
 ---
 
-## Error Handling
+## Error Handling & Edge Cases
 
-### Retry Mechanism
+### Edge Case Matrix
 
-The system implements automatic retry with exponential backoff:
+| Scenario | Detection | Handling | Response |
+|----------|-----------|----------|----------|
+| **Invalid email format** | Regex validation | Reject immediately | 400 Bad Request |
+| **Empty recipient list** | Pre-validation | Reject immediately | 400 Bad Request |
+| **Subject too long (>200 chars)** | Length check | Truncate with warning | 200 OK with warning |
+| **Body too large (>1MB)** | Size check | Reject immediately | 413 Payload Too Large |
+| **Too many recipients (>100)** | Count check | Reject immediately | 400 Bad Request |
+| **Attachment too large (>25MB)** | Size check | Reject immediately | 413 Payload Too Large |
+| **Too many attachments (>10)** | Count check | Reject immediately | 400 Bad Request |
+| **Invalid attachment encoding** | Base64 validation | Reject immediately | 400 Bad Request |
+| **Blacklisted domain** | Domain check | Reject immediately | 403 Forbidden |
+| **Not whitelisted domain** | Domain check | Reject immediately | 403 Forbidden |
+| **Rate limit exceeded** | Token bucket | Reject with retry-after | 429 Too Many Requests |
+| **SMTP connection timeout** | Timeout detection | Retry 3x, then failover | 500 or 202 (async) |
+| **SMTP authentication failure** | Auth error | Fail fast, alert ops | 500 Internal Server Error |
+| **Circuit breaker open** | Circuit state | Fail fast, use backup | 503 Service Unavailable |
+| **Thread pool full** | Queue check | Reject or caller-runs | 503 Service Unavailable |
+| **Malicious HTML content** | Sanitization | Clean HTML, log warning | 200 OK (sanitized) |
+| **Missing API key** | Header check | Reject immediately | 401 Unauthorized |
+| **Invalid API key** | Key validation | Reject immediately | 401 Unauthorized |
+| **Duplicate request ID** | Idempotency check | Return cached response | 200 OK (cached) |
+| **Network partition** | Connection error | Retry, then DLQ | 500 or 202 (async) |
+| **SMTP server down** | Connection refused | Switch to backup | 200 OK (backup used) |
+
+### Error Response Examples
+
+#### 400 Bad Request - Invalid Email
+```json
+{
+  "status": "FAILED",
+  "message": "Invalid email address format",
+  "errorCode": "INVALID_EMAIL_FORMAT",
+  "errorDetails": "Email 'invalid-email' does not match required format",
+  "field": "emailNotification.to[0]",
+  "timestamp": "2026-05-05T10:30:00Z"
+}
+```
+
+#### 413 Payload Too Large
+```json
+{
+  "status": "FAILED",
+  "message": "Attachment size exceeds maximum allowed",
+  "errorCode": "ATTACHMENT_TOO_LARGE",
+  "errorDetails": "Attachment 'report.pdf' is 30MB, maximum allowed is 25MB",
+  "maxSizeBytes": 26214400,
+  "actualSizeBytes": 31457280,
+  "timestamp": "2026-05-05T10:30:00Z"
+}
+```
+
+#### 429 Too Many Requests
+```json
+{
+  "status": "FAILED",
+  "message": "Rate limit exceeded",
+  "errorCode": "RATE_LIMIT_EXCEEDED",
+  "errorDetails": "Client has exceeded 100 requests per minute",
+  "retryAfter": 45,
+  "limit": 100,
+  "remaining": 0,
+  "resetAt": "2026-05-05T10:31:00Z",
+  "timestamp": "2026-05-05T10:30:15Z"
+}
+```
+
+#### 503 Service Unavailable - Circuit Breaker Open
+```json
+{
+  "status": "FAILED",
+  "message": "Email service temporarily unavailable",
+  "errorCode": "CIRCUIT_BREAKER_OPEN",
+  "errorDetails": "Primary SMTP service is experiencing issues. Circuit breaker is open.",
+  "retryAfter": 60,
+  "circuitState": "OPEN",
+  "failureRate": 75.5,
+  "timestamp": "2026-05-05T10:30:00Z"
+}
+```
+
+### Retry Strategy
 
 ```java
 @Retryable(
     value = {MailException.class, MessagingException.class},
     maxAttempts = 3,
-    backoff = @Backoff(delay = 2000, multiplier = 2)
+    backoff = @Backoff(
+        delay = 2000,
+        multiplier = 2,
+        maxDelay = 10000
+    ),
+    exclude = {MailAuthenticationException.class}
 )
+public void sendEmail(MimeMessage message) {
+    // Send logic
+}
 ```
 
-**Retry Schedule:**
-- Attempt 1: Immediate
-- Attempt 2: After 2 seconds
-- Attempt 3: After 4 seconds
+**Retry Timeline:**
+- Attempt 1: Immediate (t=0s)
+- Attempt 2: After 2s (t=2s)
+- Attempt 3: After 4s (t=6s)
+- If all fail → Dead Letter Queue
 
-### Error Scenarios
+### Dead Letter Queue Processing
 
-| Error Type | HTTP Status | Response Status | Action |
-|------------|-------------|-----------------|--------|
-| Invalid email format | 400 | FAILED | Fix email address |
-| Missing required fields | 400 | FAILED | Provide all required fields |
-| SMTP connection failure | 500 | FAILED | Check SMTP configuration |
-| Authentication failure | 500 | FAILED | Verify credentials |
-| Attachment too large | 400 | FAILED | Reduce attachment size |
-| Rate limit exceeded | 429 | FAILED | Retry after delay |
+```java
+@Scheduled(fixedDelay = 300000) // Every 5 minutes
+public void processDLQ() {
+    List<FailedNotification> failed = dlqRepository.findRetryable();
+    
+    for (FailedNotification notification : failed) {
+        if (notification.getRetryCount() < 5) {
+            try {
+                retryNotification(notification);
+                dlqRepository.delete(notification);
+            } catch (Exception e) {
+                notification.incrementRetryCount();
+                dlqRepository.save(notification);
+            }
+        } else {
+            // Max retries exceeded - alert operations
+            alertOps(notification);
+            dlqRepository.markAsPermanentFailure(notification);
+        }
+    }
+}
+```
 
-### Error Response Example
+---
+
+## Security
+
+### 1. API Key Authentication
+
+```java
+@Component
+public class ApiKeyAuthFilter extends OncePerRequestFilter {
+    
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) {
+        String apiKey = request.getHeader("X-API-Key");
+        
+        if (!isValidApiKey(apiKey)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+        
+        filterChain.doFilter(request, response);
+    }
+}
+```
+
+### 2. Email Sanitization
+
+```java
+public String sanitizeHtmlContent(String html) {
+    // Remove dangerous tags and attributes
+    Safelist safelist = Safelist.relaxed()
+        .addTags("h1", "h2", "h3", "p", "br", "strong", "em")
+        .addAttributes("a", "href")
+        .addProtocols("a", "href", "http", "https");
+    
+    return Jsoup.clean(html, safelist);
+}
+```
+
+### 3. Input Validation
+
+```java
+@Valid
+public class EmailNotificationDTO {
+    
+    @NotEmpty(message = "Recipient list cannot be empty")
+    @Size(max = 100, message = "Maximum 100 recipients allowed")
+    private List<@Email(message = "Invalid email format") String> to;
+    
+    @NotBlank(message = "Subject is required")
+    @Size(max = 200, message = "Subject too long")
+    private String subject;
+    
+    @NotBlank(message = "Body is required")
+    @Size(max = 1048576, message = "Body exceeds 1MB limit")
+    private String body;
+}
+```
+
+### 4. Domain Filtering
+
+```java
+public boolean isAllowedDomain(String email) {
+    String domain = email.substring(email.indexOf('@') + 1);
+    
+    // Check blacklist first
+    if (blacklistedDomains.contains(domain)) {
+        return false;
+    }
+    
+    // If whitelist exists, check it
+    if (!whitelistedDomains.isEmpty()) {
+        return whitelistedDomains.contains(domain);
+    }
+    
+    return true;
+}
+```
+
+### 5. Encryption at Rest
+
+```java
+@Entity
+public class FailedNotification {
+    
+    @Convert(converter = EncryptedStringConverter.class)
+    private String emailContent;
+    
+    @Convert(converter = EncryptedStringConverter.class)
+    private String recipientList;
+}
+```
+
+---
+
+## Performance & Scalability
+
+### 1. Connection Pooling
+
+```properties
+spring.mail.properties.mail.smtp.pool.size=20
+spring.mail.properties.mail.smtp.pool.timeout=5000
+```
+
+### 2. Thread Pool Configuration
+
+```java
+@Bean(name = "notificationTaskExecutor")
+public ThreadPoolTaskExecutor notificationTaskExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(20);
+    executor.setMaxPoolSize(100);
+    executor.setQueueCapacity(500);
+    executor.setThreadNamePrefix("notification-");
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(30);
+    executor.initialize();
+    return executor;
+}
+```
+
+### 3. Rate Limiting
+
+```java
+@Component
+public class RateLimiter {
+    
+    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+    
+    public boolean allowRequest(String clientId) {
+        Bucket bucket = buckets.computeIfAbsent(clientId, k -> 
+            Bucket.builder()
+                .addLimit(Bandwidth.classic(100, Refill.intervally(100, Duration.ofMinutes(1))))
+                .build()
+        );
+        
+        return bucket.tryConsume(1);
+    }
+}
+```
+
+### 4. Caching (Idempotency)
+
+```java
+@Cacheable(value = "notificationResponses", key = "#request.requestId")
+public NotificationResponseDTO sendNotification(NotificationRequestDTO request) {
+    // If requestId exists in cache, return cached response
+    // Otherwise, process and cache the response
+}
+```
+
+### 5. Performance Metrics
+
+| Metric | Target | Monitoring |
+|--------|--------|------------|
+| **Sync email send time** | < 500ms (p95) | Prometheus |
+| **Async queue time** | < 5s (p95) | Prometheus |
+| **Throughput** | 1000 emails/min | Grafana |
+| **Error rate** | < 1% | Grafana |
+| **Circuit breaker trips** | < 5/hour | Alerts |
+| **DLQ size** | < 100 messages | Alerts |
+
+---
+
+## Monitoring & Observability
+
+### 1. Prometheus Metrics
+
+```java
+@Component
+public class NotificationMetrics {
+    
+    private final Counter emailsSent = Counter.builder("notifications.emails.sent")
+        .description("Total emails sent")
+        .tag("type", "email")
+        .register(meterRegistry);
+    
+    private final Counter emailsFailed = Counter.builder("notifications.emails.failed")
+        .description("Total emails failed")
+        .tag("type", "email")
+        .register(meterRegistry);
+    
+    private final Timer emailSendTime = Timer.builder("notifications.emails.send.time")
+        .description("Email send duration")
+        .register(meterRegistry);
+    
+    private final Gauge dlqSize = Gauge.builder("notifications.dlq.size", dlqRepository::count)
+        .description("Dead letter queue size")
+        .register(meterRegistry);
+}
+```
+
+### 2. Health Checks
+
+```java
+@Component
+public class EmailHealthIndicator implements HealthIndicator {
+    
+    @Override
+    public Health health() {
+        try {
+            testSmtpConnection();
+            return Health.up()
+                .withDetail("smtp", "connected")
+                .withDetail("circuitBreaker", circuitBreakerState())
+                .build();
+        } catch (Exception e) {
+            return Health.down()
+                .withDetail("error", e.getMessage())
+                .build();
+        }
+    }
+}
+```
+
+### 3. Logging Standards
+
+```java
+// Success
+log.info("Email sent successfully - NotificationId: {}, Recipients: {}, ProcessingTime: {}ms",
+    notificationId, recipientCount, processingTime);
+
+// Failure
+log.error("Email send failed - NotificationId: {}, Attempt: {}/{}, Error: {}",
+    notificationId, attemptNumber, maxAttempts, errorMessage, exception);
+
+// Warning
+log.warn("Email send slow - NotificationId: {}, ProcessingTime: {}ms (threshold: {}ms)",
+    notificationId, processingTime, threshold);
+```
+
+### 4. Alerting Rules
+
+```yaml
+groups:
+  - name: notification_alerts
+    rules:
+      - alert: HighEmailFailureRate
+        expr: rate(notifications_emails_failed[5m]) > 0.05
+        for: 5m
+        annotations:
+          summary: "High email failure rate detected"
+          
+      - alert: CircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{name="emailNotification",state="open"} == 1
+        for: 1m
+        annotations:
+          summary: "Email notification circuit breaker is open"
+          
+      - alert: DLQSizeHigh
+        expr: notifications_dlq_size > 100
+        for: 10m
+        annotations:
+          summary: "Dead letter queue size exceeds threshold"
+```
+
+### 5. Grafana Dashboard
 
 ```json
 {
-  "status": "FAILED",
-  "message": "Failed to send notification",
-  "notificationId": "uuid",
-  "errorDetails": "SMTP authentication failed: Invalid credentials",
-  "sentAt": "2026-05-05T10:30:00Z",
-  "recipientCount": 0
+  "dashboard": {
+    "title": "Email Notification System",
+    "panels": [
+      {
+        "title": "Email Send Rate",
+        "targets": [
+          {
+            "expr": "rate(notifications_emails_sent[5m])"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "targets": [
+          {
+            "expr": "rate(notifications_emails_failed[5m]) / rate(notifications_emails_sent[5m])"
+          }
+        ]
+      },
+      {
+        "title": "P95 Send Time",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, notifications_emails_send_time)"
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
@@ -483,187 +1050,328 @@ The system implements automatic retry with exponential backoff:
 
 ## Testing
 
-### Unit Tests
+### 1. Unit Tests
 
-Run unit tests:
-```bash
-mvn test -Dtest=NotificationServiceTest
-mvn test -Dtest=EmailNotificationProviderTest
+```java
+@Test
+void shouldSendEmailSuccessfully() {
+    // Given
+    EmailNotificationDTO emailDTO = createValidEmailDTO();
+    when(javaMailSender.createMimeMessage()).thenReturn(mimeMessage);
+    
+    // When
+    NotificationResponseDTO response = emailProvider.send(emailDTO);
+    
+    // Then
+    assertEquals("SUCCESS", response.getStatus());
+    verify(javaMailSender).send(any(MimeMessage.class));
+}
+
+@Test
+void shouldRetryOnTransientFailure() {
+    // Given
+    when(javaMailSender.send(any(MimeMessage.class)))
+        .thenThrow(new MailSendException("Timeout"))
+        .thenThrow(new MailSendException("Timeout"))
+        .thenReturn(null);
+    
+    // When
+    emailProvider.send(emailDTO);
+    
+    // Then
+    verify(javaMailSender, times(3)).send(any(MimeMessage.class));
+}
 ```
 
-### Integration Tests
+### 2. Integration Tests
 
-```bash
-mvn verify -Dtest=NotificationApiControllerIntegrationTest
+```java
+@SpringBootTest
+@AutoConfigureMockMvc
+class NotificationApiIntegrationTest {
+    
+    @Test
+    void shouldSendEmailEndToEnd() throws Exception {
+        mockMvc.perform(post("/api/v1/notifications/send")
+                .header("X-API-Key", validApiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validRequestJson))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("SUCCESS"));
+    }
+}
 ```
 
-### Manual Testing with Postman
+### 3. Load Tests (JMeter/Gatling)
 
-1. Import the Postman collection (see `docs/postman/`)
-2. Set environment variables:
-   - `BASE_URL`: `http://localhost:8080`
-   - `API_KEY`: Your API key (if applicable)
-3. Run test scenarios
+```scala
+scenario("Email Send Load Test")
+  .exec(http("Send Email")
+    .post("/api/v1/notifications/send")
+    .header("X-API-Key", apiKey)
+    .body(StringBody(emailRequest))
+    .check(status.is(200)))
+  .inject(
+    rampUsersPerSec(10) to 100 during (5 minutes),
+    constantUsersPerSec(100) during (10 minutes)
+  )
+```
 
-### Test Coverage
+### 4. Chaos Engineering
 
-Current test coverage: **85%+**
-
-Key test files:
-- `NotificationServiceTest.java`
-- `EmailNotificationProviderTest.java`
-- `NotificationApiControllerTest.java`
-- `ParchmentDataExtractionProcessorTest.java`
+```java
+@Test
+void shouldHandleSmtpServerDown() {
+    // Simulate SMTP server down
+    smtpServer.stop();
+    
+    // Should failover to backup
+    NotificationResponseDTO response = notificationService.send(emailDTO);
+    
+    assertEquals("SUCCESS", response.getStatus());
+    assertTrue(response.getMetadata().get("provider").equals("backup"));
+}
+```
 
 ---
 
 ## Deployment
 
-### Prerequisites
+### 1. Docker Compose (Local/Dev)
 
-- Java 17+
-- Maven 3.8+
-- SMTP server access (Gmail, SendGrid, etc.)
-- MongoDB (for main application)
-
-### Build
-
-```bash
-mvn clean package -DskipTests
+```yaml
+version: '3.8'
+services:
+  notification-service:
+    image: notification-service:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - SMTP_HOST=smtp.sendgrid.net
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
 
-### Run Locally
-
-```bash
-export EMAIL_USERNAME=your-email@gmail.com
-export EMAIL_PASSWORD=your-app-password
-mvn spring-boot:run
-```
-
-### Docker Deployment
-
-```dockerfile
-FROM openjdk:17-jdk-slim
-COPY target/sourceintelligence-service.jar app.jar
-ENV EMAIL_USERNAME=${EMAIL_USERNAME}
-ENV EMAIL_PASSWORD=${EMAIL_PASSWORD}
-ENTRYPOINT ["java", "-jar", "/app.jar"]
-```
-
-Build and run:
-```bash
-docker build -t si-notification-service .
-docker run -p 8080:8080 \
-  -e EMAIL_USERNAME=your-email \
-  -e EMAIL_PASSWORD=your-password \
-  si-notification-service
-```
-
-### Kubernetes Deployment
+### 2. Kubernetes Deployment
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: notification-service
+  namespace: production
 spec:
   replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: notification-service
   template:
+    metadata:
+      labels:
+        app: notification-service
     spec:
       containers:
-      - name: app
-        image: si-notification-service:latest
+      - name: notification-service
+        image: notification-service:1.0.0
+        ports:
+        - containerPort: 8080
         env:
-        - name: EMAIL_USERNAME
+        - name: SMTP_HOST
+          value: smtp.sendgrid.net
+        - name: SMTP_USERNAME
           valueFrom:
             secretKeyRef:
-              name: email-credentials
-              key: username
-        - name: EMAIL_PASSWORD
+              name: notification-secrets
+              key: smtp-username
+        - name: SMTP_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: email-credentials
-              key: password
+              name: notification-secrets
+              key: smtp-password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: production
+spec:
+  type: LoadBalancer
+  selector:
+    app: notification-service
+  ports:
+  - port: 80
+    targetPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service-hpa
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
 ```
 
-### Health Check
+### 3. CI/CD Pipeline (GitLab CI)
 
-```bash
-curl http://localhost:8080/sourceintelligence-service/actuator/health
-```
+```yaml
+stages:
+  - test
+  - build
+  - deploy
 
-Expected response:
-```json
-{
-  "status": "UP",
-  "components": {
-    "mail": {
-      "status": "UP"
-    }
-  }
-}
+test:
+  stage: test
+  script:
+    - mvn clean test
+    - mvn verify
+
+build:
+  stage: build
+  script:
+    - mvn clean package -DskipTests
+    - docker build -t notification-service:${CI_COMMIT_SHA} .
+    - docker push notification-service:${CI_COMMIT_SHA}
+
+deploy-prod:
+  stage: deploy
+  script:
+    - kubectl set image deployment/notification-service 
+        notification-service=notification-service:${CI_COMMIT_SHA}
+    - kubectl rollout status deployment/notification-service
+  only:
+    - main
+  when: manual
 ```
 
 ---
 
-## Monitoring & Logging
+## Disaster Recovery
 
-### Log Levels
+### 1. Backup Strategy
 
-Configure in `application.properties`:
-```properties
-logging.level.com.hireright.sourceintelligence.service.notification=DEBUG
-logging.level.org.springframework.mail=DEBUG
+```bash
+# Daily backup of DLQ database
+0 2 * * * pg_dump -h localhost -U notif_user notifications > /backup/dlq_$(date +\%Y\%m\%d).sql
+
+# Weekly backup of configuration
+0 3 * * 0 kubectl get configmap notification-config -o yaml > /backup/config_$(date +\%Y\%m\%d).yaml
 ```
 
-### Key Log Messages
+### 2. Failover Procedures
 
-```
-INFO  - Sending email notification to: [user@example.com]
-DEBUG - Email sent successfully. NotificationId: uuid-123
-ERROR - Failed to send email after 3 attempts: SMTP timeout
-WARN  - Async notification queued: uuid-456
-```
+**Primary SMTP Failure:**
+1. Circuit breaker opens automatically
+2. Traffic routes to backup SMTP
+3. Alert sent to operations team
+4. Investigate primary SMTP issue
+5. Once resolved, circuit breaker closes automatically
 
-### Metrics
+**Complete Service Failure:**
+1. Kubernetes restarts pods automatically
+2. Load balancer routes to healthy instances
+3. DLQ preserves failed messages
+4. Once service recovers, DLQ processes backlog
 
-Monitor these metrics:
-- Email send success rate
-- Average send time
-- Retry count
-- Queue size (async)
-- Error rate by type
+### 3. Recovery Time Objectives
+
+| Scenario | RTO | RPO |
+|----------|-----|-----|
+| Single pod failure | < 30s | 0 (no data loss) |
+| Complete service failure | < 5min | < 1min |
+| Database failure | < 15min | < 5min |
+| SMTP provider failure | < 1min | 0 (failover) |
 
 ---
 
 ## FAQ
 
-**Q: How do I send HTML emails?**  
-A: Set `htmlContent: true` in `EmailNotificationDTO` and provide HTML in the `body` field.
+**Q: What happens if both primary and backup SMTP fail?**  
+A: Messages are stored in the Dead Letter Queue and retried every 5 minutes for up to 5 attempts. Operations team is alerted immediately.
 
-**Q: What's the maximum attachment size?**  
-A: Typically 25MB (depends on SMTP provider limits).
+**Q: How do I increase throughput?**  
+A: Increase `notification.async.maxPoolSize` and `spring.mail.properties.mail.smtp.pool.size`. Also consider horizontal scaling (more pods).
 
 **Q: Can I use a different SMTP provider?**  
-A: Yes, update `spring.mail.*` properties in `application.properties`.
+A: Yes, update `spring.mail.host`, `spring.mail.port`, and credentials in configuration.
 
-**Q: How do I enable async sending?**  
-A: Set `async: true` in `NotificationRequestDTO`.
+**Q: How are sensitive emails protected?**  
+A: Emails in DLQ are encrypted at rest. SMTP connections use TLS. API requires authentication.
 
-**Q: What happens if email sending fails?**  
-A: The system retries 3 times with exponential backoff. If all fail, an error response is returned.
-
----
-
-## Support & Contact
-
-For issues or questions:
-- **Team**: Source Intelligence Development Team
-- **Email**: si-dev@hireright.com
-- **Jira**: [SI Project Board](https://jira.hireright.com/SI)
+**Q: What's the maximum email size?**  
+A: Body: 1MB, Attachments: 25MB total, Subject: 200 characters.
 
 ---
 
-**Document Version**: 1.0  
+## Support & Escalation
+
+### Level 1: Application Logs
+```bash
+kubectl logs -f deployment/notification-service -n production
+```
+
+### Level 2: Metrics Dashboard
+- Grafana: https://grafana.hireright.com/d/notifications
+- Prometheus: https://prometheus.hireright.com
+
+### Level 3: On-Call Engineer
+- PagerDuty: notification-service-oncall
+- Slack: #notification-alerts
+
+### Level 4: Vendor Support
+- SendGrid Support: support@sendgrid.com
+- AWS Support: Enterprise Support Plan
+
+---
+
+**Document Version**: 2.0 (Production Ready)  
 **Last Updated**: 2026-05-05  
-**Author**: Development Team
+**Review Cycle**: Quarterly  
+**Owner**: Platform Engineering Team  
+**Approvers**: Tech Lead, Security Team, Operations Team
