@@ -1026,4 +1026,356 @@ class ParchmentDataExtractionProcessorTest {
         verify(mongoTemplate).find(any(Query.class), eq(Source.class), anyString());
         verifyNoInteractions(bulkOperations);
     }
+
+    @Test
+    void testOrEmpty_WithNullValue() throws IOException {
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA")
+                .serviceProvider("Parchment Exchange")
+                .surchargeAmount(null)  // Null surcharge amount
+                .paymentMethod(null)    // Null payment method
+                .code("TEST001")
+                .turnaroundTime(null)   // Null turnaround time
+                .followUpAllowed(null)  // Null follow-up allowed
+                .build();
+
+        Source source = createSource("EDU-123", "Test University", "Boston", "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
+
+    @Test
+    void testSurchargeAmount_USACountry_WithNullSurcharge() throws IOException {
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA")
+                .serviceProvider("Parchment Exchange")
+                .surchargeAmount(null)  // Null surcharge - should not set USD currency
+                .paymentMethod("Credit Card")
+                .code("TEST001")
+                .turnaroundTime("3")
+                .followUpAllowed("Yes")
+                .build();
+
+        Source source = createSource("EDU-123", "Test University", "Boston", "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
+
+    @Test
+    void testSurchargeAmount_USACountry_WithEmptySurcharge() throws IOException {
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA")
+                .serviceProvider("Parchment Exchange")
+                .surchargeAmount("")  // Empty surcharge - should not set USD currency
+                .paymentMethod("Credit Card")
+                .code("TEST001")
+                .turnaroundTime("3")
+                .followUpAllowed("Yes")
+                .build();
+
+        Source source = createSource("EDU-123", "Test University", "Boston", "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
+
+    @Test
+    void testBuildOrgNameCriteria_WithNullInstitutionName() {
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName(null)  // Null institution name
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA")
+                .serviceProvider("Parchment Exchange")
+                .build();
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("notFoundRecords"));
+
+        verify(vendorsRepository).findByVendor("Parchment Exchange");
+    }
+
+    @Test
+    void testBuildOrgNameCriteria_WithEmptyInstitutionName() {
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("")  // Empty institution name
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA")
+                .serviceProvider("Parchment Exchange")
+                .build();
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("notFoundRecords"));
+
+        verify(vendorsRepository).findByVendor("Parchment Exchange");
+    }
+
+    @Test
+    void testEqualsIgnoreCase_BothNull() {
+        // Testing equalsIgnoreCase with both null values
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country(null)
+                .city(null)
+                .stateCountyRegion("MA")
+                .serviceProvider("Parchment Exchange")
+                .build();
+
+        Source source = createSource("EDU-123", "Test University", null, "Massachusetts", null);
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("notFoundRecords"));
+    }
+
+    @Test
+    void testEqualsIgnoreCase_OneNullOneNotNull() {
+        // Testing equalsIgnoreCase with one null and one non-null
+        ParchmentRecord record = createParchmentRecord("Test University", "Boston", "MA", "USA");
+        Source source = createSource("EDU-123", "Test University", null, "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(0, result.get("totalSourcesUpdated"));
+        assertEquals(1, result.get("notFoundRecords"));
+    }
+
+    @Test
+    void testNormalize_WithNullValue() {
+        // Testing normalize function with null values
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName(null)
+                .country(null)
+                .city(null)
+                .stateCountyRegion("MA")
+                .serviceProvider("Parchment Exchange")
+                .build();
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("notFoundRecords"));
+    }
+
+    @Test
+    void testResolveStateName_EmptyStateInput_WithEmptyStateFullName() {
+        // Testing resolveStateName when both stateFullName.isEmpty() && !stateInput.isEmpty() is false
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("")  // Empty state
+                .serviceProvider("Parchment Exchange")
+                .build();
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("notFoundRecords"));
+    }
+
+    @Test
+    void testResolveStateName_WithValidStateMapping() throws IOException {
+        // Testing resolveStateName when StateMapper returns a valid full name
+        ParchmentRecord record = createParchmentRecord("Test University", "Boston", "MA", "USA");
+        Source source = createSource("EDU-123", "Test University", "Boston", "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+    }
+
+    @Test
+    void testFindMatchingInstitutions_WithNullOrEmptyState() {
+        // Testing when stateFullName is null or empty - should skip the record
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion(null)  // Null state
+                .serviceProvider("Parchment Exchange")
+                .build();
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("notFoundRecords"));
+    }
+
+    @Test
+    void testPerformBulkSaveMongoDB_EmptySources() throws IOException {
+        // Testing performBulkSaveMongoDB when sources list is empty - should skip bulk update
+        ParchmentRecord record = createParchmentRecord("Test University", "Boston", "MA", "USA");
+        Source source = createSource("EDU-123", "Test University", "Boston", "Massachusetts", "USA");
+
+        // Setup existing Parchment communication so no update happens
+        BasicDBObject payload = new BasicDBObject();
+        BasicDBObject contact = new BasicDBObject();
+        BasicDBObject contactDetail = new BasicDBObject();
+        contactDetail.put("type", "contactAutomatedServices");
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put("name", "Parchment Exchange");
+
+        contactDetail.put("communication", List.of(communication));
+        contact.put("contactDetails", List.of(contactDetail));
+        payload.put("contacts", List.of(contact));
+        source.setPayload(payload);
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(0, result.get("totalSourcesUpdated"));
+
+        // Should not call bulkOps since sources list is empty
+        verify(mongoTemplate, never()).bulkOps(any(), anyString());
+    }
+
+    @Test
+    void testUpdateElasticsearchWithRollback_EmptySources() {
+        // Testing updateElasticsearchWithRollback when sources list is empty
+        ParchmentRecord record = createParchmentRecord("Test University", "Boston", "MA", "USA");
+        Source source = createSource("EDU-123", "Test University", "Boston", "Massachusetts", "USA");
+
+        // Setup existing Parchment communication so no update happens
+        BasicDBObject payload = new BasicDBObject();
+        BasicDBObject contact = new BasicDBObject();
+        BasicDBObject contactDetail = new BasicDBObject();
+        contactDetail.put("type", "contactAutomatedServices");
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put("name", "Parchment Exchange");
+
+        contactDetail.put("communication", List.of(communication));
+        contact.put("contactDetails", List.of(contactDetail));
+        payload.put("contacts", List.of(contact));
+        source.setPayload(payload);
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(0, result.get("totalSourcesUpdated"));
+
+        // Should not call elasticsearchService since sources list is empty
+        verifyNoInteractions(elasticsearchService);
+    }
+
+    @Test
+    void testServiceProvider_EmptyString() throws IOException {
+        // Testing when serviceProvider is empty string - should use PARCHMENT_EXCHANGE as default
+        ParchmentRecord record = ParchmentRecord.builder()
+                .institutionName("Test University")
+                .country("USA")
+                .city("Boston")
+                .stateCountyRegion("MA")
+                .serviceProvider("")  // Empty service provider
+                .surchargeAmount("5.00")
+                .paymentMethod("Credit Card")
+                .code("TEST001")
+                .turnaroundTime("3")
+                .followUpAllowed("Yes")
+                .build();
+
+        Source source = createSource("EDU-123", "Test University", "Boston", "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
 }
