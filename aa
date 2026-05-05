@@ -1,18 +1,19 @@
-# Email notification configuration
-spring.mail.host=${emailHost:smtp.gmail.com}
-spring.mail.port=${emailPort:587}
-spring.mail.username=${emailUsername:}
-spring.mail.password=${emailPassword:}
-spring.mail.properties.mail.smtp.auth=true
-spring.mail.properties.mail.smtp.starttls.enable=true
-spring.mail.properties.mail.smtp.starttls.required=true
-spring.mail.properties.mail.smtp.connectiontimeout=5000
-spring.mail.properties.mail.smtp.timeout=5000
-spring.mail.properties.mail.smtp.writetimeout=5000
-
-# Notification settings
-notification.email.enabled=${notificationEmailEnabled:true}
-notification.email.from=${notificationEmailFrom:noreply@sourceintelligence.com}
-notification.dataextraction.enabled=${notificationDataExtractionEnabled:false}
-notification.dataextraction.recipients=${notificationDataExtractionRecipients:}
-notification.dataextraction.subject=${notificationDataExtractionSubject:Data Extraction Completed}
+curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notificationType": "EMAIL",
+    "async": true,
+    "requestId": "req-12345",
+    "emailNotification": {
+      "to": ["recipient@example.com"],
+      "cc": ["manager@example.com"],
+      "bcc": ["admin@example.com"],
+      "subject": "Data Extraction Report",
+      "body": "<html><body><h2>Report Ready</h2><p>Your data extraction has completed successfully.</p></body></html>",
+      "htmlContent": true,
+      "metadata": {
+        "reportId": "RPT-001",
+        "userId": "user123"
+      }
+    }
+  }'
