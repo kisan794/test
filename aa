@@ -2,18 +2,43 @@ curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notificatio
   -H "Content-Type: application/json" \
   -d '{
     "notificationType": "EMAIL",
-    "async": true,
-    "requestId": "req-12345",
+    "async": false,
+    "requestId": "req-2024-attachment-001",
     "emailNotification": {
-      "to": ["recipient@example.com"],
-      "cc": ["manager@example.com"],
-      "bcc": ["admin@example.com"],
-      "subject": "Data Extraction Report",
-      "body": "<html><body><h2>Report Ready</h2><p>Your data extraction has completed successfully.</p></body></html>",
+      "to": [
+        "recipient@example.com"
+      ],
+      "cc": [
+        "manager@example.com"
+      ],
+      "bcc": [
+        "admin@example.com"
+      ],
+      "subject": "Data Extraction Report with Attachments",
+      "body": "<html><body><h2>Data Extraction Complete</h2><p>Please find the attached reports:</p><ul><li>extraction_summary.pdf</li><li>error_log.txt</li><li>data_report.xlsx</li></ul></body></html>",
       "htmlContent": true,
+      "attachments": [
+        {
+          "filename": "extraction_summary.pdf",
+          "content": "JVBERi0xLjQKJeLjz9MKMyAwIG9iago8PC9UeXBlL1BhZ2UvUGFyZW50IDIgMCBSL1Jlc291cmNlczw8L0ZvbnQ8PC9GMSAxIDAgUj4+Pj4vTWVkaWFCb3hbMCAwIDYxMiA3OTJdL0NvbnRlbnRzIDQgMCBSPj4KZW5kb2JqCjQgMCBvYmoKPDwvTGVuZ3RoIDQ0Pj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihIZWxsbyBXb3JsZCkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagoxIDAgb2JqCjw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+CmVuZG9iagoyIDAgb2JqCjw8L1R5cGUvUGFnZXMvS2lkc1szIDAgUl0vQ291bnQgMT4+CmVuZG9iago1IDAgb2JqCjw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+CmVuZG9iagp0cmFpbGVyCjw8L1NpemUgNi9Sb290IDUgMCBSPj4Kc3RhcnR4cmVmCjU1NgolJUVPRgo=",
+          "contentType": "application/pdf"
+        },
+        {
+          "filename": "error_log.txt",
+          "content": "RXJyb3IgTG9nIC0gRGF0YSBFeHRyYWN0aW9uCj09PT09PT09PT09PT09PT09PT09PT09PT09PT0KClRpbWVzdGFtcDogMjAyNC0wNS0wNVQxNDozMDowMFoKRXh0cmFjdGlvbiBUeXBlOiBQYXJjaG1lbnQKCkVycm9ycyBGb3VuZDoKMS4gUmVjb3JkIElEIDEyMzQ1IC0gSW52YWxpZCBkYXRhIGZvcm1hdAoyLiBSZWNvcmQgSUQgNjc4OTAgLSBNaXNzaW5nIHJlcXVpcmVkIGZpZWxkCjMuIFJlY29yZCBJRCA5OTk5OSAtIER1cGxpY2F0ZSBlbnRyeQoKVG90YWwgRXJyb3JzOiAzClRvdGFsIFByb2Nlc3NlZDogMSwyNTA=",
+          "contentType": "text/plain"
+        },
+        {
+          "filename": "data_report.xlsx",
+          "content": "UEsDBBQABgAIAAAAIQBi7p1oXgEAAJAEAAATAAgCW0NvbnRlbnRfVHlwZXNdLnhtbCCiBAIooAAC",
+          "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        }
+      ],
       "metadata": {
-        "reportId": "RPT-001",
-        "userId": "user123"
+        "extractionType": "parchment",
+        "totalRecords": "1250",
+        "attachmentCount": "3",
+        "reportGeneratedAt": "2024-05-05T14:30:00Z"
       }
     }
   }'
