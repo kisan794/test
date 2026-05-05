@@ -1,44 +1,669 @@
+# Email Notification System - End-to-End Documentation
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Configuration](#configuration)
+4. [Data Flow](#data-flow)
+5. [API Endpoints](#api-endpoints)
+6. [Usage Examples](#usage-examples)
+7. [Error Handling](#error-handling)
+8. [Testing](#testing)
+9. [Deployment](#deployment)
+
+---
+
+## Overview
+
+The Email Notification System provides a robust, asynchronous email notification service for the Source Intelligence application. It supports both generic email notifications and specialized data extraction notifications with comprehensive error handling and retry mechanisms.
+
+### Key Features
+- ✅ Synchronous and asynchronous email sending
+- ✅ HTML and plain text email support
+- ✅ CC/BCC support
+- ✅ File attachments
+- ✅ Custom metadata support
+- ✅ Data extraction result notifications
+- ✅ Retry mechanism with exponential backoff
+- ✅ Comprehensive error handling and logging
+
+---
+
+## Architecture
+
+### Component Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     API Layer                                │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  NotificationApiController                             │ │
+│  │  - POST /send                                          │ │
+│  │  - POST /data-extraction                               │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   Service Layer                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  NotificationService                                   │ │
+│  │  - sendNotification()                                  │ │
+│  │  - sendDataExtractionNotification()                    │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                 Email Provider Layer                         │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  EmailNotificationProvider                             │ │
+│  │  - JavaMailSender (SMTP)                               │ │
+│  │  - Retry Logic (@Retryable)                            │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+                    [SMTP Server]
+```
+
+### Package Structure
+
+```
+com.hireright.sourceintelligence
+├── api
+│   ├── v1
+│   │   ├── NotificationApi.java
+│   │   └── NotificationApiController.java
+│   └── dto
+│       └── notification
+│           ├── NotificationRequestDTO.java
+│           ├── NotificationResponseDTO.java
+│           ├── EmailNotificationDTO.java
+│           ├── DataExtractionNotificationRequestDTO.java
+│           └── AttachmentDTO.java
+├── service
+│   └── notification
+│       ├── NotificationService.java
+│       └── provider
+│           ├── NotificationProvider.java
+│           └── EmailNotificationProvider.java
+└── config
+    └── NotificationAsyncConfig.java
+```
+
+---
+
+## Configuration
+
+### 1. Application Properties
+
+Add to `src/main/resources/application.properties`:
+
+```properties
+# Email Configuration
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=${EMAIL_USERNAME}
+spring.mail.password=${EMAIL_PASSWORD}
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.starttls.required=true
+spring.mail.properties.mail.smtp.connectiontimeout=5000
+spring.mail.properties.mail.smtp.timeout=5000
+spring.mail.properties.mail.smtp.writetimeout=5000
+
+# Notification Configuration
+notification.from.email=noreply@hireright.com
+notification.from.name=Source Intelligence System
+notification.retry.maxAttempts=3
+notification.retry.backoff=2000
+
+# Async Configuration
+notification.async.corePoolSize=5
+notification.async.maxPoolSize=10
+notification.async.queueCapacity=100
+notification.async.threadNamePrefix=notification-async-
+```
+
+### 2. Environment Variables
+
+Set these environment variables in your deployment:
+
+```bash
+# Required
+export EMAIL_USERNAME=your-smtp-username
+export EMAIL_PASSWORD=your-smtp-password
+
+# Optional (defaults shown)
+export NOTIFICATION_FROM_EMAIL=noreply@hireright.com
+export NOTIFICATION_FROM_NAME="Source Intelligence System"
+```
+
+### 3. Async Configuration Class
+
+The system uses `NotificationAsyncConfig` for async processing:
+
+```java
+@Configuration
+@EnableAsync
+public class NotificationAsyncConfig {
+    
+    @Bean(name = "notificationTaskExecutor")
+    public Executor notificationTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);
+        executor.setMaxPoolSize(10);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("notification-async-");
+        executor.initialize();
+        return executor;
+    }
+}
+```
+
+---
+
+## Data Flow
+
+### End-to-End Flow Diagram
+
+```
+┌──────────────┐
+│   Client     │
+└──────┬───────┘
+       │ 1. HTTP POST Request
+       ↓
+┌──────────────────────────────────────┐
+│  NotificationApiController           │
+│  - Validates DTO                     │
+│  - Checks async flag                 │
+└──────┬───────────────────────────────┘
+       │ 2. Call service method
+       ↓
+┌──────────────────────────────────────┐
+│  NotificationService                 │
+│  - Determines notification type      │
+│  - Builds email content              │
+│  - Calls provider                    │
+└──────┬───────────────────────────────┘
+       │ 3. Send email
+       ↓
+┌──────────────────────────────────────┐
+│  EmailNotificationProvider           │
+│  - Creates MimeMessage               │
+│  - Adds attachments                  │
+│  - Retry logic (max 3 attempts)      │
+└──────┬───────────────────────────────┘
+       │ 4. SMTP Send
+       ↓
+┌──────────────────────────────────────┐
+│  SMTP Server (Gmail/SendGrid/etc)    │
+└──────┬───────────────────────────────┘
+       │ 5. Email delivered
+       ↓
+┌──────────────┐
+│  Recipient   │
+└──────────────┘
+```
+
+### Detailed Flow Steps
+
+#### Step 1: API Request
+```json
+POST /sourceintelligence-service/api/v1/notifications/send
+{
+  "notificationType": "EMAIL",
+  "async": true,
+  "emailNotification": {
+    "to": ["user@example.com"],
+    "subject": "Test Email",
+    "body": "Hello World",
+    "htmlContent": false
+  }
+}
+```
+
+#### Step 2: Validation
+- DTO validation using Jakarta Bean Validation
+- Email format validation
+- Required field checks
+
+#### Step 3: Service Processing
+- Async/sync decision based on `async` flag
+- Email content preparation
+- Metadata handling
+
+#### Step 4: Email Sending
+- MimeMessage creation
+- Attachment processing
+- SMTP transmission with retry
+
+#### Step 5: Response
+```json
+{
+  "status": "SUCCESS",
+  "message": "Notification sent successfully",
+  "notificationId": "uuid-123",
+  "sentAt": "2026-05-05T10:30:00Z",
+  "recipientCount": 1
+}
+```
+
+---
+
+## API Endpoints
+
+### Base Path
+```
+/sourceintelligence-service/api/v1/notifications
+```
+
+### 1. Send Generic Notification
+
+**Endpoint:** `POST /send`
+
+**Request:**
+```json
+{
+  "notificationType": "EMAIL",
+  "async": false,
+  "requestId": "req-123",
+  "emailNotification": {
+    "to": ["recipient@example.com"],
+    "cc": ["cc@example.com"],
+    "bcc": ["bcc@example.com"],
+    "subject": "Test Subject",
+    "body": "<h1>Hello</h1><p>This is a test email</p>",
+    "htmlContent": true,
+    "metadata": {
+      "source": "manual",
+      "priority": "high"
+    },
+    "attachments": [
+      {
+        "filename": "report.pdf",
+        "content": "base64-encoded-content",
+        "contentType": "application/pdf"
+      }
+    ]
+  }
+}
+```
+
+**Response (Success):**
+```json
+{
+  "status": "SUCCESS",
+  "message": "Notification sent successfully",
+  "notificationId": "550e8400-e29b-41d4-a716-446655440000",
+  "requestId": "req-123",
+  "sentAt": "2026-05-05T10:30:00Z",
+  "recipientCount": 1,
+  "metadata": {
+    "async": "false",
+    "type": "EMAIL"
+  }
+}
+```
+
+**Response (Error):**
+```json
+{
+  "status": "FAILED",
+  "message": "Failed to send notification: SMTP connection timeout",
+  "notificationId": "550e8400-e29b-41d4-a716-446655440000",
+  "requestId": "req-123",
+  "sentAt": "2026-05-05T10:30:00Z",
+  "recipientCount": 0,
+  "errorDetails": "Connection timeout after 3 retry attempts"
+}
+```
+
+### 2. Send Data Extraction Notification
+
+**Endpoint:** `POST /data-extraction`
+
+**Request:**
+```json
+{
+  "recipients": ["admin@example.com", "team@example.com"],
+  "dataExtractionType": "parchment",
+  "filename": "parchment_data_2026-05-05.xlsx",
+  "totalRecords": 150,
+  "totalSourcesUpdated": 142,
+  "notFoundRecords": 8,
+  "processingTimeMs": 12500,
+  "includeNotFoundRecords": true,
+  "notFoundRecordsList": [
+    "Institution A - City X",
+    "Institution B - City Y"
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "SUCCESS",
+  "message": "Data extraction notification sent successfully",
+  "notificationId": "660e8400-e29b-41d4-a716-446655440001",
+  "sentAt": "2026-05-05T10:35:00Z",
+  "recipientCount": 2
+}
+```
+
+---
+
+## Usage Examples
+
+### Example 1: Simple Text Email
+
+```bash
 curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notifications/send \
   -H "Content-Type: application/json" \
   -d '{
     "notificationType": "EMAIL",
-    "async": false,
-    "requestId": "req-2024-attachment-001",
     "emailNotification": {
-      "to": [
-        "recipient@example.com"
-      ],
-      "cc": [
-        "manager@example.com"
-      ],
-      "bcc": [
-        "admin@example.com"
-      ],
-      "subject": "Data Extraction Report with Attachments",
-      "body": "<html><body><h2>Data Extraction Complete</h2><p>Please find the attached reports:</p><ul><li>extraction_summary.pdf</li><li>error_log.txt</li><li>data_report.xlsx</li></ul></body></html>",
-      "htmlContent": true,
-      "attachments": [
-        {
-          "filename": "extraction_summary.pdf",
-          "content": "JVBERi0xLjQKJeLjz9MKMyAwIG9iago8PC9UeXBlL1BhZ2UvUGFyZW50IDIgMCBSL1Jlc291cmNlczw8L0ZvbnQ8PC9GMSAxIDAgUj4+Pj4vTWVkaWFCb3hbMCAwIDYxMiA3OTJdL0NvbnRlbnRzIDQgMCBSPj4KZW5kb2JqCjQgMCBvYmoKPDwvTGVuZ3RoIDQ0Pj4Kc3RyZWFtCkJUCi9GMSAxMiBUZgoxMDAgNzAwIFRkCihIZWxsbyBXb3JsZCkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagoxIDAgb2JqCjw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+CmVuZG9iagoyIDAgb2JqCjw8L1R5cGUvUGFnZXMvS2lkc1szIDAgUl0vQ291bnQgMT4+CmVuZG9iago1IDAgb2JqCjw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+CmVuZG9iagp0cmFpbGVyCjw8L1NpemUgNi9Sb290IDUgMCBSPj4Kc3RhcnR4cmVmCjU1NgolJUVPRgo=",
-          "contentType": "application/pdf"
-        },
-        {
-          "filename": "error_log.txt",
-          "content": "RXJyb3IgTG9nIC0gRGF0YSBFeHRyYWN0aW9uCj09PT09PT09PT09PT09PT09PT09PT09PT09PT0KClRpbWVzdGFtcDogMjAyNC0wNS0wNVQxNDozMDowMFoKRXh0cmFjdGlvbiBUeXBlOiBQYXJjaG1lbnQKCkVycm9ycyBGb3VuZDoKMS4gUmVjb3JkIElEIDEyMzQ1IC0gSW52YWxpZCBkYXRhIGZvcm1hdAoyLiBSZWNvcmQgSUQgNjc4OTAgLSBNaXNzaW5nIHJlcXVpcmVkIGZpZWxkCjMuIFJlY29yZCBJRCA5OTk5OSAtIER1cGxpY2F0ZSBlbnRyeQoKVG90YWwgRXJyb3JzOiAzClRvdGFsIFByb2Nlc3NlZDogMSwyNTA=",
-          "contentType": "text/plain"
-        },
-        {
-          "filename": "data_report.xlsx",
-          "content": "UEsDBBQABgAIAAAAIQBi7p1oXgEAAJAEAAATAAgCW0NvbnRlbnRfVHlwZXNdLnhtbCCiBAIooAAC",
-          "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        }
-      ],
-      "metadata": {
-        "extractionType": "parchment",
-        "totalRecords": "1250",
-        "attachmentCount": "3",
-        "reportGeneratedAt": "2024-05-05T14:30:00Z"
-      }
+      "to": ["user@example.com"],
+      "subject": "Welcome",
+      "body": "Welcome to Source Intelligence!",
+      "htmlContent": false
     }
   }'
+```
+
+### Example 2: HTML Email with CC
+
+```bash
+curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notifications/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notificationType": "EMAIL",
+    "async": true,
+    "emailNotification": {
+      "to": ["user@example.com"],
+      "cc": ["manager@example.com"],
+      "subject": "Monthly Report",
+      "body": "<html><body><h2>Report</h2><p>See attached</p></body></html>",
+      "htmlContent": true
+    }
+  }'
+```
+
+### Example 3: Data Extraction Notification
+
+```bash
+curl -X POST http://localhost:8080/sourceintelligence-service/api/v1/notifications/data-extraction \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipients": ["admin@example.com"],
+    "dataExtractionType": "parchment",
+    "filename": "data.xlsx",
+    "totalRecords": 100,
+    "totalSourcesUpdated": 95,
+    "notFoundRecords": 5,
+    "processingTimeMs": 8000
+  }'
+```
+
+### Example 4: Java Service Usage
+
+```java
+@Service
+public class MyService {
+    
+    @Autowired
+    private NotificationService notificationService;
+    
+    public void sendWelcomeEmail(String userEmail) {
+        EmailNotificationDTO emailDTO = EmailNotificationDTO.builder()
+            .to(List.of(userEmail))
+            .subject("Welcome to Source Intelligence")
+            .body("<h1>Welcome!</h1><p>Thank you for joining us.</p>")
+            .htmlContent(true)
+            .metadata(Map.of("type", "welcome", "userId", "123"))
+            .build();
+        
+        NotificationRequestDTO request = NotificationRequestDTO.builder()
+            .notificationType(NotificationType.EMAIL)
+            .async(true)
+            .emailNotification(emailDTO)
+            .build();
+        
+        NotificationResponseDTO response = notificationService.sendNotification(request);
+        log.info("Email sent: {}", response.getNotificationId());
+    }
+}
+```
+
+---
+
+## Error Handling
+
+### Retry Mechanism
+
+The system implements automatic retry with exponential backoff:
+
+```java
+@Retryable(
+    value = {MailException.class, MessagingException.class},
+    maxAttempts = 3,
+    backoff = @Backoff(delay = 2000, multiplier = 2)
+)
+```
+
+**Retry Schedule:**
+- Attempt 1: Immediate
+- Attempt 2: After 2 seconds
+- Attempt 3: After 4 seconds
+
+### Error Scenarios
+
+| Error Type | HTTP Status | Response Status | Action |
+|------------|-------------|-----------------|--------|
+| Invalid email format | 400 | FAILED | Fix email address |
+| Missing required fields | 400 | FAILED | Provide all required fields |
+| SMTP connection failure | 500 | FAILED | Check SMTP configuration |
+| Authentication failure | 500 | FAILED | Verify credentials |
+| Attachment too large | 400 | FAILED | Reduce attachment size |
+| Rate limit exceeded | 429 | FAILED | Retry after delay |
+
+### Error Response Example
+
+```json
+{
+  "status": "FAILED",
+  "message": "Failed to send notification",
+  "notificationId": "uuid",
+  "errorDetails": "SMTP authentication failed: Invalid credentials",
+  "sentAt": "2026-05-05T10:30:00Z",
+  "recipientCount": 0
+}
+```
+
+---
+
+## Testing
+
+### Unit Tests
+
+Run unit tests:
+```bash
+mvn test -Dtest=NotificationServiceTest
+mvn test -Dtest=EmailNotificationProviderTest
+```
+
+### Integration Tests
+
+```bash
+mvn verify -Dtest=NotificationApiControllerIntegrationTest
+```
+
+### Manual Testing with Postman
+
+1. Import the Postman collection (see `docs/postman/`)
+2. Set environment variables:
+   - `BASE_URL`: `http://localhost:8080`
+   - `API_KEY`: Your API key (if applicable)
+3. Run test scenarios
+
+### Test Coverage
+
+Current test coverage: **85%+**
+
+Key test files:
+- `NotificationServiceTest.java`
+- `EmailNotificationProviderTest.java`
+- `NotificationApiControllerTest.java`
+- `ParchmentDataExtractionProcessorTest.java`
+
+---
+
+## Deployment
+
+### Prerequisites
+
+- Java 17+
+- Maven 3.8+
+- SMTP server access (Gmail, SendGrid, etc.)
+- MongoDB (for main application)
+
+### Build
+
+```bash
+mvn clean package -DskipTests
+```
+
+### Run Locally
+
+```bash
+export EMAIL_USERNAME=your-email@gmail.com
+export EMAIL_PASSWORD=your-app-password
+mvn spring-boot:run
+```
+
+### Docker Deployment
+
+```dockerfile
+FROM openjdk:17-jdk-slim
+COPY target/sourceintelligence-service.jar app.jar
+ENV EMAIL_USERNAME=${EMAIL_USERNAME}
+ENV EMAIL_PASSWORD=${EMAIL_PASSWORD}
+ENTRYPOINT ["java", "-jar", "/app.jar"]
+```
+
+Build and run:
+```bash
+docker build -t si-notification-service .
+docker run -p 8080:8080 \
+  -e EMAIL_USERNAME=your-email \
+  -e EMAIL_PASSWORD=your-password \
+  si-notification-service
+```
+
+### Kubernetes Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: app
+        image: si-notification-service:latest
+        env:
+        - name: EMAIL_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: email-credentials
+              key: username
+        - name: EMAIL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: email-credentials
+              key: password
+```
+
+### Health Check
+
+```bash
+curl http://localhost:8080/sourceintelligence-service/actuator/health
+```
+
+Expected response:
+```json
+{
+  "status": "UP",
+  "components": {
+    "mail": {
+      "status": "UP"
+    }
+  }
+}
+```
+
+---
+
+## Monitoring & Logging
+
+### Log Levels
+
+Configure in `application.properties`:
+```properties
+logging.level.com.hireright.sourceintelligence.service.notification=DEBUG
+logging.level.org.springframework.mail=DEBUG
+```
+
+### Key Log Messages
+
+```
+INFO  - Sending email notification to: [user@example.com]
+DEBUG - Email sent successfully. NotificationId: uuid-123
+ERROR - Failed to send email after 3 attempts: SMTP timeout
+WARN  - Async notification queued: uuid-456
+```
+
+### Metrics
+
+Monitor these metrics:
+- Email send success rate
+- Average send time
+- Retry count
+- Queue size (async)
+- Error rate by type
+
+---
+
+## FAQ
+
+**Q: How do I send HTML emails?**  
+A: Set `htmlContent: true` in `EmailNotificationDTO` and provide HTML in the `body` field.
+
+**Q: What's the maximum attachment size?**  
+A: Typically 25MB (depends on SMTP provider limits).
+
+**Q: Can I use a different SMTP provider?**  
+A: Yes, update `spring.mail.*` properties in `application.properties`.
+
+**Q: How do I enable async sending?**  
+A: Set `async: true` in `NotificationRequestDTO`.
+
+**Q: What happens if email sending fails?**  
+A: The system retries 3 times with exponential backoff. If all fail, an error response is returned.
+
+---
+
+## Support & Contact
+
+For issues or questions:
+- **Team**: Source Intelligence Development Team
+- **Email**: si-dev@hireright.com
+- **Jira**: [SI Project Board](https://jira.hireright.com/SI)
+
+---
+
+**Document Version**: 1.0  
+**Last Updated**: 2026-05-05  
+**Author**: Development Team
