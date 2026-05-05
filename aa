@@ -158,6 +158,7 @@ class ParchmentDataExtractionProcessorTest {
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
         when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
         when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.upsert(any(Query.class), any())).thenReturn(bulkOperations);
         when(bulkOperations.execute()).thenReturn(bulkWriteResult);
         when(bulkWriteResult.getModifiedCount()).thenReturn(1);
         when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
@@ -218,6 +219,7 @@ class ParchmentDataExtractionProcessorTest {
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
         when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source1, source2));
         when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.upsert(any(Query.class), any())).thenReturn(bulkOperations);
         when(bulkOperations.execute()).thenReturn(bulkWriteResult);
         when(bulkWriteResult.getModifiedCount()).thenReturn(2);
         when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
@@ -242,6 +244,7 @@ class ParchmentDataExtractionProcessorTest {
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
         when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
         when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.upsert(any(Query.class), any())).thenReturn(bulkOperations);
         when(bulkOperations.execute()).thenReturn(bulkWriteResult);
         when(bulkWriteResult.getModifiedCount()).thenReturn(1);
         when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
@@ -886,19 +889,15 @@ class ParchmentDataExtractionProcessorTest {
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
         when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
         when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.upsert(any(Query.class), any())).thenReturn(bulkOperations);
         when(bulkOperations.execute()).thenReturn(bulkWriteResult);
         when(bulkWriteResult.getModifiedCount()).thenReturn(1);
         when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
 
         processor.processRecords(List.of(record));
 
-        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
-        ArgumentCaptor<BasicDBObject> updateCaptor = ArgumentCaptor.forClass(BasicDBObject.class);
-
-        verify(bulkOperations).updateOne(queryCaptor.capture(), updateCaptor.capture());
-
-        assertNotNull(queryCaptor.getValue());
-        assertNotNull(updateCaptor.getValue());
+        verify(bulkOperations).upsert(any(Query.class), any());
+        verify(bulkOperations).execute();
     }
 
     @Test
