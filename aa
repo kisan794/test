@@ -580,13 +580,13 @@ class ParchmentDataExtractionProcessorTest {
     }
 
     @Test
-    void testPayloadStructure_PayloadAsMap() throws IOException {
+    void testPayloadStructure_EmptyBasicDBObject() throws IOException {
         ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
         Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
 
-        // Set payload as Map instead of BasicDBObject
-        Map<String, Object> payloadMap = new HashMap<>();
-        source.setPayload(payloadMap);
+        // Set payload as empty BasicDBObject
+        BasicDBObject emptyPayload = new BasicDBObject();
+        source.setPayload(emptyPayload);
 
         when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
         when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
@@ -631,15 +631,15 @@ class ParchmentDataExtractionProcessorTest {
     }
 
     @Test
-    void testContactDetails_ContactsWithMapInList() throws IOException {
+    void testContactDetails_ContactsWithBasicDBObjectInList() throws IOException {
         ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
         Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
 
         BasicDBObject payload = new BasicDBObject();
         List<Object> contactsList = new ArrayList<>();
-        Map<String, Object> contactMap = new HashMap<>();
-        contactMap.put("purpose", "");
-        contactsList.add(contactMap);
+        BasicDBObject contactObj = new BasicDBObject();
+        contactObj.put("purpose", "");
+        contactsList.add(contactObj);
         payload.put("contacts", contactsList);
         source.setPayload(payload);
 
@@ -858,3 +858,173 @@ class ParchmentDataExtractionProcessorTest {
         assertNotNull(result);
         assertNotNull(result.get("excelMetadata"));
     }
+
+    @Test
+    void testBulkUpdate_VerifyQueryParameters() throws IOException {
+        ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
+        Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        processor.processRecords(List.of(record));
+
+        verify(mongoTemplate).bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString());
+        verify(bulkOperations).execute();
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
+
+    @Test
+    void testUpdateSource_VerifyUpdateOperations() throws IOException {
+        ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
+        Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        processor.processRecords(List.of(record));
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        ArgumentCaptor<BasicDBObject> updateCaptor = ArgumentCaptor.forClass(BasicDBObject.class);
+
+        verify(bulkOperations).updateOne(queryCaptor.capture(), updateCaptor.capture());
+
+        assertNotNull(queryCaptor.getValue());
+        assertNotNull(updateCaptor.getValue());
+    }
+
+    @Test
+    void testContactDetailsType_WithDifferentTypes() throws IOException {
+        ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
+        Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
+
+        BasicDBObject payload = new BasicDBObject();
+        BasicDBObject contact = new BasicDBObject();
+
+        BasicDBObject contactDetail1 = new BasicDBObject();
+        contactDetail1.put("type", "contactPhysicalAddress");
+
+        BasicDBObject contactDetail2 = new BasicDBObject();
+        contactDetail2.put("type", "contactEmail");
+
+        contact.put("contactDetails", List.of(contactDetail1, contactDetail2));
+        payload.put("contacts", List.of(contact));
+        source.setPayload(payload);
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
+
+    @Test
+    void testContactDetailsWithNullCommunication() throws IOException {
+        ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
+        Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
+
+        BasicDBObject payload = new BasicDBObject();
+        BasicDBObject contact = new BasicDBObject();
+        BasicDBObject contactDetail = new BasicDBObject();
+        contactDetail.put("type", "contactAutomatedServices");
+        contactDetail.put("communication", null);
+
+        contact.put("contactDetails", List.of(contactDetail));
+        payload.put("contacts", List.of(contact));
+        source.setPayload(payload);
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
+
+    @Test
+    void testCommunicationWithNullName() throws IOException {
+        ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
+        Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
+
+        BasicDBObject payload = new BasicDBObject();
+        BasicDBObject contact = new BasicDBObject();
+        BasicDBObject contactDetail = new BasicDBObject();
+        contactDetail.put("type", "contactAutomatedServices");
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put("name", null);
+
+        contactDetail.put("communication", List.of(communication));
+        contact.put("contactDetails", List.of(contactDetail));
+        payload.put("contacts", List.of(contact));
+        source.setPayload(payload);
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+        when(mongoTemplate.bulkOps(eq(BulkOperations.BulkMode.UNORDERED), anyString())).thenReturn(bulkOperations);
+        when(bulkOperations.execute()).thenReturn(bulkWriteResult);
+        when(bulkWriteResult.getModifiedCount()).thenReturn(1);
+        when(bulkWriteResult.getUpserts()).thenReturn(Collections.emptyList());
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(1, result.get("totalSourcesUpdated"));
+
+        verify(elasticsearchService).bulkUpdateAutomatedService(anyString(), anyList());
+    }
+
+    @Test
+    void testNoSourcesUpdated_WhenAllAlreadyHaveCommunication() {
+        ParchmentRecord record = createParchmentRecord("Harvard University", "Cambridge", "MA", "USA");
+        Source source = createSource("EDU-123", "Harvard University", "Cambridge", "Massachusetts", "USA");
+
+        BasicDBObject payload = new BasicDBObject();
+        BasicDBObject contact = new BasicDBObject();
+        BasicDBObject contactDetail = new BasicDBObject();
+        contactDetail.put("type", "contactAutomatedServices");
+
+        BasicDBObject communication = new BasicDBObject();
+        communication.put("name", "Parchment Exchange");
+
+        contactDetail.put("communication", List.of(communication));
+        contact.put("contactDetails", List.of(contactDetail));
+        payload.put("contacts", List.of(contact));
+        source.setPayload(payload);
+
+        when(vendorsRepository.findByVendor("Parchment Exchange")).thenReturn(Optional.of(parchmentVendor));
+        when(mongoTemplate.find(any(Query.class), eq(Source.class), anyString())).thenReturn(List.of(source));
+
+        Map<String, Object> result = processor.processRecords(List.of(record));
+
+        assertNotNull(result);
+        assertEquals(0, result.get("totalSourcesUpdated"));
+
+        verify(vendorsRepository).findByVendor("Parchment Exchange");
+        verify(mongoTemplate).find(any(Query.class), eq(Source.class), anyString());
+        verifyNoInteractions(bulkOperations);
+    }
+}
