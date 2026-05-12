@@ -1,21 +1,15 @@
-Properties file added to classpath: C:\Users\keshav.ladha\instance-http-security.properties
-java.lang.ClassCastException: class hireright.sdk.servlet.CClosableRegistryFilter
-	at java.base/java.lang.Class.asSubclass(Class.java:4102)
-	at hireright.jetty.runner.Runner.configureWebapp(Runner.java:767)
-	at hireright.jetty.runner.Runner.deployWebapp(Runner.java:639)
-	at hireright.jetty.runner.Runner.deployWebapps(Runner.java:372)
-	at hireright.jetty.runner.Runner.runServer(Runner.java:261)
-	at hireright.jetty.runner.Runner.configure(Runner.java:178)
-	at hireright.jetty.runner.Runner.main(Runner.java:809)
-Usage: java [-DDEBUG] [-Djetty.home=dir] -jar jetty-runner.jar [--help|--version] [opts] 
-Options:
- --host host                        - host to run server on (default localhost)
- --port n                           - port to listen on (default 8080)
- --system_resource_root boolean     - indicator for setting host and port as system property 'RESOURCE_ROOT' (default true)
- --system_resource_root_https       - if present, system resource root will be with https
- --webapp-descriptor file           - path to file with newline-separated list of webapps 
- --disable-session-cookies          - disable using cookies for session-ids
- --session-timeout                  - set default session timeout in seconds
-Disconnected from the target VM, address: '127.0.0.1:49275', transport: 'socket'
+<filter>
+    <filter-name>CClosableRegistryFilter</filter-name>
+    <filter-class>hireright.sdk.servlet.CClosableRegistryFilter</filter-class>
+</filter>
+<filter-mapping>
+    <filter-name>CClosableRegistryFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+</filter-mapping>
 
-Process finished with exit code 1
+<dependency>
+    <groupId>hireright.lib</groupId>
+    <artifactId>java_sdk</artifactId>
+    <version>42.6</version>
+    <scope>provided</scope>
+</dependency>
