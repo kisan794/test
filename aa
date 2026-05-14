@@ -406,38 +406,496 @@ return response;
 
 ---
 
-## Sample Request Example
+## Sample Request & Response Examples
 
-### URL
+### Example 1: Criminal Background Check Response
+
+#### Request
 ```
 POST /vendor_api/screening_report?tm=2019-03-06T23:00:32.468
 Content-Type: application/xml
+Accept: application/xml
 ```
 
-### Payload (Criminal Background Check Response)
+#### Request Payload
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<ScreeningRequest>
+<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ClientReferences>
+        <IdValue name="CompanyCode">SWEETY</IdValue>
+        <IdValue name="UserLogin"/>
+        <IdValue name="DomainID">HR-GBR</IdValue>
         <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">201903062300324688375F4F18AB146FCE0531442580A024C</IdValue>
         <IdValue name="HOST_INSTANCE_REF">HR_GBR</IdValue>
         <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-PL-001</IdValue>
         <IdValue name="HOST_ORDER_REF">GA-010119-ABCDE</IdValue>
+        <IdValue name="HOST_DELAY_INFO_NOTE_RECIPIENTS">testrequestor@hireright.com</IdValue>
+        <IdValue name="HOST_DELAY_ACTION_NOTE_RECIPIENTS">testrequestor@hireright.com</IdValue>
+        <IdValue name="HOST_REQUESTOR_NAME">Requestor name</IdValue>
+        <IdValue name="VENDOR_INSTANCE_REF"/>
+        <IdValue name="VENDOR_ORDER_SERVICE_REF"/>
+        <IdValue name="VENDOR_ORDER_REF"/>
+        <IdValue name="allowToContactApplicant">N</IdValue>
     </ClientReferences>
+    <PersonalData>
+        <PersonName>
+            <GivenName>John</GivenName>
+            <MiddleName>Michael</MiddleName>
+            <FamilyName>Doe</FamilyName>
+        </PersonName>
+        <PostalAddress>
+            <CountryCode>US</CountryCode>
+            <PostalCode>22150</PostalCode>
+            <Region>VA</Region>
+            <Municipality>Springfield</Municipality>
+            <DeliveryAddress>
+                <AddressLine>123 Main Street</AddressLine>
+            </DeliveryAddress>
+        </PostalAddress>
+        <ContactMethod>
+            <Use>personal</Use>
+            <Telephone>
+                <FormattedNumber>(703) 555-1234</FormattedNumber>
+            </Telephone>
+            <InternetEmailAddress>john.doe@example.com</InternetEmailAddress>
+        </ContactMethod>
+        <DemographicDetail>
+            <GovernmentId countryCode="US" issuingAuthority="SSA"/>
+            <DateOfBirth>1985-06-15</DateOfBirth>
+        </DemographicDetail>
+    </PersonalData>
     <Screenings>
-        <Screening>
+        <Screening type="criminal" qualifier="x:Criminal Felony &amp; Misdemeanor">
+            <ProducerReferenceId idOwner="urn:hivp.hireright.com">
+                <IdValue name="OrderServiceNo">GA-010119-ABCDE-PL-001</IdValue>
+                <IdValue name="ServiceId">17</IdValue>
+            </ProducerReferenceId>
+            <RequestorReferenceId idOwner="urn:hivp.hireright.com:customer:265467">
+                <IdValue name="CustomerName">SWEETY</IdValue>
+                <IdValue name="CustomerCompanyCode">SWEETY</IdValue>
+            </RequestorReferenceId>
             <ScreeningStatus>
                 <OrderStatus>Complete</OrderStatus>
                 <ResultStatus>Clear</ResultStatus>
-                <DateOrderReported>2019-03-09T14:59:34</DateOrderReported>
+                <DateOrderReceived>2019-03-09T14:59:34</DateOrderReceived>
+                <DateOrderReported>2019-03-09T16:45:22</DateOrderReported>
+                <AdditionalItems type="x:ReportStatus">
+                    <Text>Complete - No Court Record Found</Text>
+                </AdditionalItems>
             </ScreeningStatus>
+            <CountryCode>US</CountryCode>
+            <Region>VA</Region>
+            <County>FAIRFAX</County>
+            <Municipality>SPRINGFIELD</Municipality>
             <CriminalReport qualifier="county">
-                <!-- Criminal record details -->
+                <!-- No records found - empty report -->
             </CriminalReport>
+            <PostalAddress type="criminal">
+                <CountryCode>US</CountryCode>
+                <Region>VA</Region>
+                <County>FAIRFAX</County>
+                <Municipality>SPRINGFIELD</Municipality>
+            </PostalAddress>
         </Screening>
     </Screenings>
 </ScreeningRequest>
 ```
+
+#### Response
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<BasicResponse>
+    <IdValue name="MESSAGE">87654321</IdValue>
+</BasicResponse>
+```
+
+**HTTP Status**: `200 OK`
+
+---
+
+### Example 2: Employment Verification Response
+
+#### Request
+```
+POST /vendor_api/screening_report?tm=2019-03-06T15:30:45.123
+Content-Type: application/xml
+Accept: application/xml
+```
+
+#### Request Payload
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ClientReferences>
+        <IdValue name="CompanyCode">SWEETY</IdValue>
+        <IdValue name="DomainID">HR-GBR</IdValue>
+        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">20190306153045987654321ABCDEF123456789012345678</IdValue>
+        <IdValue name="HOST_INSTANCE_REF">HR_GBR</IdValue>
+        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-EM-001</IdValue>
+        <IdValue name="HOST_ORDER_REF">GA-010119-ABCDE</IdValue>
+        <IdValue name="allowToContactApplicant">Y</IdValue>
+    </ClientReferences>
+    <PersonalData>
+        <PersonName>
+            <GivenName>Sarah</GivenName>
+            <MiddleName>Jane</MiddleName>
+            <FamilyName>Smith</FamilyName>
+        </PersonName>
+        <PostalAddress>
+            <CountryCode>GB</CountryCode>
+            <PostalCode>RG6 7RT</PostalCode>
+            <Region>Berkshire</Region>
+            <Municipality>Reading</Municipality>
+            <DeliveryAddress>
+                <AddressLine>45 Oxford Road</AddressLine>
+            </DeliveryAddress>
+        </PostalAddress>
+        <ContactMethod>
+            <Use>personal</Use>
+            <Telephone>
+                <FormattedNumber>+44 7700 900123</FormattedNumber>
+            </Telephone>
+            <InternetEmailAddress>sarah.smith@example.com</InternetEmailAddress>
+        </ContactMethod>
+        <DemographicDetail>
+            <DateOfBirth>1990-03-22</DateOfBirth>
+        </DemographicDetail>
+    </PersonalData>
+    <Screenings>
+        <Screening serviceID="4">
+            <Employment type="Paid">
+                <EmployerOrgName>University of British Columbia</EmployerOrgName>
+                <PositionHistory currentEmployer="false">
+                    <Title>Research Coordinator</Title>
+                    <OrgName>
+                        <OrganizationName>University of British Columbia</OrganizationName>
+                    </OrgName>
+                    <StartDate>
+                        <YearMonth>2015-09</YearMonth>
+                    </StartDate>
+                    <EndDate>
+                        <YearMonth>2018-08</YearMonth>
+                    </EndDate>
+                    <Compensation>
+                        <EndingCompensation intervalType="yearly" currency="CAD">65000</EndingCompensation>
+                    </Compensation>
+                    <ReasonForLeaving>Career advancement</ReasonForLeaving>
+                    <Verification>
+                        <PermissionToContact>YES</PermissionToContact>
+                        <Status>Verified</Status>
+                        <VerifiedBy>HR Department</VerifiedBy>
+                        <VerificationDate>2019-03-06</VerificationDate>
+                    </Verification>
+                </PositionHistory>
+            </Employment>
+            <PostalAddress type="employment">
+                <CountryCode>CA</CountryCode>
+                <Region>British Columbia</Region>
+                <Municipality>Vancouver</Municipality>
+            </PostalAddress>
+            <ContactInfo>
+                <ContactMethod>
+                    <Telephone>
+                        <FormattedNumber>+1-604-822-2211</FormattedNumber>
+                    </Telephone>
+                </ContactMethod>
+            </ContactInfo>
+        </Screening>
+    </Screenings>
+</ScreeningRequest>
+```
+
+#### Response
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<BasicResponse>
+    <IdValue name="MESSAGE">87654322</IdValue>
+</BasicResponse>
+```
+
+**HTTP Status**: `200 OK`
+
+---
+
+### Example 3: Education Verification Response
+
+#### Request
+```
+POST /vendor_api/screening_report?tm=2019-03-07T10:15:30.456
+Content-Type: application/xml
+Accept: application/xml
+```
+
+#### Request Payload
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ClientReferences>
+        <IdValue name="CompanyCode">SWEETY</IdValue>
+        <IdValue name="DomainID">HR-GBR</IdValue>
+        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">20190307101530456789FEDCBA987654321012345678901234</IdValue>
+        <IdValue name="HOST_INSTANCE_REF">HR_GBR</IdValue>
+        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-ED-001</IdValue>
+        <IdValue name="HOST_ORDER_REF">GA-010119-ABCDE</IdValue>
+        <IdValue name="allowToContactApplicant">Y</IdValue>
+    </ClientReferences>
+    <PersonalData>
+        <PersonName>
+            <GivenName>David</GivenName>
+            <MiddleName>Alexander</MiddleName>
+            <FamilyName>Johnson</FamilyName>
+        </PersonName>
+        <PostalAddress>
+            <CountryCode>GB</CountryCode>
+            <PostalCode>KT6 7QG</PostalCode>
+            <Region>Surrey</Region>
+            <Municipality>Surbiton</Municipality>
+            <DeliveryAddress>
+                <AddressLine>78 Kingston Road</AddressLine>
+            </DeliveryAddress>
+        </PostalAddress>
+        <ContactMethod>
+            <Use>personal</Use>
+            <Telephone>
+                <FormattedNumber>+44 20 8390 1234</FormattedNumber>
+            </Telephone>
+            <InternetEmailAddress>david.johnson@example.com</InternetEmailAddress>
+        </ContactMethod>
+        <DemographicDetail>
+            <DateOfBirth>1992-11-08</DateOfBirth>
+        </DemographicDetail>
+    </PersonalData>
+    <Screenings>
+        <Screening serviceID="3">
+            <Education>
+                <School>
+                    <SchoolName>University of Toronto</SchoolName>
+                </School>
+                <Degree graduated="YES" degreeType="Bachelors">
+                    <DegreeName>Bachelor of Science</DegreeName>
+                    <DegreeMajor>
+                        <Name>Computer Science</Name>
+                        <DegreeMeasure>
+                            <MeasureSystem>GPA</MeasureSystem>
+                            <MeasureValue>
+                                <StringValue>3.75</StringValue>
+                            </MeasureValue>
+                        </DegreeMeasure>
+                    </DegreeMajor>
+                    <DatesOfAttendance>
+                        <StartDate>
+                            <YearMonth>2010-09</YearMonth>
+                        </StartDate>
+                        <EndDate>
+                            <YearMonth>2014-05</YearMonth>
+                        </EndDate>
+                    </DatesOfAttendance>
+                    <DegreeDate>
+                        <YearMonth>2014-06</YearMonth>
+                    </DegreeDate>
+                    <Verification>
+                        <Status>Verified</Status>
+                        <VerifiedBy>Registrar's Office</VerifiedBy>
+                        <VerificationDate>2019-03-07</VerificationDate>
+                    </Verification>
+                </Degree>
+            </Education>
+            <PostalAddress type="education">
+                <CountryCode>CA</CountryCode>
+                <Region>Ontario</Region>
+                <Municipality>Toronto</Municipality>
+            </PostalAddress>
+            <ContactInfo>
+                <ContactMethod>
+                    <Telephone>
+                        <FormattedNumber>+1-416-978-2011</FormattedNumber>
+                    </Telephone>
+                </ContactMethod>
+            </ContactInfo>
+            <PersonName>
+                <GivenName>David</GivenName>
+                <MiddleName>Alexander</MiddleName>
+                <FamilyName>Johnson</FamilyName>
+            </PersonName>
+        </Screening>
+    </Screenings>
+</ScreeningRequest>
+```
+
+#### Response
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<BasicResponse>
+    <IdValue name="MESSAGE">87654323</IdValue>
+</BasicResponse>
+```
+
+**HTTP Status**: `200 OK`
+
+---
+
+### Example 4: Error Response - Missing Transaction ID
+
+#### Request Payload (Invalid)
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ClientReferences>
+        <IdValue name="CompanyCode">SWEETY</IdValue>
+        <IdValue name="DomainID">HR-GBR</IdValue>
+        <!-- Missing INSTANCE_EXCHANGE_TRANSACTION_ID -->
+        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-PL-001</IdValue>
+    </ClientReferences>
+    <Screenings>
+        <Screening type="criminal">
+            <ScreeningStatus>
+                <OrderStatus>Complete</OrderStatus>
+            </ScreeningStatus>
+        </Screening>
+    </Screenings>
+</ScreeningRequest>
+```
+
+#### Error Response
+```
+HTTP/1.1 500 Internal Server Error
+Content-Type: text/plain
+
+java.lang.RuntimeException: Transaction is absent
+```
+
+---
+
+### Example 5: Error Response - OSDS Not Found
+
+#### Request Payload (Invalid Transaction ID)
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ClientReferences>
+        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">INVALID_TRANSACTION_ID_12345</IdValue>
+        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-PL-001</IdValue>
+    </ClientReferences>
+    <Screenings>
+        <Screening type="criminal">
+            <ScreeningStatus>
+                <OrderStatus>Complete</OrderStatus>
+            </ScreeningStatus>
+        </Screening>
+    </Screenings>
+</ScreeningRequest>
+```
+
+#### Error Response
+```
+HTTP/1.1 500 Internal Server Error
+Content-Type: text/plain
+
+java.lang.RuntimeException: OSDS not found
+Properties: {referenceID=INVALID_TRANSACTION_ID_12345}
+```
+
+---
+
+## Response Details
+
+### BasicResponse Structure
+
+The `BasicResponse` XML structure is defined in the VendorAPI schema:
+
+```xml
+<xs:element name="BasicResponse">
+    <xs:complexType>
+        <xs:complexContent>
+            <xs:extension base="EntityIdType"/>
+        </xs:complexContent>
+    </xs:complexType>
+</xs:element>
+
+<xs:complexType name="EntityIdType">
+    <xs:sequence>
+        <xs:element name="IdValue" type="IdValueType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="idOwner" type="xs:string" use="optional"/>
+</xs:complexType>
+
+<xs:complexType name="IdValueType">
+    <xs:simpleContent>
+        <xs:extension base="xs:string">
+            <xs:attribute name="name" type="xs:string" use="optional"/>
+        </xs:extension>
+    </xs:simpleContent>
+</xs:complexType>
+```
+
+### Response Fields
+
+| Field Name | Type | Description | Example |
+|------------|------|-------------|---------|
+| **MESSAGE** | String | Unique identifier of the created CMessage record | `87654321` |
+
+### Message ID Usage
+
+The returned `MESSAGE` ID can be used for:
+
+1. **Tracking**: Monitor message processing status in the MESSAGE table
+2. **Debugging**: Lookup message details, payload, and processing logs
+3. **Support**: Reference in support tickets for troubleshooting
+4. **Auditing**: Correlate vendor responses with internal processing
+
+### Message Processing States
+
+After a message is created, it goes through several states:
+
+| State | Description |
+|-------|-------------|
+| **NEW** | Message created and queued for processing |
+| **PROCESSING** | Adapter actively processing the message |
+| **PROCESSED** | Successfully processed and applied to order service |
+| **ERROR** | Processing failed - check error logs |
+| **RETRY** | Failed but scheduled for retry |
+
+---
+
+## Request Payload Requirements
+
+### Mandatory Fields
+
+All screening report requests MUST include:
+
+1. **ClientReferences/INSTANCE_EXCHANGE_TRANSACTION_ID**
+   - Format: 50-character alphanumeric string
+   - Purpose: Links response to original screening request
+   - Example: `201903062300324688375F4F18AB146FCE0531442580A024C`
+
+2. **ClientReferences/HOST_ORDER_SERVICE_REF**
+   - Format: Order service reference code (e.g., `GA-010119-ABCDE-PL-001`)
+   - Purpose: Identifies specific screening service being updated
+   - Used for validation and logging
+
+3. **Screenings Section**
+   - Must contain at least one `<Screening>` element
+   - Screening type must match the original request type
+   - Status information required for processing
+
+### Optional Fields
+
+- **Query Parameter `tm`**: Timestamp of vendor event triggering the response
+- **PersonalData**: Applicant information (for validation/matching)
+- **ClientReferences/HOST_ORDER_REF**: Overall order reference
+- **Verification Details**: Provider-specific verification metadata
+
+### Common Client References
+
+| Reference Name | Purpose | Example |
+|----------------|---------|---------|
+| `INSTANCE_EXCHANGE_TRANSACTION_ID` | **Required** - Unique transaction identifier | `2019030623...` |
+| `HOST_INSTANCE_REF` | Source HireRight instance | `HR_GBR`, `HR_USA` |
+| `HOST_ORDER_SERVICE_REF` | Order service code | `GA-010119-ABCDE-PL-001` |
+| `HOST_ORDER_REF` | Overall order reference | `GA-010119-ABCDE` |
+| `VENDOR_INSTANCE_REF` | Vendor's instance identifier | Vendor-specific |
+| `VENDOR_ORDER_SERVICE_REF` | Vendor's reference for screening | Vendor-specific |
+| `allowToContactApplicant` | Permission to contact applicant | `Y`, `N` |
 
 ---
 
