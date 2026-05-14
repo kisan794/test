@@ -1,443 +1,472 @@
-# CScreeningResource - addScreening Complete End-to-End Flow
+# CScreeningReportResource - addScreening Complete End-to-End Flow
 
 ## Overview
 
-The `addScreening` method  in `CScreeningResource` is the main endpoint for creating background screening orders through the Vendor API. This document provides a comprehensive end-to-end flow of how a screening request is processed.
+The `addScreening` method in `CScreeningReportResource` is the endpoint for receiving screening report updates (responses) from external data sources/vendors. This document provides a comprehensive end-to-end flow of how a screening report response is processed.
 
 ---
 
 ## API Endpoint Details
 
-- **Path**: `/screening`
+- **Path**: `/screening_report`
 - **HTTP Method**: `POST`
 - **Consumes**: `application/xml`
 - **Produces**: `application/xml`
-- **Request Body**: `CScreeningRequest` (XML)
+- **Request Body**: XML payload containing screening report data
 - **Response**: `BasicResponse` (XML)
+- **Query Parameters**: `tm` (optional timestamp)
 
 ---
 
 ## High-Level Process Flow
 
 ```
-1. Receive CScreeningRequest (XML)
-2. Execute within Database Transaction
-3. Create Order (CVendorOrderBuilder)
-4. Load Order Services
-5. Save Client References
-6. Store Order Context (if provided)
-7. Initialize Document Synchronization
-8. Save Order Service Properties
-9. Return BasicResponse with Order/OrderService References
+1. Receive Screening Report XML Request
+2. Parse Query String Parameters (extract timestamp)
+3. Extract Transaction ID from Request Payload
+4. Execute within Database Transaction
+5. Lookup Order Service Data Source (OSDS) by Transaction ID
+6. Retrieve Response Adapter Configuration
+7. Check Document Sync Requirements
+8. Create CMessage with Adapter and Payload
+9. Enqueue Message for Processing
+10. Return BasicResponse with Message ID
 ```
 
 ---
 
 ## Detailed Step-by-Step Flow
 
-### 1. Request Reception & Transaction Initiation
+### 1. Request Reception & Query Parameter Extraction
 
 ```java
-public BasicResponse cr(@RequestBody final CScreeningRequest request)
+public BasicResponse addScreening(final HttpServletRequest request)
+    throws Exception
+{
+    CMessage message = DB.execute(new Callable<CMessage>()
+    {
+        @Override
+        public CMessage call() 
+            throws Exception
+        {
+            DB.requestTransaction();
+            
+            Map<String, String> params = QueryStringParser.parse(request.getQueryString());
+            String sTimestamp = params != null ? params.get("tm") : null;
+            
+            return CMessageFactory.createAndEnqueueMessage(
+                    "Datasource response", sTimestamp, IOUtils.toString(request.getInputStream()));
+        }
+    });
 ```
 
-- The endpoint receives a `CScreeningRequest` object deserialized from XML
+**Key Operations:**
 - Wraps all operations in `DB.execute()` with transaction support
-- Calls `DB.requestTransaction()` to ensure all operations are atomic
-
-**CScreeningRequest Structure:**
-- Extends `COrderConfiguration`
-- Contains: organization, client references, personal data, screenings
-- Optional: `Context` (Base64-encoded ZIP containing fulfilment context XML)
+- Calls `DB.requestTransaction()` to ensure atomicity
+- Extracts optional timestamp parameter `tm` from query string
+- Reads raw XML payload from request input stream
+- Delegates to `CMessageFactory.createAndEnqueueMessage()`
 
 ---
 
-### 2. Order Creation (`createOrder`)
-
-**Entry Point**: `createOrder(request)`
-
-#### 2.1 Get Order Builder Instance
-```java
-COrderBuilder builder = CVendorOrderBuilder.getInstance(request);
-```
-
-**CVendorOrderBuilder responsibilities:**
-- Extract `DomainID` from request client references (required)
-- Lookup Domain using `CDomainFactory.getDomain()`
-- Extract or lookup `CompanyCode` (from request or domain properties)
-- Load `CCustomer` by company code and validate it's active
-- Extract or lookup `UserLogin` (from request or domain properties)
-- Load `CCustomerUser` and validate it's active
-- Return initialized `COrderBuilder` with domain, customer, and user
-
-#### 2.2 Build Order
-```java
-COrder order = builder.buildOrder(request, true);
-```
-
-**buildOrder Process:**
-
-**2.2.1 Create Order Definition**
-- Load `COrderDefinition` for customer
-- Create order definition for user
-
-**2.2.2 Build Applicant**
-- Extract personal data from request
-- Create `CApplicant` with sanitized data (name, SSN, DOB, etc.)
-
-**2.2.3 Build Current Address**
-- Extract address from personal data
-- Create `CAddress` and attach to applicant
-
-**2.2.4 Create COrder Object**
-```java
-COrder order = new COrder(user.getID(), applicant, null, orderDefinition, null);
-```
-
-**2.2.5 Set Job Location** (if organization postal address provided)
-- Extract organization postal address
-- Create job location address
-- Update order with job location
-
-**2.2.6 Persist Order**
-```java
-if (!order.create()) {
-    throw new CRuntimeException("Order create error.");
-}
-```
-
-**2.2.7 Create Application Entry** (when `bCreateApplicationOrder = true`)
-- Build application entry for applicant
-- Link application to order
-
-**2.2.8 Set Prior Personal Data** (if provided)
-- Process prior name/address history
-
-**2.2.9 Build and Add Services**
-```java
-order.getServices(); // Initialize internal services list
-for (CScreening screening : screenings) {
-    CAbstractService service = buildService(order, screening);
-    order.addService(service);
-}
-```
-
-**Service Types Supported:**
-- Criminal Background Checks (`CCriminalService`)
-- Employment Verification (`CEmploymentService`)
-- Education Verification (`CEducationService`)
-- Reference Checks (`CReferenceService`)
-- Military Service (`CMilitaryService`)
-- Generic Services (`CGenericService`)
-
-**2.2.10 Save Client and Applicant References**
-```java
-for (CNameValue nameValue : request.getClientReferences()) {
-    order.savePropertyToDB(nameValue.getName(), nameValue.getValue());
-}
-```
-
-**2.2.11 Create Subrequests**
-```java
-order.createSubrequests();
-```
-
-**2.2.12 Add Questions & Personal Details** (if single order service)
-- Add screening questions to order service
-- Add personal details (e.g., for professional references)
-
-**2.2.13 Update Service Name Transliteration**
-
-**2.2.14 Validate No Unordered Services**
-- Check for services that failed to order
-- Throw exception if any unordered services exist
-
-**2.2.15 Submit Order**
-```java
-order.submit();
-```
-- Triggers order submission workflow
-- Initiates background check processing
-
-#### 2.3 Handle Order Code (Optional Replacement Logic)
-```java
-String sOrderCode = request.getClientReference("ORDER_CODE");
-if (CStringUtils.isNotEmpty(sOrderCode)) {
-    Long nOldOrderID = COrderLookup.findByRegID(sOrderCode);
-    if (nOldOrderID != null) {
-        COrderProperty.saveProperty(nOldOrderID, "NEW_ORDER_ID", order.getID().toString());
-        COrderProperty.saveProperty(order.getID(), "OLD_ORDER_ID", nOldOrderID.toString());
-        COrderManager.deleteLogically(nOldOrderID);
-    }
-}
-```
-- Links new order to old order if ORDER_CODE is provided
-- Logically deletes the old order
-
----
-
-### 3. Load Order Services
+### 2. Transaction ID Extraction from XML Payload
 
 ```java
-List<COrderService> orderServices = COrderServiceManager.load(order.getID());
-```
-- Retrieves all order services associated with the created order
-- Typically one order service per screening request
-
----
-
-### 4. Save Client References (`saveClientReferences`)
-
-Saves various client-provided references as order properties:
-
-#### 4.1 Host Instance Reference
-```java
-String sHostInstanceRef = request.getClientReference(EHostReference.HOST_INSTANCE_REF.getPropertyName());
-if (sHostInstanceRef != null) {
-    CInstanceDomain instanceDomain = CInstanceDomainFactory.search(sHostInstanceRef);
-    COrderProperty.saveProperty(nOrderID, "HOST_INSTANCE_REF", instanceDomain.getDomainID(), true);
-}
-```
-
-#### 4.2 Host Main Order Reference (as FlexField)
-```java
-String sHostMainOrderRef = request.getClientReference("HOST_MAIN_ORDER_REF");
-if (!CStringUtils.isEmpty(sHostMainOrderRef)) {
-    CFlexFieldDefinition flexFieldDefinition = 
-        CFlexFieldDefinitionList.findDefinition(null, CCustomer.OBJECT_CLASS, "COMMON", true, "HostMainOrderReference");
-    if (flexFieldDefinition != null) {
-        CFlexField.create(null, flexFieldDefinition, COrder.OBJECT_CLASS, String.valueOf(nOrderID), sHostMainOrderRef);
-    }
-}
-```
-
-#### 4.3 Standard Order Properties
-Saves the following references as order properties:
-- `HOST_REQUESTOR_NAME` - Requestor's name
-- `HOST_ORDER_SERVICE_REF` - Host system order service reference
-- `HOST_ORDER_REF` - Host system order reference
-- `HOST_DELAY_INFO_NOTE_RECIPIENTS` - Recipients for delay info notifications
-- `HOST_DELAY_ACTION_NOTE_RECIPIENTS` - Recipients for delay action notifications
-
-#### 4.4 Regulatory Properties
-- `REGULATED_EMPLOYMENT_FLAG_7_YEARS`
-- `REGULATION` - Regulation ID
-- `REGULATION_FCA_ROLE_TYPE` - FCA role type
-- `REGULATION_MAS_ROLE_TYPE` - MAS role type
-- `REGULATION_ASIC_ROLE_TYPE` - ASIC role type
-- `REGULATION_HK_ROLE_TYPE` - Hong Kong role type
-- `REGULATION_MALAYSIA_ROLE_TYPE` - Malaysia role type
-- `REGULATION_REGISTRATION_NUMBER`
-- `REGULATION_COMPANY_NAME`
-- `REGULATION_DEPARTMENT`
-- `REGULATION_CONTACT_INFO`
-
-#### 4.5 Verification & Configuration Properties
-- `VS-814 SPELLING` - Spelling configuration
-- `ALWAYS_FIRST_LAUNCH_TO_MANUAL_QUEUE` - Manual queue routing flag
-- `ICOVER_API_ALWAYS_ROUTE_TO_MANUAL_QUEUE` - iCover API manual routing
-- `SALARY_RESTRICTED` - Salary restriction flag
-- `ALLOW_CONTACT_APPLICANT` - Permission to contact applicant
-- `EDUCATION_VERIFY_HIGH_SCHOOL_AT_SOURCE` - High school verification flag
-
-#### 4.6 Employment Verification Data Source Properties
-- `EMPLOYMENT_EXPERIAN` - Experian data source flag
-- `EMPLOYMENT_EXPERIAN_DATA_SET` - Experian dataset
-- `EMPLOYMENT_EQUIFAX` - Equifax data source flag
-- `EMPLOYMENT_EQUIFAX_DATA_SET` - Equifax dataset
-
----
-
-### 5. Store Order Context (`storeOrderContext`)
-
-**Triggered when**: Request contains a `Context` element
-
-```java
-String sContext = request.getContext();
-if (!CStringUtils.isEmpty(sContext)) {
-    storeOrderContext(order, sContext);
-}
-```
-
-**Process:**
-1. **Decode Context**: Base64 decode the context string
-2. **Unzip**: Decompress using `CArchiverZip.unzip()`
-3. **Create Document**:
-   - Document type: `DOC_TYPE_CTX` (222)
-   - Body type: Text
-   - Content: Context XML
-   - Charset: US-ASCII
-   - Expiration: 90 days from creation
-   - Linked to order
-4. **Store Document**: Persist using `CDocumentFactory.storeDocument()`
-5. **Extract Company Name**:
-   - Parse context XML
-   - Extract `Customer.LEGAL_NAME` or `Customer.NAME`
-   - Save as order property `CTX_COMPANY_NAME`
-   - Used by TALX/HSCH PL/SQL adapters
-
----
-
-### 6. Initialize Document Synchronization (`initDocumentSync`)
-
-```java
-initDocumentSync(order.getID());
-```
-
-**Purpose**: Triggers document synchronization between systems
-
-**Process:**
-1. **Immediate Event**: Create event 755 (START_DOC_SYNC) for BASE domain
-   - Triggers sync for DB and JR (Job Runner)
-2. **Delayed Event**: Schedule event 755 for 5 minutes in the future
-   - Triggers sync for OWC (Order Workflow Controller)
-
-```java
-CProperties properties = new CProperties();
-properties.setProperty("orderID", nOrderID);
-CEvent.create(EVENT_TYPE_START_DOC_SYNC, "BASE", properties); // Immediate
-addFutureEvent(EVENT_TYPE_START_DOC_SYNC, "BASE", properties, 
-    new DateTime().plusMinutes(5).toDate()); // Delayed (OWC)
-```
-
----
-
-### 7. Save Order Service Properties
-
-**Conditional Properties** (saved only if order services exist):
-
-```java
-if (!orderServices.isEmpty()) {
-    COrderService orderService = orderServices.iterator().next();
+public static CMessage createMessage(String sSubject, String tm, String payload) throws Exception 
+{
+    Document document = DocumentHelper.parseText(payload);
+    String sTransactionID = document.selectSingleNode(
+        "//ClientReferences/IdValue[@name='INSTANCE_EXCHANGE_TRANSACTION_ID']").getText();
     
-    // Employment verification method flag
-    if (Logical.isTrue(request.getClientReference("rVerificationMethod"))) {
-        COrderServiceProperty.saveProperty(orderService.getIDLong(),
-            COrderServiceProperties.EMPLOYMENT_SHOW_VERIFIED_WITH_DOCS_FLAG, Logical.YES_SHORT);
+    if (sTransactionID == null)
+    {
+        throw new CRuntimeException("Transaction is absent");
+    }
+```
+
+**Key Operations:**
+- Parses XML payload using DOM4J
+- Extracts `INSTANCE_EXCHANGE_TRANSACTION_ID` from ClientReferences section
+- Validates that transaction ID is present (critical for tracking)
+- Transaction ID links the response to the original screening request
+
+**Example XML Structure:**
+```xml
+<ScreeningRequest>
+    <ClientReferences>
+        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">201903062300324688375F4F18AB146FCE0531442580A024C</IdValue>
+        <!-- Other references -->
+    </ClientReferences>
+    <Screenings>
+        <!-- Screening data -->
+    </Screenings>
+</ScreeningRequest>
+```
+
+---
+
+### 3. Tenant Resolution & Multi-tenant Execution
+
+```java
+String tenantCode = getTenantCodeByTransactionID(sTransactionID);
+
+return CMultitenantDB.execute(tenantCode, () -> {
+    // Multi-tenant context execution
+});
+```
+
+**Key Operations:**
+- Determines tenant/customer context from transaction ID
+- Executes remaining operations within correct tenant database context
+- Ensures data isolation in multi-tenant environment
+
+---
+
+### 4. Order Service Data Source (OSDS) Lookup
+
+```java
+Session session = CSessionFactory.getSessionFactory().getCurrentSession();
+COrderServiceDataSource osds = (COrderServiceDataSource) session.createCriteria(COrderServiceDataSource.class)
+        .add(Restrictions.eq("referenceID", sTransactionID))
+        .uniqueResult();
+
+CProperties properties = new CProperties().setProperty("referenceID", sTransactionID);
+
+if(osds == null)
+{
+    throw new CRuntimeException("OSDS not found", properties);
+}
+
+Long nOrderServiceID = osds.getOrderServiceID();
+```
+
+**Key Operations:**
+- Uses Hibernate to query `ORDER_SERVICE_DATASOURCE` table
+- Searches by `referenceID` matching the transaction ID
+- OSDS represents the data source assignment for a specific screening service
+- Extracts `orderServiceID` for linking message to the correct screening
+
+**OSDS Role:**
+- Links a screening request (order service) to an external data source/vendor
+- Stores transaction ID for tracking vendor communication
+- Contains provider/adapter configuration
+
+---
+
+### 5. Response Adapter Retrieval
+
+```java
+String sDataAdapter = getResponseAdapter(osds);
+
+if(sDataAdapter == null)
+{
+    properties.setProperty("providerID", osds.getProviderID());
+    properties.setProperties(osds.getProperties());
+    throw new CRuntimeException("Response adapter is not set", properties);
+}
+```
+
+**getResponseAdapter Logic:**
+```java
+private static String getResponseAdapter(COrderServiceDataSource osds)
+{
+    CProperties properties = null;
+    
+    if (osds.getProviderID() != null)
+    {
+        CProvider provider = CProviderFactory.loadProvider(osds.getProviderID());
+        properties = provider.getProperties2();
+    }
+    else
+    {
+        CProperties osdsProperties = osds.getProperties();
+        if (CContentProvider.OBJECT_CLASS.equals(osdsProperties.getProperty("assignedActorClass")))
+        {
+            String sProviderID = osdsProperties.getProperty("assignedActorID");
+            
+            if (CStringUtils.isNumber(sProviderID))
+            {
+                properties = CContentProviderFactory.getProviderProperties(Long.parseLong(sProviderID));
+            }
+            else
+            {
+                throw new CRuntimeException("Provider is not specified");
+            }
+        }
     }
     
-    // Education grades creation flag
-    if (Logical.isTrue(request.getClientReference("createOrderEducationGrades"))) {
-        COrderServiceProperty.saveProperty(orderService.getIDLong(),
-            COrderServiceProperties.CREATE_ORDER_EDUCATION_GRADES, Logical.YES_SHORT);
-    }
+    return properties != null 
+            ? properties.getProperty("RESPONSE_ADAPTER")
+            : null;
+}
+```
+
+**Key Operations:**
+- Retrieves adapter ID from provider or content provider configuration
+- Adapter ID identifies the Java class that will process the response
+- Example adapters: `TALX_RESPONSE`, `HSCH_RESPONSE`, etc.
+- Adapter class contains business logic for parsing and applying vendor responses
+
+---
+
+### 6. Document Synchronization Check
+
+```java
+COrderServiceProperty vendorHostProp = COrderServiceProperty.getPropertyByName(
+    nOrderServiceID.longValue(), EVendorReference.VENDOR_INSTANCE_REF.getPropertyName());
+
+if (vendorHostProp != null) 
+{
+    CDomain vendorDomain = CDomainFactory.getDomain(vendorHostProp.getValue());
     
-    // MOM (Ministry of Manpower) process flag
-    if (Logical.isTrue(request.getClientReference("packPropertyMomProcess"))) {
-        COrderProperty.saveProperty(orderService.getOrderID(),
-            CPackProperty.PROP_PACK_PROPERTY_MOM_PROCESS, Logical.YES_SHORT);
+    if (vendorDomain != null && Logical.isTrue(
+        CStringUtils.nvl(vendorDomain.getProperty("INSTANCE_EXCHANGE_DOCUMENT_SYNC"), Logical.YES_SHORT)))
+    {
+        initDocumentSync(nOrderServiceID);	
     }
 }
 ```
 
+**Key Operations:**
+- Checks if vendor requires document synchronization
+- Looks up `VENDOR_INSTANCE_REF` property on order service
+- If vendor domain has `INSTANCE_EXCHANGE_DOCUMENT_SYNC` enabled, triggers sync
+- Creates Event 755 (START_DOC_SYNC) to initiate document exchange
+
 ---
 
-### 8. Build and Return Response
+### 7. CMessage Creation
+
+```java
+CMessage result = new CMessage(sDataAdapter, "BASE", 3, sSubject);
+result.setProperty("orderServiceID", nOrderServiceID.toString());
+result.setProperty("transactionID", sTransactionID);
+result.setProperty("tm", tm);
+```
+
+**Key Operations:**
+- Creates message with adapter ID, domain ("BASE"), priority (3), and subject
+- Attaches critical metadata:
+  - `orderServiceID`: Links message to specific screening
+  - `transactionID`: Tracks request/response correlation
+  - `tm`: Timestamp of triggering event
+
+---
+
+### 8. Payload Encoding & Attachment
+
+```java
+if(CInstanceParameter.NATIONAL_INSTANCE_US.equals(
+    CInstanceParameter.getNationalInstanceId()) && !Charset.forName("US-ASCII")
+    .newEncoder()
+    .canEncode(payload))
+{
+    result.addPayload(CMessagePayload.BODY_TYPE_BASE64,
+        Base64.getEncoder().encodeToString(payload.getBytes()),
+        MediaType.APPLICATION_XML_VALUE, "base64");
+}
+else
+{
+    result.addPayload(CMessagePayload.BODY_TYPE_TEXT, payload, 
+        MediaType.APPLICATION_XML_VALUE, "7bit");
+}
+```
+
+**Key Operations:**
+- Checks if payload contains non-ASCII characters
+- For US instances with special characters: Base64 encodes payload
+- Otherwise: Stores payload as plain text
+- Content-Type: `application/xml`
+- Ensures proper character encoding across systems
+
+---
+
+### 9. Message Persistence & Enqueueing
+
+```java
+CMessageManager.create(result);
+return result;
+```
+
+**Key Operations:**
+- Persists message to `MESSAGE` table in database
+- Message enters processing queue
+- Background message processing framework picks up message
+- Adapter specified in message is invoked to process payload
+- Adapter updates order service with screening results
+
+---
+
+### 10. Build and Return Response
 
 ```java
 BasicResponse response = new BasicResponse();
-if (order != null) {
-    IdValueFacade references = new IdValueFacade()
-        .set(ScreeningService.EResponseParam.ORDER.name(), order.getRequestRegID());
-    
-    if (!orderServices.isEmpty()) {
-        COrderService orderService = orderServices.iterator().next();
-        references.set(ScreeningService.EResponseParam.ORDER_SERVICE.name(), orderService.getCode());
-    }
-    
-    response.getIdValues().addAll(references.getAll());
+
+if (message != null)
+{
+    response.getIdValues().addAll(new IdValueFacade()
+            .set(ScreeningReportService.EResponseParam.MESSAGE.name(), message.getID().toString())
+            .getAll());
 }
+
 return response;
 ```
 
 **Response Structure:**
 ```xml
 <BasicResponse>
-    <IdValue name="ORDER" value="[Order Registration ID]"/>
-    <IdValue name="ORDER_SERVICE" value="[Order Service Code]"/>
+    <IdValue name="MESSAGE">12345678</IdValue>
 </BasicResponse>
 ```
 
+**Key Operations:**
+- Returns message ID to caller
+- Message ID can be used for tracking/debugging
+- Confirms successful receipt and enqueueing of response
+
 ---
 
-## Database Transaction Behavior
+## Database Objects Involved
 
-All operations occur within a single database transaction:
-- If any step fails, entire transaction is rolled back
-- Order creation, property saving, document storage are atomic
-- `DB.requestTransaction()` ensures consistency
+### Core Tables
+1. **ORDER_SERVICE_DATASOURCE** - Links order services to data sources
+2. **ORDER_SERVICE** - Individual screening services within an order
+3. **ORDER_SERVICE_PROPERTY** - Properties/configuration for order services
+4. **MESSAGE** - Queued messages for asynchronous processing
+5. **MESSAGE_PAYLOAD** - Actual XML payload data
+6. **PROVIDER** - External vendor/provider configuration
+7. **CONTENT_PROVIDER** - Alternative provider configuration
+
+---
+
+## Message Processing Architecture
+
+### Message Flow After Enqueueing
+
+```
+1. CMessage saved to MESSAGE table
+2. Background Job Runner queries for pending messages
+3. Message picked up based on adapter ID and priority
+4. Adapter class instantiated and invoked
+5. Adapter parses XML payload
+6. Adapter updates ORDER_SERVICE with results
+7. Adapter may trigger additional events/workflows
+8. Message marked as processed
+```
+
+### Common Adapters
+- **TALX_RESPONSE** - TALX employment verification responses
+- **HSCH_RESPONSE** - HSCH criminal background check responses
+- **KWIKSCREEN_KS_CALLBACK** - KwikScreen responses
+- **ADVANCEDSEARCH_RESPONSE** - Advanced search responses
 
 ---
 
 ## Error Handling
 
-**Exception Types:**
-- `CVendorApiException` - Vendor API specific errors
-- `COrderException` - Order creation/processing errors
-- `COrderServiceException` - Service-related errors
-- `SQLException` - Database errors
-- `IOException` - Document/context processing errors
-- `DocumentException` - XML parsing errors
+### Validation Errors
+- **Missing Transaction ID**: Throws `CRuntimeException` immediately
+- **OSDS Not Found**: Transaction ID doesn't match any pending request
+- **Response Adapter Not Set**: Provider configuration incomplete
+- **Invalid XML**: Parsing fails at Document.parse step
 
-**Error Response:**
-- Handled by `AResource.handleError()`
-- Logs error with trace ID
-- Returns HTTP 500 with error details
-
----
-
-## Key Classes and Their Roles
-
-| Class | Responsibility |
-|-------|---------------|
-| `CScreeningResource` | REST endpoint controller |
-| `CScreeningRequest` | Request model (extends COrderConfiguration) |
-| `CVendorOrderBuilder` | Factory for creating COrderBuilder with domain/customer/user |
-| `COrderBuilder` | Orchestrates order creation process |
-| `COrder` | Core order entity |
-| `COrderService` | Represents individual screening service within order |
-| `CAbstractService` | Base class for all service types |
-| `BasicResponse` | Standard XML response structure |
-| `EHostReference` | Enum of host system reference property names |
-| `COrderProperty` | Persists order-level properties |
-| `COrderServiceProperty` | Persists order service-level properties |
+### Transaction Behavior
+- All operations within single database transaction
+- If any step fails, entire transaction rolls back
+- No partial message creation
+- `DB.requestTransaction()` ensures consistency
 
 ---
 
-## Related Endpoints
+## Security & Multi-tenancy
 
-- **Cancel Screening**: `GET /screening/{orderRef}/cancel`
-- **Reopen Screening**: `POST /screening/reopen`
+### Authentication
+- Endpoint assumes authentication handled at API Gateway level
+- No explicit authentication in this endpoint
+- API Key authentication configured in client (see `VendorAPIClient`)
+
+### Data Isolation
+- Transaction ID determines tenant context
+- All database operations execute within tenant-specific context
+- Prevents cross-tenant data access
+- Uses `CMultitenantDB.execute(tenantCode, ...)`
 
 ---
 
-## Historical Notes
+## Key Differences from CScreeningResource.addScreening
 
-Key evolution points (from code comments):
-- **2017-03-31**: Initial creation
-- **2017-08-09**: Added remote order service references and domain ID logic
-- **2017-08-16**: Send order/order service refs via client references
-- **2017-11-03**: Added reopenScreening and document sync
-- **2017-11-13**: Added storeOrderContext
-- **2020-10-05**: Added EMPLOYMENT_SHOW_VERIFIED_WITH_DOCS_FLAG
-- **2020-12-07**: Added CREATE_ORDER_EDUCATION_GRADES
-- **2021-09-23**: Added regulatory order properties
-- **2021-10-07**: Added REGULATED_EMPLOYMENT_FLAG_7_YEARS
-- **2025-02-13**: Added EDUCATION_VERIFY_HIGH_SCHOOL_AT_SOURCE
-- **2025-09-12**: Added CInstanceDomain support
+| Aspect | CScreeningResource | CScreeningReportResource |
+|--------|-------------------|--------------------------|
+| **Purpose** | Create new screening order | Receive screening results |
+| **Direction** | Outbound (HireRight → Vendor) | Inbound (Vendor → HireRight) |
+| **Request Body** | CScreeningRequest (structured) | Raw XML payload |
+| **Processing** | Synchronous order creation | Asynchronous message queuing |
+| **Creates** | COrder, CApplicant, COrderService | CMessage for processing |
+| **Transaction ID** | Generated during request | Retrieved from payload |
+
+---
+
+## Sample Request Example
+
+### URL
+```
+POST /vendor_api/screening_report?tm=2019-03-06T23:00:32.468
+Content-Type: application/xml
+```
+
+### Payload (Criminal Background Check Response)
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ScreeningRequest>
+    <ClientReferences>
+        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">201903062300324688375F4F18AB146FCE0531442580A024C</IdValue>
+        <IdValue name="HOST_INSTANCE_REF">HR_GBR</IdValue>
+        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-PL-001</IdValue>
+        <IdValue name="HOST_ORDER_REF">GA-010119-ABCDE</IdValue>
+    </ClientReferences>
+    <Screenings>
+        <Screening>
+            <ScreeningStatus>
+                <OrderStatus>Complete</OrderStatus>
+                <ResultStatus>Clear</ResultStatus>
+                <DateOrderReported>2019-03-09T14:59:34</DateOrderReported>
+            </ScreeningStatus>
+            <CriminalReport qualifier="county">
+                <!-- Criminal record details -->
+            </CriminalReport>
+        </Screening>
+    </Screenings>
+</ScreeningRequest>
+```
+
+---
+
+## Monitoring & Debugging
+
+### Key Log Points
+1. Transaction ID extraction
+2. OSDS lookup result
+3. Adapter identification
+4. Message creation
+5. Message ID returned
+
+### Troubleshooting
+- **"Transaction is absent"**: XML missing INSTANCE_EXCHANGE_TRANSACTION_ID
+- **"OSDS not found"**: No matching datasource for transaction ID
+- **"Response adapter is not set"**: Provider configuration incomplete
+- **Message not processing**: Check adapter configuration and background jobs
 
 ---
 
 ## Summary
 
-The `addScreening` endpoint provides a comprehensive order creation workflow that:
-1. Validates domain, customer, and user credentials
-2. Creates an order with applicant information
-3. Adds requested screening services (criminal, employment, education, etc.)
-4. Saves extensive client references and configuration properties
-5. Stores optional fulfilment context for downstream adapters
-6. Initializes document synchronization across systems
-7. Returns order and order service identifiers for tracking
+The `addScreening` endpoint in `CScreeningReportResource` provides a lightweight message enqueueing mechanism for receiving screening responses from external vendors. It:
 
-This endpoint is the primary integration point for external systems to submit background screening requests through the HireRight Vendor API.
+1. Accepts raw XML payloads containing screening results
+2. Extracts transaction ID to correlate with original requests
+3. Looks up order service and provider configuration
+4. Creates and enqueues message for asynchronous processing
+5. Returns message ID for tracking
+
+This asynchronous architecture allows vendors to push results back to HireRight without blocking, while the message processing framework handles the complex business logic of applying screening results to orders.
 
