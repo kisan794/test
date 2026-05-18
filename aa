@@ -1,930 +1,530 @@
-# CScreeningReportResource - addScreening Complete End-to-End Flow
+Overview
+The Email Notification System is a production-ready, enterprise-grade email service designed for high availability, scalability and reliability. It provides synchronous and asynchronous email delivery with comprehensive error handling, retry mechanisms and monitoring capabilities.
 
-## Overview
+CF1-2817: enable notifications to researchers for rejected sources
+Requirements Completed
+ 
 
-The `addScreening` method in `CScreeningReportResource` is the endpoint for receiving screening report updates (responses) from external data sources/vendors. This document provides a comprehensive end-to-end flow of how a screening report response is processed.
+Key Features
+✅ Synchronous and asynchronous email sending
 
----
+✅ HTML and plain text email support
 
-## API Endpoint Details
+✅ CC/BCC support with validation
 
-- **Path**: `/screening_report`
-- **HTTP Method**: `POST`
-- **Consumes**: `application/xml`
-- **Produces**: `application/xml`
-- **Request Body**: XML payload containing screening report data
-- **Response**: `BasicResponse` (XML)
-- **Query Parameters**: `tm` (optional timestamp)
+✅ File attachments with size limits
 
----
+✅ Custom metadata support
 
-## High-Level Process Flow
+✅ Retry mechanism with exponential backoff
 
-```
-1. Receive Screening Report XML Request
-2. Parse Query String Parameters (extract timestamp)
-3. Extract Transaction ID from Request Payload
-4. Execute within Database Transaction
-5. Lookup Order Service Data Source (OSDS) by Transaction ID
-6. Retrieve Response Adapter Configuration
-7. Check Document Sync Requirements
-8. Create CMessage with Adapter and Payload
-9. Enqueue Message for Processing
-10. Return BasicResponse with Message ID
-```
+✅ Circuit breaker pattern for fault tolerance
 
----
+✅ Comprehensive error handling and logging
 
-## Detailed Step-by-Step Flow
+✅ Email validation and sanitization
 
-### 1. Request Reception & Query Parameter Extraction
+✅ Dead letter queue for failed messages
 
-```java
-public BasicResponse addScreening(final HttpServletRequest request)
-    throws Exception
+Architecture
+Component Diagram
+
+
+┌─────────────────────────────────────────────────────────────────┐
+│                     Request Flow                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Client Request                                                  │                                                    │
+│       ↓                                                          │
+│  Request Validator                                               │
+│       ↓                                                          │
+│  NotificationApiController                                       │
+│       ↓                                                          │
+│  NotificationServiceFactory                                      │
+│       ↓                                                          │
+│  EmailNotificationStrategyService                                │
+│       ↓                                                          │
+│  ┌─────────────────────────────────────┐                        │
+│  │ Async?                              │                        │
+│  │  Yes → Thread Pool Executor         │                        │
+│  │  No  → Synchronous Processing       │                        │
+│  └─────────────────────────────────────┘                        │
+│       ↓                                                          │
+│  EmailNotificationProvider                                       │
+│       ↓                                                          │
+│  ┌─────────────────────────────────────┐                        │
+│  │ Circuit Breaker                     │                        │
+│  │  CLOSED → Send email                │                        │
+│  │  OPEN   → Fail fast                 │                        │
+│  │  HALF_OPEN → Test connection        │                        │
+│  └─────────────────────────────────────┘                        │
+│       ↓                                                          │
+│  Retry Logic (3 attempts, exponential backoff)                  │
+│       ↓                                                          │
+│  SMTP Send                                                       │
+│       ↓                                                          │
+│  ┌─────────────────────────────────────┐                        │
+│  │ Success?                            │                        │
+│  │  Yes → Return success response      │                        │
+│  │  No  → Dead Letter Queue            │                        │
+│  └─────────────────────────────────────┘                        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+Configuration
+1. Application Properties (Production)
+
+
+# Email notification configuration
+spring.mail.host=${emailHost:smtp.gmail.com}
+spring.mail.port=${emailPort:587}
+spring.mail.username=${emailUsername:keshavladha11@gmail.com}
+spring.mail.password=${emailPassword:zizkmlkuuvqqqwkv}
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.starttls.required=true
+spring.mail.properties.mail.smtp.connectiontimeout=5000
+spring.mail.properties.mail.smtp.timeout=20000
+spring.mail.properties.mail.smtp.writetimeout=5000
+# Notification settings
+notification.email.enabled=${notificationEmailEnabled:true}
+notification.email.from=${notificationEmailFrom:keshavladha11@gmail.com}
+# Email validation
+notification.email.validation.strict=true
+notification.email.domain.whitelist=${EMAIL_DOMAIN_WHITELIST:}
+notification.email.domain.blacklist=${EMAIL_DOMAIN_BLACKLIST:}
+# Content limits
+notification.email.subject.maxLength=200
+notification.email.body.maxLength=1048576
+notification.email.recipients.max=100
+notification.email.attachment.maxSize=26214400
+notification.email.attachment.maxCount=10
+# ============================================================================
+# Retry Configuration
+# ============================================================================
+notification.retry.maxAttempts=3
+notification.retry.backoff.initialDelay=2000
+notification.retry.backoff.multiplier=2
+notification.retry.backoff.maxDelay=10000
+# ============================================================================
+# Circuit Breaker Configuration
+# ============================================================================
+resilience4j.circuitbreaker.instances.emailNotification.slidingWindowSize=20
+resilience4j.circuitbreaker.instances.emailNotification.minimumNumberOfCalls=10
+resilience4j.circuitbreaker.instances.emailNotification.failureRateThreshold=50
+resilience4j.circuitbreaker.instances.emailNotification.waitDurationInOpenState=60s
+resilience4j.circuitbreaker.instances.emailNotification.permittedNumberOfCallsInHalfOpenState=5
+resilience4j.circuitbreaker.instances.emailNotification.automaticTransitionFromOpenToHalfOpenEnabled=true
+# ============================================================================
+# Async Configuration
+# ============================================================================
+notification.async.enabled=true
+notification.async.corePoolSize=10
+notification.async.maxPoolSize=50
+notification.async.queueCapacity=500
+notification.async.threadNamePrefix=notification-async-
+notification.async.keepAliveSeconds=60
+notification.async.awaitTerminationSeconds=30
+# ============================================================================
+# Dead Letter Queue Configuration
+# ============================================================================
+notification.dlq.enabled=true
+notification.dlq.maxRetries=5
+notification.dlq.retryDelay=300000
+notification.dlq.storage.type=DATABASE
+2. Data Flow
+Synchronous Flow
+
+
+Client Request
+    ↓
+[API Key Validation]
+    ↓ (Valid)
+[Request Validation]
+    ↓ (Valid)
+[Email Sanitization]
+    ↓
+[Circuit Breaker Check]
+    ↓ (CLOSED)
+[SMTP Send - Attempt 1]
+    ↓ (Success)
+[Log Success Metrics]
+    ↓
+Return 200 OK Response
+Asynchronous Flow
+
+
+Client Request
+    ↓
+[API Key Validation]
+    ↓ (Valid)
+[Request Validation]
+    ↓ (Valid)
+[Submit to Thread Pool]
+    ↓
+Return 202 Accepted (Immediate)
+    │
+    └─→ [Background Processing]
+            ↓
+        [Email Sanitization]
+            ↓
+        [Circuit Breaker Check]
+            ↓ (CLOSED)
+        [SMTP Send - Attempt 1]
+            ↓ (Fail)
+        [Wait 2s - Retry Attempt 2]
+            ↓ (Fail)
+        [Wait 4s - Retry Attempt 3]
+            ↓ (Fail)
+        [Send to Dead Letter Queue]
+            ↓
+        [Log Failure Metrics]
+Failover Flow
+
+
+[Primary SMTP Send]
+    ↓ (Connection Timeout)
+[Circuit Breaker Opens]
+    ↓
+[Log Failover Event]
+API Endpoints
+Base Path
+
+
+/sourceintelligence-service/api/v1/notifications
+1. Send Email Notification
+Endpoint: POST /send
+
+Request Body:
+
+
+
 {
-    CMessage message = DB.execute(new Callable<CMessage>()
-    {
-        @Override
-        public CMessage call() 
-            throws Exception
-        {
-            DB.requestTransaction();
-            
-            Map<String, String> params = QueryStringParser.parse(request.getQueryString());
-            String sTimestamp = params != null ? params.get("tm") : null;
-            
-            return CMessageFactory.createAndEnqueueMessage(
-                    "Datasource response", sTimestamp, IOUtils.toString(request.getInputStream()));
-        }
-    });
-```
-
-**Key Operations:**
-- Wraps all operations in `DB.execute()` with transaction support
-- Calls `DB.requestTransaction()` to ensure atomicity
-- Extracts optional timestamp parameter `tm` from query string
-- Reads raw XML payload from request input stream
-- Delegates to `CMessageFactory.createAndEnqueueMessage()`
-
----
-
-### 2. Transaction ID Extraction from XML Payload
-
-```java
-public static CMessage createMessage(String sSubject, String tm, String payload) throws Exception 
-{
-    Document document = DocumentHelper.parseText(payload);
-    String sTransactionID = document.selectSingleNode(
-        "//ClientReferences/IdValue[@name='INSTANCE_EXCHANGE_TRANSACTION_ID']").getText();
-    
-    if (sTransactionID == null)
-    {
-        throw new CRuntimeException("Transaction is absent");
-    }
-```
-
-**Key Operations:**
-- Parses XML payload using DOM4J
-- Extracts `INSTANCE_EXCHANGE_TRANSACTION_ID` from ClientReferences section
-- Validates that transaction ID is present (critical for tracking)
-- Transaction ID links the response to the original screening request
-
-**Example XML Structure:**
-```xml
-<ScreeningRequest>
-    <ClientReferences>
-        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">201903062300324688375F4F18AB146FCE0531442580A024C</IdValue>
-        <!-- Other references -->
-    </ClientReferences>
-    <Screenings>
-        <!-- Screening data -->
-    </Screenings>
-</ScreeningRequest>
-```
-
----
-
-### 3. Tenant Resolution & Multi-tenant Execution
-
-```java
-String tenantCode = getTenantCodeByTransactionID(sTransactionID);
-
-return CMultitenantDB.execute(tenantCode, () -> {
-    // Multi-tenant context execution
-});
-```
-
-**Key Operations:**
-- Determines tenant/customer context from transaction ID
-- Executes remaining operations within correct tenant database context
-- Ensures data isolation in multi-tenant environment
-
----
-
-### 4. Order Service Data Source (OSDS) Lookup
-
-```java
-Session session = CSessionFactory.getSessionFactory().getCurrentSession();
-COrderServiceDataSource osds = (COrderServiceDataSource) session.createCriteria(COrderServiceDataSource.class)
-        .add(Restrictions.eq("referenceID", sTransactionID))
-        .uniqueResult();
-
-CProperties properties = new CProperties().setProperty("referenceID", sTransactionID);
-
-if(osds == null)
-{
-    throw new CRuntimeException("OSDS not found", properties);
+  "notificationType": "EMAIL",
+  "async": false,
+  "requestId": "req-20260505-001",
+  "emailNotification": {
+    "to": ["user@example.com"],
+    "cc": ["manager@example.com"],
+    "bcc": ["audit@hireright.com"],
+    "subject": "Important Notification",
+    "body": "<html><body><h1>Hello</h1><p>This is important.</p></body></html>",
+    "htmlContent": true,
+    "replyTo": "support@hireright.com",
+    "metadata": {
+      "source": "user-registration",
+      "priority": "high",
+      "category": "transactional"
+    },
+    "attachments": [
+      {
+        "filename": "document.pdf",
+        "content": "base64-encoded-content",
+        "contentType": "application/pdf"
+      }
+    ]
+  }
 }
+Success Response (200 OK):
 
-Long nOrderServiceID = osds.getOrderServiceID();
-```
 
-**Key Operations:**
-- Uses Hibernate to query `ORDER_SERVICE_DATASOURCE` table
-- Searches by `referenceID` matching the transaction ID
-- OSDS represents the data source assignment for a specific screening service
-- Extracts `orderServiceID` for linking message to the correct screening
 
-**OSDS Role:**
-- Links a screening request (order service) to an external data source/vendor
-- Stores transaction ID for tracking vendor communication
-- Contains provider/adapter configuration
-
----
-
-### 5. Response Adapter Retrieval
-
-```java
-String sDataAdapter = getResponseAdapter(osds);
-
-if(sDataAdapter == null)
 {
-    properties.setProperty("providerID", osds.getProviderID());
-    properties.setProperties(osds.getProperties());
-    throw new CRuntimeException("Response adapter is not set", properties);
+  "status": "SUCCESS",
+  "message": "Notification sent successfully",
+  "notificationId": "550e8400-e29b-41d4-a716-446655440000",
+  "requestId": "req-20260505-001",
+  "sentAt": "2026-05-05T10:30:00.123Z",
+  "recipientCount": 1,
+  "metadata": {
+    "async": "false",
+    "type": "EMAIL",
+    "provider": "sendgrid",
+    "processingTimeMs": "245"
+  }
 }
-```
+Async Response (202 Accepted):
 
-**getResponseAdapter Logic:**
-```java
-private static String getResponseAdapter(COrderServiceDataSource osds)
+
+
 {
-    CProperties properties = null;
-    
-    if (osds.getProviderID() != null)
-    {
-        CProvider provider = CProviderFactory.loadProvider(osds.getProviderID());
-        properties = provider.getProperties2();
-    }
-    else
-    {
-        CProperties osdsProperties = osds.getProperties();
-        if (CContentProvider.OBJECT_CLASS.equals(osdsProperties.getProperty("assignedActorClass")))
-        {
-            String sProviderID = osdsProperties.getProperty("assignedActorID");
-            
-            if (CStringUtils.isNumber(sProviderID))
-            {
-                properties = CContentProviderFactory.getProviderProperties(Long.parseLong(sProviderID));
+  "status": "QUEUED",
+  "message": "Notification queued for processing",
+  "notificationId": "550e8400-e29b-41d4-a716-446655440000",
+  "requestId": "req-20260505-001",
+  "queuedAt": "2026-05-05T10:30:00.123Z",
+  "estimatedProcessingTime": "5s"
+}
+Error Handling & Edge Cases
+Edge Case Matrix
+Scenario
+
+Detection
+
+Handling
+
+Response
+
+Invalid email format 
+
+Regex validation 
+
+Reject immediately 
+
+400 Bad Request 
+
+Empty recipient list 
+
+Pre-validation 
+
+Reject immediately 
+
+400 Bad Request 
+
+Subject too long (>200 chars) 
+
+Length check 
+
+Truncate with warning 
+
+200 OK with warning 
+
+Body too large (>1MB) 
+
+Size check 
+
+Reject immediately 
+
+413 Payload Too Large 
+
+Attachment too large (>25MB) 
+
+Size check 
+
+Reject immediately 
+
+413 Payload Too Large 
+
+Too many attachments (>10) 
+
+Count check 
+
+Reject immediately 
+
+400 Bad Request 
+
+Invalid attachment encoding 
+
+Base64 validation 
+
+Reject immediately 
+
+400 Bad Request 
+
+Blacklisted domain 
+
+Domain check 
+
+Reject immediately 
+
+403 Forbidden 
+
+Not whitelisted domain 
+
+Domain check 
+
+Reject immediately 
+
+403 Forbidden 
+
+SMTP connection timeout 
+
+Timeout detection 
+
+Retry 3x, then failover 
+
+500 or 202 (async) 
+
+SMTP authentication failure 
+
+Auth error 
+
+Fail fast, alert ops 
+
+500 Internal Server Error 
+
+Circuit breaker open 
+
+Circuit state 
+
+Fail fast, use backup 
+
+503 Service Unavailable 
+
+Error Response Examples
+400 Bad Request - Invalid Email
+
+
+{
+  "status": "FAILED",
+  "message": "Invalid email address format",
+  "errorCode": "INVALID_EMAIL_FORMAT",
+  "errorDetails": "Email 'invalid-email' does not match required format",
+  "field": "emailNotification.to[0]",
+  "timestamp": "2026-05-05T10:30:00Z"
+}
+413 Payload Too Large
+
+
+{
+  "status": "FAILED",
+  "message": "Attachment size exceeds maximum allowed",
+  "errorCode": "ATTACHMENT_TOO_LARGE",
+  "errorDetails": "Attachment 'report.pdf' is 30MB, maximum allowed is 25MB",
+  "maxSizeBytes": 26214400,
+  "actualSizeBytes": 31457280,
+  "timestamp": "2026-05-05T10:30:00Z"
+}
+503 Service Unavailable - Circuit Breaker Open
+
+
+{
+  "status": "FAILED",
+  "message": "Email service temporarily unavailable",
+  "errorCode": "CIRCUIT_BREAKER_OPEN",
+  "errorDetails": "Primary SMTP service is experiencing issues. Circuit breaker is open.",
+  "retryAfter": 60,
+  "circuitState": "OPEN",
+  "failureRate": 75.5,
+  "timestamp": "2026-05-05T10:30:00Z"
+}
+Retry Strategy
+
+
+@Retryable(
+    value = {MailException.class, MessagingException.class},
+    maxAttempts = 3,
+    backoff = @Backoff(
+        delay = 2000,
+        multiplier = 2,
+        maxDelay = 10000
+    ),
+    exclude = {MailAuthenticationException.class}
+)
+public void sendEmail(MimeMessage message) {
+    // Send logic
+}
+Retry Timeline:
+
+Attempt 1: Immediate (t=0s)
+
+Attempt 2: After 2s (t=2s)
+
+Attempt 3: After 4s (t=6s)
+
+If all fail → Dead Letter Queue
+
+Dead Letter Queue Processing
+
+
+@Scheduled(fixedDelay = 300000) // Every 5 minutes
+public void processDLQ() {
+    List<FailedNotification> failed = dlqRepository.findRetryable();
+    for (FailedNotification notification : failed) {
+        if (notification.getRetryCount() < 5) {
+            try {
+                retryNotification(notification);
+                dlqRepository.delete(notification);
+            } catch (Exception e) {
+                notification.incrementRetryCount();
+                dlqRepository.save(notification);
             }
-            else
-            {
-                throw new CRuntimeException("Provider is not specified");
-            }
+        } else {
+            // Max retries exceeded - alert operations
+            alertOps(notification);
+            dlqRepository.markAsPermanentFailure(notification);
         }
     }
-    
-    return properties != null 
-            ? properties.getProperty("RESPONSE_ADAPTER")
-            : null;
 }
-```
+Security
+1. API Key Authentication
 
-**Key Operations:**
-- Retrieves adapter ID from provider or content provider configuration
-- Adapter ID identifies the Java class that will process the response
-- Example adapters: `TALX_RESPONSE`, `HSCH_RESPONSE`, etc.
-- Adapter class contains business logic for parsing and applying vendor responses
 
----
-
-### 6. Document Synchronization Check
-
-```java
-COrderServiceProperty vendorHostProp = COrderServiceProperty.getPropertyByName(
-    nOrderServiceID.longValue(), EVendorReference.VENDOR_INSTANCE_REF.getPropertyName());
-
-if (vendorHostProp != null) 
-{
-    CDomain vendorDomain = CDomainFactory.getDomain(vendorHostProp.getValue());
-    
-    if (vendorDomain != null && Logical.isTrue(
-        CStringUtils.nvl(vendorDomain.getProperty("INSTANCE_EXCHANGE_DOCUMENT_SYNC"), Logical.YES_SHORT)))
-    {
-        initDocumentSync(nOrderServiceID);	
+@Component
+public class ApiKeyAuthFilter extends OncePerRequestFilter {
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) {
+        String apiKey = request.getHeader("X-API-Key");
+        if (!isValidApiKey(apiKey)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+        filterChain.doFilter(request, response);
     }
 }
-```
+ 
 
-**Key Operations:**
-- Checks if vendor requires document synchronization
-- Looks up `VENDOR_INSTANCE_REF` property on order service
-- If vendor domain has `INSTANCE_EXCHANGE_DOCUMENT_SYNC` enabled, triggers sync
-- Creates Event 755 (START_DOC_SYNC) to initiate document exchange
+2. Input Validation
 
----
 
-### 7. CMessage Creation
-
-```java
-CMessage result = new CMessage(sDataAdapter, "BASE", 3, sSubject);
-result.setProperty("orderServiceID", nOrderServiceID.toString());
-result.setProperty("transactionID", sTransactionID);
-result.setProperty("tm", tm);
-```
-
-**Key Operations:**
-- Creates message with adapter ID, domain ("BASE"), priority (3), and subject
-- Attaches critical metadata:
-  - `orderServiceID`: Links message to specific screening
-  - `transactionID`: Tracks request/response correlation
-  - `tm`: Timestamp of triggering event
-
----
-
-### 8. Payload Encoding & Attachment
-
-```java
-if(CInstanceParameter.NATIONAL_INSTANCE_US.equals(
-    CInstanceParameter.getNationalInstanceId()) && !Charset.forName("US-ASCII")
-    .newEncoder()
-    .canEncode(payload))
-{
-    result.addPayload(CMessagePayload.BODY_TYPE_BASE64,
-        Base64.getEncoder().encodeToString(payload.getBytes()),
-        MediaType.APPLICATION_XML_VALUE, "base64");
+@Valid
+public class EmailNotificationDTO {
+    @NotEmpty(message = "Recipient list cannot be empty")
+    @Size(max = 100, message = "Maximum 100 recipients allowed")
+    private List<@Email(message = "Invalid email format") String> to;
+    @NotBlank(message = "Subject is required")
+    @Size(max = 200, message = "Subject too long")
+    private String subject;
+    @NotBlank(message = "Body is required")
+    @Size(max = 1048576, message = "Body exceeds 1MB limit")
+    private String body;
 }
-else
-{
-    result.addPayload(CMessagePayload.BODY_TYPE_TEXT, payload, 
-        MediaType.APPLICATION_XML_VALUE, "7bit");
+3. Domain Filtering
+
+
+public boolean isAllowedDomain(String email) {
+    String domain = email.substring(email.indexOf('@') + 1);
+    // Check blacklist first
+    if (blacklistedDomains.contains(domain)) {
+        return false;
+    }
+    // If whitelist exists, check it
+    if (!whitelistedDomains.isEmpty()) {
+        return whitelistedDomains.contains(domain);
+    }
+    return true;
 }
-```
+4. Encryption at Rest
 
-**Key Operations:**
-- Checks if payload contains non-ASCII characters
-- For US instances with special characters: Base64 encodes payload
-- Otherwise: Stores payload as plain text
-- Content-Type: `application/xml`
-- Ensures proper character encoding across systems
 
----
-
-### 9. Message Persistence & Enqueueing
-
-```java
-CMessageManager.create(result);
-return result;
-```
-
-**Key Operations:**
-- Persists message to `MESSAGE` table in database
-- Message enters processing queue
-- Background message processing framework picks up message
-- Adapter specified in message is invoked to process payload
-- Adapter updates order service with screening results
-
----
-
-### 10. Build and Return Response
-
-```java
-BasicResponse response = new BasicResponse();
-
-if (message != null)
-{
-    response.getIdValues().addAll(new IdValueFacade()
-            .set(ScreeningReportService.EResponseParam.MESSAGE.name(), message.getID().toString())
-            .getAll());
+@Entity
+public class FailedNotification {
+    @Convert(converter = EncryptedStringConverter.class)
+    private String emailContent;
+    @Convert(converter = EncryptedStringConverter.class)
+    private String recipientList;
 }
-
-return response;
-```
-
-**Response Structure:**
-```xml
-<BasicResponse>
-    <IdValue name="MESSAGE">12345678</IdValue>
-</BasicResponse>
-```
-
-**Key Operations:**
-- Returns message ID to caller
-- Message ID can be used for tracking/debugging
-- Confirms successful receipt and enqueueing of response
-
----
-
-## Database Objects Involved
-
-### Core Tables
-1. **ORDER_SERVICE_DATASOURCE** - Links order services to data sources
-2. **ORDER_SERVICE** - Individual screening services within an order
-3. **ORDER_SERVICE_PROPERTY** - Properties/configuration for order services
-4. **MESSAGE** - Queued messages for asynchronous processing
-5. **MESSAGE_PAYLOAD** - Actual XML payload data
-6. **PROVIDER** - External vendor/provider configuration
-7. **CONTENT_PROVIDER** - Alternative provider configuration
-
----
-
-## Message Processing Architecture
-
-### Message Flow After Enqueueing
-
-```
-1. CMessage saved to MESSAGE table
-2. Background Job Runner queries for pending messages
-3. Message picked up based on adapter ID and priority
-4. Adapter class instantiated and invoked
-5. Adapter parses XML payload
-6. Adapter updates ORDER_SERVICE with results
-7. Adapter may trigger additional events/workflows
-8. Message marked as processed
-```
-
-### Common Adapters
-- **TALX_RESPONSE** - TALX employment verification responses
-- **HSCH_RESPONSE** - HSCH criminal background check responses
-- **KWIKSCREEN_KS_CALLBACK** - KwikScreen responses
-- **ADVANCEDSEARCH_RESPONSE** - Advanced search responses
-
----
-
-## Error Handling
-
-### Validation Errors
-- **Missing Transaction ID**: Throws `CRuntimeException` immediately
-- **OSDS Not Found**: Transaction ID doesn't match any pending request
-- **Response Adapter Not Set**: Provider configuration incomplete
-- **Invalid XML**: Parsing fails at Document.parse step
-
-### Transaction Behavior
-- All operations within single database transaction
-- If any step fails, entire transaction rolls back
-- No partial message creation
-- `DB.requestTransaction()` ensures consistency
-
----
-
-## Security & Multi-tenancy
-
-### Authentication
-- Endpoint assumes authentication handled at API Gateway level
-- No explicit authentication in this endpoint
-- API Key authentication configured in client (see `VendorAPIClient`)
-
-### Data Isolation
-- Transaction ID determines tenant context
-- All database operations execute within tenant-specific context
-- Prevents cross-tenant data access
-- Uses `CMultitenantDB.execute(tenantCode, ...)`
-
----
-
-## Key Differences from CScreeningResource.addScreening
-
-| Aspect | CScreeningResource | CScreeningReportResource |
-|--------|-------------------|--------------------------|
-| **Purpose** | Create new screening order | Receive screening results |
-| **Direction** | Outbound (HireRight → Vendor) | Inbound (Vendor → HireRight) |
-| **Request Body** | CScreeningRequest (structured) | Raw XML payload |
-| **Processing** | Synchronous order creation | Asynchronous message queuing |
-| **Creates** | COrder, CApplicant, COrderService | CMessage for processing |
-| **Transaction ID** | Generated during request | Retrieved from payload |
-
----
-
-## Sample Request & Response Examples
-
-### Example 1: Criminal Background Check Response
-
-#### Request
-```
-POST /vendor_api/screening_report?tm=2019-03-06T23:00:32.468
-Content-Type: application/xml
-Accept: application/xml
-```
-
-#### Request Payload
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ClientReferences>
-        <IdValue name="CompanyCode">SWEETY</IdValue>
-        <IdValue name="UserLogin"/>
-        <IdValue name="DomainID">HR-GBR</IdValue>
-        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">201903062300324688375F4F18AB146FCE0531442580A024C</IdValue>
-        <IdValue name="HOST_INSTANCE_REF">HR_GBR</IdValue>
-        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-PL-001</IdValue>
-        <IdValue name="HOST_ORDER_REF">GA-010119-ABCDE</IdValue>
-        <IdValue name="HOST_DELAY_INFO_NOTE_RECIPIENTS">testrequestor@hireright.com</IdValue>
-        <IdValue name="HOST_DELAY_ACTION_NOTE_RECIPIENTS">testrequestor@hireright.com</IdValue>
-        <IdValue name="HOST_REQUESTOR_NAME">Requestor name</IdValue>
-        <IdValue name="VENDOR_INSTANCE_REF"/>
-        <IdValue name="VENDOR_ORDER_SERVICE_REF"/>
-        <IdValue name="VENDOR_ORDER_REF"/>
-        <IdValue name="allowToContactApplicant">N</IdValue>
-    </ClientReferences>
-    <PersonalData>
-        <PersonName>
-            <GivenName>John</GivenName>
-            <MiddleName>Michael</MiddleName>
-            <FamilyName>Doe</FamilyName>
-        </PersonName>
-        <PostalAddress>
-            <CountryCode>US</CountryCode>
-            <PostalCode>22150</PostalCode>
-            <Region>VA</Region>
-            <Municipality>Springfield</Municipality>
-            <DeliveryAddress>
-                <AddressLine>123 Main Street</AddressLine>
-            </DeliveryAddress>
-        </PostalAddress>
-        <ContactMethod>
-            <Use>personal</Use>
-            <Telephone>
-                <FormattedNumber>(703) 555-1234</FormattedNumber>
-            </Telephone>
-            <InternetEmailAddress>john.doe@example.com</InternetEmailAddress>
-        </ContactMethod>
-        <DemographicDetail>
-            <GovernmentId countryCode="US" issuingAuthority="SSA"/>
-            <DateOfBirth>1985-06-15</DateOfBirth>
-        </DemographicDetail>
-    </PersonalData>
-    <Screenings>
-        <Screening type="criminal" qualifier="x:Criminal Felony &amp; Misdemeanor">
-            <ProducerReferenceId idOwner="urn:hivp.hireright.com">
-                <IdValue name="OrderServiceNo">GA-010119-ABCDE-PL-001</IdValue>
-                <IdValue name="ServiceId">17</IdValue>
-            </ProducerReferenceId>
-            <RequestorReferenceId idOwner="urn:hivp.hireright.com:customer:265467">
-                <IdValue name="CustomerName">SWEETY</IdValue>
-                <IdValue name="CustomerCompanyCode">SWEETY</IdValue>
-            </RequestorReferenceId>
-            <ScreeningStatus>
-                <OrderStatus>Complete</OrderStatus>
-                <ResultStatus>Clear</ResultStatus>
-                <DateOrderReceived>2019-03-09T14:59:34</DateOrderReceived>
-                <DateOrderReported>2019-03-09T16:45:22</DateOrderReported>
-                <AdditionalItems type="x:ReportStatus">
-                    <Text>Complete - No Court Record Found</Text>
-                </AdditionalItems>
-            </ScreeningStatus>
-            <CountryCode>US</CountryCode>
-            <Region>VA</Region>
-            <County>FAIRFAX</County>
-            <Municipality>SPRINGFIELD</Municipality>
-            <CriminalReport qualifier="county">
-                <!-- No records found - empty report -->
-            </CriminalReport>
-            <PostalAddress type="criminal">
-                <CountryCode>US</CountryCode>
-                <Region>VA</Region>
-                <County>FAIRFAX</County>
-                <Municipality>SPRINGFIELD</Municipality>
-            </PostalAddress>
-        </Screening>
-    </Screenings>
-</ScreeningRequest>
-```
-
-#### Response
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<BasicResponse>
-    <IdValue name="MESSAGE">87654321</IdValue>
-</BasicResponse>
-```
-
-**HTTP Status**: `200 OK`
-
----
-
-### Example 2: Employment Verification Response
-
-#### Request
-```
-POST /vendor_api/screening_report?tm=2019-03-06T15:30:45.123
-Content-Type: application/xml
-Accept: application/xml
-```
-
-#### Request Payload
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ClientReferences>
-        <IdValue name="CompanyCode">SWEETY</IdValue>
-        <IdValue name="DomainID">HR-GBR</IdValue>
-        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">20190306153045987654321ABCDEF123456789012345678</IdValue>
-        <IdValue name="HOST_INSTANCE_REF">HR_GBR</IdValue>
-        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-EM-001</IdValue>
-        <IdValue name="HOST_ORDER_REF">GA-010119-ABCDE</IdValue>
-        <IdValue name="allowToContactApplicant">Y</IdValue>
-    </ClientReferences>
-    <PersonalData>
-        <PersonName>
-            <GivenName>Sarah</GivenName>
-            <MiddleName>Jane</MiddleName>
-            <FamilyName>Smith</FamilyName>
-        </PersonName>
-        <PostalAddress>
-            <CountryCode>GB</CountryCode>
-            <PostalCode>RG6 7RT</PostalCode>
-            <Region>Berkshire</Region>
-            <Municipality>Reading</Municipality>
-            <DeliveryAddress>
-                <AddressLine>45 Oxford Road</AddressLine>
-            </DeliveryAddress>
-        </PostalAddress>
-        <ContactMethod>
-            <Use>personal</Use>
-            <Telephone>
-                <FormattedNumber>+44 7700 900123</FormattedNumber>
-            </Telephone>
-            <InternetEmailAddress>sarah.smith@example.com</InternetEmailAddress>
-        </ContactMethod>
-        <DemographicDetail>
-            <DateOfBirth>1990-03-22</DateOfBirth>
-        </DemographicDetail>
-    </PersonalData>
-    <Screenings>
-        <Screening serviceID="4">
-            <Employment type="Paid">
-                <EmployerOrgName>University of British Columbia</EmployerOrgName>
-                <PositionHistory currentEmployer="false">
-                    <Title>Research Coordinator</Title>
-                    <OrgName>
-                        <OrganizationName>University of British Columbia</OrganizationName>
-                    </OrgName>
-                    <StartDate>
-                        <YearMonth>2015-09</YearMonth>
-                    </StartDate>
-                    <EndDate>
-                        <YearMonth>2018-08</YearMonth>
-                    </EndDate>
-                    <Compensation>
-                        <EndingCompensation intervalType="yearly" currency="CAD">65000</EndingCompensation>
-                    </Compensation>
-                    <ReasonForLeaving>Career advancement</ReasonForLeaving>
-                    <Verification>
-                        <PermissionToContact>YES</PermissionToContact>
-                        <Status>Verified</Status>
-                        <VerifiedBy>HR Department</VerifiedBy>
-                        <VerificationDate>2019-03-06</VerificationDate>
-                    </Verification>
-                </PositionHistory>
-            </Employment>
-            <PostalAddress type="employment">
-                <CountryCode>CA</CountryCode>
-                <Region>British Columbia</Region>
-                <Municipality>Vancouver</Municipality>
-            </PostalAddress>
-            <ContactInfo>
-                <ContactMethod>
-                    <Telephone>
-                        <FormattedNumber>+1-604-822-2211</FormattedNumber>
-                    </Telephone>
-                </ContactMethod>
-            </ContactInfo>
-        </Screening>
-    </Screenings>
-</ScreeningRequest>
-```
-
-#### Response
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<BasicResponse>
-    <IdValue name="MESSAGE">87654322</IdValue>
-</BasicResponse>
-```
-
-**HTTP Status**: `200 OK`
-
----
-
-### Example 3: Education Verification Response
-
-#### Request
-```
-POST /vendor_api/screening_report?tm=2019-03-07T10:15:30.456
-Content-Type: application/xml
-Accept: application/xml
-```
-
-#### Request Payload
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ClientReferences>
-        <IdValue name="CompanyCode">SWEETY</IdValue>
-        <IdValue name="DomainID">HR-GBR</IdValue>
-        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">20190307101530456789FEDCBA987654321012345678901234</IdValue>
-        <IdValue name="HOST_INSTANCE_REF">HR_GBR</IdValue>
-        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-ED-001</IdValue>
-        <IdValue name="HOST_ORDER_REF">GA-010119-ABCDE</IdValue>
-        <IdValue name="allowToContactApplicant">Y</IdValue>
-    </ClientReferences>
-    <PersonalData>
-        <PersonName>
-            <GivenName>David</GivenName>
-            <MiddleName>Alexander</MiddleName>
-            <FamilyName>Johnson</FamilyName>
-        </PersonName>
-        <PostalAddress>
-            <CountryCode>GB</CountryCode>
-            <PostalCode>KT6 7QG</PostalCode>
-            <Region>Surrey</Region>
-            <Municipality>Surbiton</Municipality>
-            <DeliveryAddress>
-                <AddressLine>78 Kingston Road</AddressLine>
-            </DeliveryAddress>
-        </PostalAddress>
-        <ContactMethod>
-            <Use>personal</Use>
-            <Telephone>
-                <FormattedNumber>+44 20 8390 1234</FormattedNumber>
-            </Telephone>
-            <InternetEmailAddress>david.johnson@example.com</InternetEmailAddress>
-        </ContactMethod>
-        <DemographicDetail>
-            <DateOfBirth>1992-11-08</DateOfBirth>
-        </DemographicDetail>
-    </PersonalData>
-    <Screenings>
-        <Screening serviceID="3">
-            <Education>
-                <School>
-                    <SchoolName>University of Toronto</SchoolName>
-                </School>
-                <Degree graduated="YES" degreeType="Bachelors">
-                    <DegreeName>Bachelor of Science</DegreeName>
-                    <DegreeMajor>
-                        <Name>Computer Science</Name>
-                        <DegreeMeasure>
-                            <MeasureSystem>GPA</MeasureSystem>
-                            <MeasureValue>
-                                <StringValue>3.75</StringValue>
-                            </MeasureValue>
-                        </DegreeMeasure>
-                    </DegreeMajor>
-                    <DatesOfAttendance>
-                        <StartDate>
-                            <YearMonth>2010-09</YearMonth>
-                        </StartDate>
-                        <EndDate>
-                            <YearMonth>2014-05</YearMonth>
-                        </EndDate>
-                    </DatesOfAttendance>
-                    <DegreeDate>
-                        <YearMonth>2014-06</YearMonth>
-                    </DegreeDate>
-                    <Verification>
-                        <Status>Verified</Status>
-                        <VerifiedBy>Registrar's Office</VerifiedBy>
-                        <VerificationDate>2019-03-07</VerificationDate>
-                    </Verification>
-                </Degree>
-            </Education>
-            <PostalAddress type="education">
-                <CountryCode>CA</CountryCode>
-                <Region>Ontario</Region>
-                <Municipality>Toronto</Municipality>
-            </PostalAddress>
-            <ContactInfo>
-                <ContactMethod>
-                    <Telephone>
-                        <FormattedNumber>+1-416-978-2011</FormattedNumber>
-                    </Telephone>
-                </ContactMethod>
-            </ContactInfo>
-            <PersonName>
-                <GivenName>David</GivenName>
-                <MiddleName>Alexander</MiddleName>
-                <FamilyName>Johnson</FamilyName>
-            </PersonName>
-        </Screening>
-    </Screenings>
-</ScreeningRequest>
-```
-
-#### Response
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<BasicResponse>
-    <IdValue name="MESSAGE">87654323</IdValue>
-</BasicResponse>
-```
-
-**HTTP Status**: `200 OK`
-
----
-
-### Example 4: Error Response - Missing Transaction ID
-
-#### Request Payload (Invalid)
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ClientReferences>
-        <IdValue name="CompanyCode">SWEETY</IdValue>
-        <IdValue name="DomainID">HR-GBR</IdValue>
-        <!-- Missing INSTANCE_EXCHANGE_TRANSACTION_ID -->
-        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-PL-001</IdValue>
-    </ClientReferences>
-    <Screenings>
-        <Screening type="criminal">
-            <ScreeningStatus>
-                <OrderStatus>Complete</OrderStatus>
-            </ScreeningStatus>
-        </Screening>
-    </Screenings>
-</ScreeningRequest>
-```
-
-#### Error Response
-```
-HTTP/1.1 500 Internal Server Error
-Content-Type: text/plain
-
-java.lang.RuntimeException: Transaction is absent
-```
-
----
-
-### Example 5: Error Response - OSDS Not Found
-
-#### Request Payload (Invalid Transaction ID)
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<ScreeningRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ClientReferences>
-        <IdValue name="INSTANCE_EXCHANGE_TRANSACTION_ID">INVALID_TRANSACTION_ID_12345</IdValue>
-        <IdValue name="HOST_ORDER_SERVICE_REF">GA-010119-ABCDE-PL-001</IdValue>
-    </ClientReferences>
-    <Screenings>
-        <Screening type="criminal">
-            <ScreeningStatus>
-                <OrderStatus>Complete</OrderStatus>
-            </ScreeningStatus>
-        </Screening>
-    </Screenings>
-</ScreeningRequest>
-```
-
-#### Error Response
-```
-HTTP/1.1 500 Internal Server Error
-Content-Type: text/plain
-
-java.lang.RuntimeException: OSDS not found
-Properties: {referenceID=INVALID_TRANSACTION_ID_12345}
-```
-
----
-
-## Response Details
-
-### BasicResponse Structure
-
-The `BasicResponse` XML structure is defined in the VendorAPI schema:
-
-```xml
-<xs:element name="BasicResponse">
-    <xs:complexType>
-        <xs:complexContent>
-            <xs:extension base="EntityIdType"/>
-        </xs:complexContent>
-    </xs:complexType>
-</xs:element>
-
-<xs:complexType name="EntityIdType">
-    <xs:sequence>
-        <xs:element name="IdValue" type="IdValueType" maxOccurs="unbounded"/>
-    </xs:sequence>
-    <xs:attribute name="idOwner" type="xs:string" use="optional"/>
-</xs:complexType>
-
-<xs:complexType name="IdValueType">
-    <xs:simpleContent>
-        <xs:extension base="xs:string">
-            <xs:attribute name="name" type="xs:string" use="optional"/>
-        </xs:extension>
-    </xs:simpleContent>
-</xs:complexType>
-```
-
-### Response Fields
-
-| Field Name | Type | Description | Example |
-|------------|------|-------------|---------|
-| **MESSAGE** | String | Unique identifier of the created CMessage record | `87654321` |
-
-### Message ID Usage
-
-The returned `MESSAGE` ID can be used for:
-
-1. **Tracking**: Monitor message processing status in the MESSAGE table
-2. **Debugging**: Lookup message details, payload, and processing logs
-3. **Support**: Reference in support tickets for troubleshooting
-4. **Auditing**: Correlate vendor responses with internal processing
-
-### Message Processing States
-
-After a message is created, it goes through several states:
-
-| State | Description |
-|-------|-------------|
-| **NEW** | Message created and queued for processing |
-| **PROCESSING** | Adapter actively processing the message |
-| **PROCESSED** | Successfully processed and applied to order service |
-| **ERROR** | Processing failed - check error logs |
-| **RETRY** | Failed but scheduled for retry |
-
----
-
-## Request Payload Requirements
-
-### Mandatory Fields
-
-All screening report requests MUST include:
-
-1. **ClientReferences/INSTANCE_EXCHANGE_TRANSACTION_ID**
-   - Format: 50-character alphanumeric string
-   - Purpose: Links response to original screening request
-   - Example: `201903062300324688375F4F18AB146FCE0531442580A024C`
-
-2. **ClientReferences/HOST_ORDER_SERVICE_REF**
-   - Format: Order service reference code (e.g., `GA-010119-ABCDE-PL-001`)
-   - Purpose: Identifies specific screening service being updated
-   - Used for validation and logging
-
-3. **Screenings Section**
-   - Must contain at least one `<Screening>` element
-   - Screening type must match the original request type
-   - Status information required for processing
-
-### Optional Fields
-
-- **Query Parameter `tm`**: Timestamp of vendor event triggering the response
-- **PersonalData**: Applicant information (for validation/matching)
-- **ClientReferences/HOST_ORDER_REF**: Overall order reference
-- **Verification Details**: Provider-specific verification metadata
-
-### Common Client References
-
-| Reference Name | Purpose | Example |
-|----------------|---------|---------|
-| `INSTANCE_EXCHANGE_TRANSACTION_ID` | **Required** - Unique transaction identifier | `2019030623...` |
-| `HOST_INSTANCE_REF` | Source HireRight instance | `HR_GBR`, `HR_USA` |
-| `HOST_ORDER_SERVICE_REF` | Order service code | `GA-010119-ABCDE-PL-001` |
-| `HOST_ORDER_REF` | Overall order reference | `GA-010119-ABCDE` |
-| `VENDOR_INSTANCE_REF` | Vendor's instance identifier | Vendor-specific |
-| `VENDOR_ORDER_SERVICE_REF` | Vendor's reference for screening | Vendor-specific |
-| `allowToContactApplicant` | Permission to contact applicant | `Y`, `N` |
-
----
-
-## Monitoring & Debugging
-
-### Key Log Points
-1. Transaction ID extraction
-2. OSDS lookup result
-3. Adapter identification
-4. Message creation
-5. Message ID returned
-
-### Troubleshooting
-- **"Transaction is absent"**: XML missing INSTANCE_EXCHANGE_TRANSACTION_ID
-- **"OSDS not found"**: No matching datasource for transaction ID
-- **"Response adapter is not set"**: Provider configuration incomplete
-- **Message not processing**: Check adapter configuration and background jobs
-
----
-
-## Summary
-
-The `addScreening` endpoint in `CScreeningReportResource` provides a lightweight message enqueueing mechanism for receiving screening responses from external vendors. It:
-
-1. Accepts raw XML payloads containing screening results
-2. Extracts transaction ID to correlate with original requests
-3. Looks up order service and provider configuration
-4. Creates and enqueues message for asynchronous processing
-5. Returns message ID for tracking
-
-This asynchronous architecture allows vendors to push results back to HireRight without blocking, while the message processing framework handles the complex business logic of applying screening results to orders.
-
+Performance & Scalability
+1. Connection Pooling
+
+
+spring.mail.properties.mail.smtp.pool.size=20
+spring.mail.properties.mail.smtp.pool.timeout=5000
+2. Thread Pool Configuration
+
+
+@Bean(name = "notificationTaskExecutor")
+public ThreadPoolTaskExecutor notificationTaskExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(20);
+    executor.setMaxPoolSize(100);
+    executor.setQueueCapacity(500);
+    executor.setThreadNamePrefix("notification-");
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(30);
+    executor.initialize();
+    return executor;
+}
+ 
